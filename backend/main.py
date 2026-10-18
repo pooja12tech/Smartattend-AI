@@ -1466,7 +1466,7 @@ def get_faculty_session_roster(
     ).all()
 
     if enrollments:
-        students_list = [(e.roll_no, e.student_name, e.department or "CSE") for e in enrollments]
+        students_list = [(e.roll_no, e.student_name, getattr(e, "department", "CSE") or "CSE") for e in enrollments]
     else:
         active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
         students_list = [(s.roll_no, s.name, s.department or "CSE") for s in active_students]
