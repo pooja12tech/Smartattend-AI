@@ -30,7 +30,6 @@ export default function FacultyPortal({ user }) {
     try {
       const res = await api.startSession({
         subject_name: subject,
-        faculty_id: user.faculty_id || 'FAC01',
         class_lat: 19.0760,
         class_lng: 72.8777
       });
@@ -95,7 +94,6 @@ export default function FacultyPortal({ user }) {
         session_id: activeSession.session_id,
         roll_no: rollNo,
         status: 'PRESENT',
-        faculty_id: user.faculty_id || 'FAC01',
         reason: reason.trim()
       });
 

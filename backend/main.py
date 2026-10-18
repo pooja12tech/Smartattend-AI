@@ -9,7 +9,8 @@ import base64
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, HTTPException, status, Depends
+import json
+from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -18,6 +19,9 @@ import pandas as pd
 import joblib
 from PIL import Image
 import cv2
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from db_postgres import (
     get_pg_db,
@@ -34,16 +38,40 @@ from auth import (
     hash_password,
     verify_password,
     create_access_token,
+    get_current_user,
     get_current_user_optional,
     require_admin,
-    require_faculty
+    require_faculty,
+    require_student,
+    require_faculty_or_admin
 )
+
+def login_rate_limit_key(request: Request) -> str:
+    ip = get_remote_address(request)
+    roll_no = getattr(request.state, "rate_limit_roll_no", "")
+    return f"{ip}:{roll_no}"
+
+limiter = Limiter(key_func=login_rate_limit_key)
 
 app = FastAPI(
     title="SmartAttend-AI API",
     description="Anti-Proxy & AI-Driven Smart Attendance System Backend with RBAC (Admin, Faculty, Student) - PostgreSQL Edition",
     version="2.0.0"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.middleware("http")
+async def extract_rate_limit_roll_no_middleware(request: Request, call_next):
+    if request.url.path == "/api/login" and request.method == "POST":
+        try:
+            body = await request.body()
+            if body:
+                data = json.loads(body)
+                request.state.rate_limit_roll_no = str(data.get("roll_no", "")).strip().upper()
+        except Exception:
+            pass
+    return await call_next(request)
 
 # Secure CORS configuration
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
@@ -241,13 +269,11 @@ class LoginRequest(BaseModel):
 
 class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
-    faculty_id: str = Field("FAC01", example="FAC01")
     class_lat: float = Field(..., example=19.0760)
     class_lng: float = Field(..., example=72.8777)
     secret_seed: Optional[str] = Field(None, description="Cryptographic secret seed for dynamic QR tokens")
 
 class MarkAttendanceRequest(BaseModel):
-    roll_no: str = Field(..., example="STU01")
     session_id: str = Field(..., example="CS301-SEC-A")
     qr_token: str = Field(..., example="CS301-SEC-A.1713400000.a1b2c3d4e5f6")
     device_id: str = Field(..., example="DEV-AARAV-PHONE-01")
@@ -266,7 +292,6 @@ class ManualAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
     roll_no: str = Field(..., example="STU01")
     status: str = Field(..., example="PRESENT", description="'PRESENT' or 'ABSENT'")
-    faculty_id: str = Field("FAC01", example="FAC01")
     reason: str = Field("Phone Dead / Manual Override by Faculty", example="Phone Dead / Battery Drained")
 
 class CreateUserRequest(BaseModel):
@@ -280,7 +305,6 @@ class CreateUserRequest(BaseModel):
     initial_attendance_pct: Optional[float] = Field(80.0, description="Initial attendance percentage")
 
 class EnrollFaceRequest(BaseModel):
-    roll_no: str = Field(..., example="STU01")
     live_selfie_base64: str = Field(..., description="Base64 encoded reference face capture")
     consent_given: bool = Field(True, description="Explicit student consent for biometric template storage")
 
@@ -347,19 +371,14 @@ def root():
 # 1. POST /api/login (Role-Based Access: Student, Faculty, Admin)
 # ------------------------------------------------------------------------------
 @app.post("/api/login")
-def login(req: LoginRequest, db: Session = Depends(get_pg_db)):
+@limiter.limit("5/minute")
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db)):
     user = db.query(User).filter(
         (User.roll_no == req.roll_no) | (User.email == req.roll_no)
     ).first()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with identifier '{req.roll_no}' not found."
-        )
-
-    # Password Verification with bcrypt & legacy support
-    if not verify_password(req.password, user.password):
+    # Generic 401 error message for unknown user or wrong password (no 404 user enumeration)
+    if not user or not verify_password(req.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials. Please verify your username and password."
@@ -455,7 +474,12 @@ def login(req: LoginRequest, db: Session = Depends(get_pg_db)):
 # 2. POST /api/sessions/start & GET /api/sessions/{session_id}/qr
 # ------------------------------------------------------------------------------
 @app.post("/api/sessions/start")
-def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
+def start_session(
+    req: SessionStartRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    faculty_id = current_user.roll_no
     session_id = f"{req.subject_name.split()[0]}-{datetime.now().strftime('%m%d%H%M%S')}"
     secret_seed = req.secret_seed or secrets.token_hex(16)
     now = datetime.now(timezone.utc)
@@ -466,7 +490,7 @@ def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
             session_id=session_id,
             session_code=session_id,
             subject_name=req.subject_name,
-            faculty_id=req.faculty_id,
+            faculty_id=faculty_id,
             class_lat=req.class_lat,
             class_lng=req.class_lng,
             secret_seed=secret_seed,
@@ -479,6 +503,7 @@ def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
     else:
         session.status = "ACTIVE"
         session.subject_name = req.subject_name
+        session.faculty_id = faculty_id
         session.class_lat = req.class_lat
         session.class_lng = req.class_lng
         session.secret_seed = secret_seed
@@ -491,7 +516,7 @@ def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
         "session": {
             "session_id": session_id,
             "subject_name": req.subject_name,
-            "faculty_id": req.faculty_id,
+            "faculty_id": faculty_id,
             "class_lat": req.class_lat,
             "class_lng": req.class_lng,
             "status": "ACTIVE",
@@ -500,7 +525,11 @@ def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
     }
 
 @app.get("/api/sessions/{session_id}/qr")
-def get_session_qr(session_id: str, db: Session = Depends(get_pg_db)):
+def get_session_qr(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
     session = db.query(LectureSession).filter(
         (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
     ).first()
@@ -509,6 +538,13 @@ def get_session_qr(session_id: str, db: Session = Depends(get_pg_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Lecture session '{session_id}' not found."
+        )
+
+    # A faculty member may only act on sessions they started (admin may act on any)
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view QR codes for sessions you started."
         )
 
     if session.status != "ACTIVE":
@@ -539,13 +575,18 @@ def get_session_qr(session_id: str, db: Session = Depends(get_pg_db)):
 # 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine with ACID Transactions)
 # ------------------------------------------------------------------------------
 @app.post("/api/attendance/mark")
-def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)):
+def mark_attendance(
+    req: MarkAttendanceRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
     timestamp_now = datetime.now(timezone.utc)
+    roll_no = current_user.roll_no
 
     def log_fraud_and_fail(gate: str, reason: str, extra_meta: Optional[Dict] = None):
         alert = SecurityAlert(
             session_id=req.session_id,
-            roll_no=req.roll_no,
+            roll_no=roll_no,
             used_device_id=req.device_id,
             failed_gate=gate,
             reason=reason,
@@ -570,9 +611,7 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
             }
         )
 
-    student = db.query(User).filter(User.roll_no == req.roll_no).first()
-    if not student:
-        raise HTTPException(status_code=404, detail=f"Student with roll number '{req.roll_no}' not found.")
+    student = current_user
 
     session = db.query(LectureSession).filter(
         (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
@@ -582,7 +621,7 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
 
     existing_student_log = db.query(AttendanceRecord).filter(
         AttendanceRecord.session_id == req.session_id,
-        AttendanceRecord.roll_no == req.roll_no
+        AttendanceRecord.roll_no == roll_no
     ).first()
     if existing_student_log:
         raise HTTPException(
@@ -612,7 +651,7 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
         if bound_device and bound_device != req.device_id:
             log_fraud_and_fail(
                 gate="GATE_1_DEVICE_LOCK",
-                reason=f"Device Mismatch: Student '{req.roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
+                reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
             )
 
     # GATE 2: Dynamic QR Time Check (<= 7 Seconds Expiry Window)
@@ -685,7 +724,7 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
 
     attendance_record = AttendanceRecord(
         session_id=req.session_id,
-        roll_no=req.roll_no,
+        roll_no=roll_no,
         student_name=student.name,
         used_device_id=req.device_id,
         user_lat=req.user_lat,
@@ -728,7 +767,7 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
         "status": attendance_status,
         "message": "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded under Exception Mode. Awaiting Faculty Approval.",
         "details": {
-            "roll_no": req.roll_no,
+            "roll_no": roll_no,
             "session_id": req.session_id,
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
@@ -741,16 +780,19 @@ def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)
 # 3b. POST /api/student/enroll-face (Consent-Based Biometric Enrollment)
 # ------------------------------------------------------------------------------
 @app.post("/api/student/enroll-face")
-def enroll_face(req: EnrollFaceRequest, db: Session = Depends(get_pg_db)):
+def enroll_face(
+    req: EnrollFaceRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
     if not req.consent_given:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Biometric consent is mandatory to store face reference templates."
         )
 
-    student = db.query(User).filter(User.roll_no == req.roll_no).first()
-    if not student:
-        raise HTTPException(status_code=404, detail=f"Student '{req.roll_no}' not found.")
+    student = current_user
+    roll_no = current_user.roll_no
 
     cv2_img = decode_image_base64_to_cv2(req.live_selfie_base64)
     if cv2_img is None:
@@ -762,7 +804,7 @@ def enroll_face(req: EnrollFaceRequest, db: Session = Depends(get_pg_db)):
 
     return {
         "success": True,
-        "roll_no": req.roll_no,
+        "roll_no": roll_no,
         "message": f"Biometric face reference successfully enrolled for student {student.name} with explicit consent.",
         "enrolled_at": datetime.now(timezone.utc).isoformat()
     }
@@ -771,16 +813,26 @@ def enroll_face(req: EnrollFaceRequest, db: Session = Depends(get_pg_db)):
 # 4. POST /api/faculty/manual-attendance (Teacher Manual Attendance Override)
 # ------------------------------------------------------------------------------
 @app.post("/api/faculty/manual-attendance")
-def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depends(get_pg_db)):
-    student = db.query(User).filter(User.roll_no == req.roll_no).first()
-    if not student:
-        raise HTTPException(status_code=404, detail=f"Student '{req.roll_no}' not found.")
-
+def faculty_manual_attendance(
+    req: ManualAttendanceRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
     session = db.query(LectureSession).filter(
         (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only record manual attendance for sessions you started."
+        )
+
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student '{req.roll_no}' not found.")
 
     action_status = req.status.upper()
     if action_status not in ["PRESENT", "ABSENT"]:
@@ -809,7 +861,7 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
             face_match_score=100.0,
             is_exception_mode=False,
             is_manual_override=True,
-            manual_by=req.faculty_id,
+            manual_by=current_user.roll_no,
             reason=req.reason,
             status=action_status,
             marked_at=timestamp_now
@@ -818,7 +870,7 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
     else:
         record.status = action_status
         record.is_manual_override = True
-        record.manual_by = req.faculty_id
+        record.manual_by = current_user.roll_no
         record.reason = req.reason
         record.reviewed_at = timestamp_now
 
@@ -861,9 +913,9 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
     # Immutable Audit Log
     record_audit_log(
         db=db,
-        actor_id=req.faculty_id,
-        actor_name=f"Faculty ({req.faculty_id})",
-        actor_role="faculty",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
         action="MANUAL_ATTENDANCE_OVERRIDE",
         target_type="ATTENDANCE_RECORD",
         target_id=f"{req.session_id}:{req.roll_no}",
@@ -892,7 +944,17 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
 # 5. GET /api/student/{roll_no}/dashboard
 # ------------------------------------------------------------------------------
 @app.get("/api/student/{roll_no}/dashboard")
-def student_dashboard(roll_no: str, db: Session = Depends(get_pg_db)):
+def student_dashboard(
+    roll_no: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    if current_user.role == "student" and current_user.roll_no != roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Students can only view their own dashboard."
+        )
+
     student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
@@ -995,13 +1057,23 @@ def student_dashboard(roll_no: str, db: Session = Depends(get_pg_db)):
 # 6. GET /api/faculty/session/{session_id}/live & POST /api/faculty/approve
 # ------------------------------------------------------------------------------
 @app.get("/api/faculty/session/{session_id}/live")
-def get_faculty_live_session(session_id: str, db: Session = Depends(get_pg_db)):
+def get_faculty_live_session(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
     session = db.query(LectureSession).filter(
         (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
     ).first()
 
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view live attendance for sessions you started."
+        )
 
     records = db.query(AttendanceRecord).filter(
         AttendanceRecord.session_id == session_id
@@ -1058,7 +1130,23 @@ def get_faculty_live_session(session_id: str, db: Session = Depends(get_pg_db)):
     }
 
 @app.post("/api/faculty/approve")
-def approve_exception(req: FacultyApproveRequest, db: Session = Depends(get_pg_db)):
+def approve_exception(
+    req: FacultyApproveRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only approve exception attendance for sessions you started."
+        )
+
     action = req.action.upper()
     if action not in ["APPROVE", "REJECT"]:
         raise HTTPException(status_code=400, detail="Action must be either 'APPROVE' or 'REJECT'")
@@ -1093,9 +1181,9 @@ def approve_exception(req: FacultyApproveRequest, db: Session = Depends(get_pg_d
 
     record_audit_log(
         db=db,
-        actor_id="FACULTY",
-        actor_name="Faculty Reviewer",
-        actor_role="faculty",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
         action="EXCEPTION_APPROVAL",
         target_type="ATTENDANCE_RECORD",
         target_id=f"{req.session_id}:{req.roll_no}",
@@ -1119,7 +1207,10 @@ def approve_exception(req: FacultyApproveRequest, db: Session = Depends(get_pg_d
 # 7. ADMIN ENDPOINTS: Overview, User Management, Device Reset
 # ------------------------------------------------------------------------------
 @app.get("/api/admin/overview")
-def admin_overview(db: Session = Depends(get_pg_db)):
+def admin_overview(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
     students = db.query(User).filter(User.role == "student").all()
     faculty_list = db.query(User).filter(User.role == "faculty").all()
     admins = db.query(User).filter(User.role == "admin").all()
@@ -1179,7 +1270,11 @@ def admin_overview(db: Session = Depends(get_pg_db)):
     }
 
 @app.post("/api/admin/users")
-def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
+def admin_create_user(
+    req: CreateUserRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
     role = req.role.lower()
     if role not in ["student", "faculty", "admin"]:
         raise HTTPException(status_code=400, detail="Role must be 'student', 'faculty', or 'admin'.")
@@ -1234,8 +1329,8 @@ def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
 
     record_audit_log(
         db=db,
-        actor_id="ADM01",
-        actor_name="System Administrator",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
         actor_role="admin",
         action="USER_CREATED",
         target_type="USER",
@@ -1257,7 +1352,12 @@ def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
     }
 
 @app.post("/api/admin/reset-device/{roll_no}")
-def admin_reset_device(roll_no: str, req: Optional[ResetDeviceRequest] = None, db: Session = Depends(get_pg_db)):
+def admin_reset_device(
+    roll_no: str,
+    req: Optional[ResetDeviceRequest] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
     student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
@@ -1270,8 +1370,8 @@ def admin_reset_device(roll_no: str, req: Optional[ResetDeviceRequest] = None, d
     reason = req.reason if req and req.reason else "Hardware device lock reset by administrator"
     record_audit_log(
         db=db,
-        actor_id="ADM01",
-        actor_name="System Administrator",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
         actor_role="admin",
         action="DEVICE_RESET",
         target_type="USER",
@@ -1289,7 +1389,12 @@ def admin_reset_device(roll_no: str, req: Optional[ResetDeviceRequest] = None, d
     }
 
 @app.post("/api/admin/reset-face/{roll_no}")
-def admin_reset_face(roll_no: str, req: Optional[ResetDeviceRequest] = None, db: Session = Depends(get_pg_db)):
+def admin_reset_face(
+    roll_no: str,
+    req: Optional[ResetDeviceRequest] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
     student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
@@ -1301,8 +1406,8 @@ def admin_reset_face(roll_no: str, req: Optional[ResetDeviceRequest] = None, db:
     reason = req.reason if req and req.reason else "Biometric reference template reset by administrator"
     record_audit_log(
         db=db,
-        actor_id="ADM01",
-        actor_name="System Administrator",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
         actor_role="admin",
         action="FACE_RESET",
         target_type="USER",
@@ -1327,6 +1432,7 @@ def get_admin_audit_logs(
     limit: int = 50,
     action: Optional[str] = None,
     actor_id: Optional[str] = None,
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_pg_db)
 ):
     query = db.query(AuditLog)
@@ -1342,7 +1448,10 @@ def get_admin_audit_logs(
     }
 
 @app.get("/api/subjects")
-def get_subjects(db: Session = Depends(get_pg_db)):
+def get_subjects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
     subjects = db.query(Subject).order_by(Subject.code.asc()).all()
     return {
         "count": len(subjects),
@@ -1350,7 +1459,11 @@ def get_subjects(db: Session = Depends(get_pg_db)):
     }
 
 @app.post("/api/admin/subjects")
-def admin_create_subject(req: CreateSubjectRequest, db: Session = Depends(get_pg_db)):
+def admin_create_subject(
+    req: CreateSubjectRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
     existing = db.query(Subject).filter(Subject.code == req.code.upper()).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Subject with code '{req.code}' already exists.")
@@ -1370,8 +1483,8 @@ def admin_create_subject(req: CreateSubjectRequest, db: Session = Depends(get_pg
     db.add(subj)
     record_audit_log(
         db=db,
-        actor_id="ADM01",
-        actor_name="System Administrator",
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
         actor_role="admin",
         action="SUBJECT_CREATED",
         target_type="SUBJECT",
@@ -1387,7 +1500,17 @@ def admin_create_subject(req: CreateSubjectRequest, db: Session = Depends(get_pg
     }
 
 @app.get("/api/student/{roll_no}/subjects")
-def get_student_subjects(roll_no: str, db: Session = Depends(get_pg_db)):
+def get_student_subjects(
+    roll_no: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    if current_user.role == "student" and current_user.roll_no != roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Students can only view their own subjects."
+        )
+
     student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")

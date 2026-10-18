@@ -65,22 +65,22 @@ export const api = {
     setAuthToken(null);
   },
 
-  async enrollFace({ roll_no, live_selfie_base64, consent_given = true }) {
+  async enrollFace({ live_selfie_base64, consent_given = true }) {
     const res = await fetch(`${API_BASE}/api/student/enroll-face`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ roll_no, live_selfie_base64, consent_given })
+      body: JSON.stringify({ live_selfie_base64, consent_given })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Face enrollment failed');
     return data;
   },
 
-  async startSession({ subject_name, faculty_id, class_lat, class_lng }) {
+  async startSession({ subject_name, class_lat, class_lng }) {
     const res = await fetch(`${API_BASE}/api/sessions/start`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ subject_name, faculty_id, class_lat, class_lng })
+      body: JSON.stringify({ subject_name, class_lat, class_lng })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to start session');
@@ -97,10 +97,11 @@ export const api = {
   },
 
   async markAttendance(payload) {
+    const { roll_no, ...cleanPayload } = payload;
     const res = await fetch(`${API_BASE}/api/attendance/mark`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify(payload)
+      body: JSON.stringify(cleanPayload)
     });
     const data = await res.json();
     if (!res.ok) {
@@ -140,11 +141,11 @@ export const api = {
     return data;
   },
 
-  async facultyManualAttendance({ session_id, roll_no, status, faculty_id, reason }) {
+  async facultyManualAttendance({ session_id, roll_no, status, reason }) {
     const res = await fetch(`${API_BASE}/api/faculty/manual-attendance`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ session_id, roll_no, status, faculty_id, reason })
+      body: JSON.stringify({ session_id, roll_no, status, reason })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Manual attendance failed');

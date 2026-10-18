@@ -91,7 +91,6 @@ export default function StudentPortal({ user }) {
     setEnrollingFace(true);
     try {
       const res = await api.enrollFace({
-        roll_no: user.roll_no,
         live_selfie_base64: enrollSelfie,
         consent_given: enrollConsent
       });
@@ -238,7 +237,6 @@ export default function StudentPortal({ user }) {
       : (selfieCaptured || generateSyntheticSelfie('#4f46e5'));
 
     const payload = {
-      roll_no: user.roll_no,
       session_id: sessionId,
       qr_token: tokenToSend,
       device_id: usedDeviceId,
