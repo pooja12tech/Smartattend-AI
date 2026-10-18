@@ -340,3 +340,63 @@ def test_pending_approval_does_not_count_until_approved(client, faculty_auth):
         assert stats.current_streak == 1
     finally:
         db.close()
+
+def test_faculty_approve_fails_if_already_present_or_absent(client, faculty_auth):
+    """Assert that approving a record that is already PRESENT or ABSENT returns HTTP 400."""
+    db = get_session_factory()()
+    session_id = f"TEST-STATUS-CHECK-{uuid.uuid4().hex[:6]}"
+    test_roll_present = f"STU-PRES-{uuid.uuid4().hex[:6]}"
+    test_roll_absent = f"STU-ABS-{uuid.uuid4().hex[:6]}"
+    try:
+        sess = LectureSession(
+            session_id=session_id,
+            session_code=session_id,
+            subject_name="CS301 - Operating Systems",
+            faculty_id="FAC01",
+            secret_seed="test_seed_status_check",
+            status="ACTIVE"
+        )
+        db.add(sess)
+
+        # 1. Record with status PRESENT
+        rec_present = AttendanceRecord(
+            session_id=session_id,
+            roll_no=test_roll_present,
+            student_name="Present Student",
+            used_device_id=f"DEV_{test_roll_present}",
+            status="PRESENT"
+        )
+        db.add(rec_present)
+
+        # 2. Record with status ABSENT
+        rec_absent = AttendanceRecord(
+            session_id=session_id,
+            roll_no=test_roll_absent,
+            student_name="Absent Student",
+            used_device_id=f"DEV_{test_roll_absent}",
+            status="ABSENT"
+        )
+        db.add(rec_absent)
+        db.commit()
+    finally:
+        db.close()
+
+    # Attempting to approve an already PRESENT record must return HTTP 400
+    res_present = client.post("/api/faculty/approve", json={
+        "session_id": session_id,
+        "roll_no": test_roll_present,
+        "action": "APPROVE",
+        "remarks": "Attempting to re-approve PRESENT record"
+    }, headers=faculty_auth)
+    assert res_present.status_code == 400
+    assert "Only records in 'PENDING_APPROVAL'" in res_present.json()["detail"]
+
+    # Attempting to approve an already ABSENT record must return HTTP 400
+    res_absent = client.post("/api/faculty/approve", json={
+        "session_id": session_id,
+        "roll_no": test_roll_absent,
+        "action": "APPROVE",
+        "remarks": "Attempting to approve ABSENT record"
+    }, headers=faculty_auth)
+    assert res_absent.status_code == 400
+    assert "Only records in 'PENDING_APPROVAL'" in res_absent.json()["detail"]

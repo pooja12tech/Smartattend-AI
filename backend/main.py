@@ -7,16 +7,19 @@ import hmac
 import hashlib
 import secrets
 import base64
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
 QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
+SESSION_MAX_MINUTES = int(os.getenv("SESSION_MAX_MINUTES", "120"))
 
 import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import numpy as np
 import pandas as pd
 import joblib
@@ -104,8 +107,21 @@ def load_ml_model():
 
 load_ml_model()
 
+async def auto_end_sessions_background_task():
+    while True:
+        try:
+            await asyncio.sleep(60)
+            from db_postgres import get_session_factory
+            session_factory = get_session_factory()
+            with session_factory() as db:
+                auto_close_expired_sessions(db)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Auto-End Background Task Error]: {e}")
+
 @app.on_event("startup")
-def startup_db_init():
+async def startup_db_init():
     """Ensure database schema is registered and seed users if database is empty."""
     init_db_schema()
     conn_info = check_postgres_connection()
@@ -125,6 +141,8 @@ def startup_db_init():
                     print(f"[Main Startup Warning] Seeding failed: {e}")
             else:
                 print(f"[Main Startup] Database is empty but ENVIRONMENT is '{env}'. Auto-seed skipped.")
+
+    asyncio.create_task(auto_end_sessions_background_task())
 
 # ==============================================================================
 # Helper Utilities (Haversine, Dynamic QR, Face Matching, Bunk Calculator)
@@ -363,6 +381,114 @@ def recompute_student_subject_enrollment(db: Session, roll_no: str, subject_code
 
     return enrollment
 
+def finalize_session_absentees(db: Session, session: LectureSession, now: datetime, absent_reason: str) -> tuple[int, bool]:
+    """
+    Finds enrolled students for session's subject who have not marked attendance,
+    and inserts ABSENT AttendanceRecord for them.
+    Returns (absentees_created, has_enrollments).
+    """
+    subject = None
+    if session.subject_id:
+        subject = db.query(Subject).filter(Subject.id == session.subject_id).first()
+    if not subject:
+        code_part = session.subject_name.split("-")[0].strip() if "-" in session.subject_name else session.subject_name.split(" ")[0].strip()
+        name_part = session.subject_name.split("-")[-1].strip() if "-" in session.subject_name else session.subject_name.strip()
+        subject = db.query(Subject).filter(
+            (Subject.code == session.subject_name) |
+            (Subject.name == session.subject_name) |
+            (Subject.code == code_part) |
+            (Subject.name == name_part)
+        ).first()
+
+    enrollments = []
+    subject_code = subject.code if subject else (session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name)
+
+    if subject:
+        enrollments = db.query(StudentSubjectEnrollment).filter(
+            (StudentSubjectEnrollment.subject_code == subject.code) |
+            (StudentSubjectEnrollment.subject_name == subject.name)
+        ).all()
+    else:
+        enrollments = db.query(StudentSubjectEnrollment).filter(
+            (StudentSubjectEnrollment.subject_code == session.subject_name) |
+            (StudentSubjectEnrollment.subject_code == subject_code) |
+            (StudentSubjectEnrollment.subject_name == session.subject_name)
+        ).all()
+
+    if not enrollments:
+        return 0, False
+
+    candidate_students = [(enr.roll_no, enr.student_name) for enr in enrollments]
+    existing_records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+    already_marked_rolls = {r.roll_no for r in existing_records}
+
+    absentees_created = 0
+    affected_rolls = set()
+
+    for roll_no, student_name in candidate_students:
+        if roll_no not in already_marked_rolls:
+            absent_record = AttendanceRecord(
+                session_id=session.session_id,
+                roll_no=roll_no,
+                student_name=student_name,
+                used_device_id=f"ABSENT_{roll_no}",
+                distance_meters=0.0,
+                face_match_score=0.0,
+                face_status="ABSENT",
+                is_exception_mode=False,
+                is_manual_override=False,
+                status="ABSENT",
+                reason=absent_reason,
+                marked_at=now
+            )
+            db.add(absent_record)
+            absentees_created += 1
+            already_marked_rolls.add(roll_no)
+            affected_rolls.add(roll_no)
+
+    db.flush()
+
+    for roll_no in affected_rolls:
+        student_user = db.query(User).filter(User.roll_no == roll_no).first()
+        if student_user:
+            recompute_student_stats(db, student_user.id)
+            recompute_student_subject_enrollment(db, roll_no, subject_code)
+
+    return absentees_created, True
+
+def auto_close_expired_sessions(db: Session, now: Optional[datetime] = None) -> List[str]:
+    """
+    Finds all ACTIVE lecture sessions started more than SESSION_MAX_MINUTES ago,
+    marks them ENDED, and generates ABSENT records for students who did not mark attendance.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=SESSION_MAX_MINUTES)
+
+    expired_sessions = db.query(LectureSession).filter(
+        LectureSession.status == "ACTIVE",
+        LectureSession.started_at <= cutoff
+    ).all()
+
+    closed_session_ids = []
+    for session in expired_sessions:
+        session.status = "ENDED"
+        session.ended_at = now
+        finalize_session_absentees(
+            db,
+            session,
+            now,
+            absent_reason=f"Marked absent automatically: Session exceeded max duration of {SESSION_MAX_MINUTES} minutes."
+        )
+        closed_session_ids.append(session.session_id)
+
+    if closed_session_ids:
+        db.commit()
+
+    return closed_session_ids
+
 def evaluate_student_risk(stats: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to run ML risk prediction for a student stats dict."""
     current_att = stats.get("current_attendance_pct", 100.0)
@@ -423,6 +549,7 @@ class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
     class_lat: float = Field(..., example=19.0760)
     class_lng: float = Field(..., example=72.8777)
+    subject_id: Optional[str] = None
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
@@ -638,9 +765,31 @@ def start_session(
     secret_seed = secrets.token_hex(32)
     now = datetime.now(timezone.utc)
 
+    # Resolve Subject and subject_id
+    subject = None
+    if getattr(req, "subject_id", None):
+        try:
+            subj_uuid = uuid.UUID(req.subject_id)
+            subject = db.query(Subject).filter(Subject.id == subj_uuid).first()
+        except Exception:
+            pass
+
+    if not subject:
+        code_part = req.subject_name.split("-")[0].strip() if "-" in req.subject_name else req.subject_name.split(" ")[0].strip()
+        name_part = req.subject_name.split("-")[-1].strip() if "-" in req.subject_name else req.subject_name.strip()
+        subject = db.query(Subject).filter(
+            (Subject.code == req.subject_name) |
+            (Subject.name == req.subject_name) |
+            (Subject.code == code_part) |
+            (Subject.name == name_part)
+        ).first()
+
+    subject_id = subject.id if subject else None
+
     session = LectureSession(
         session_id=session_id,
         session_code=session_code,
+        subject_id=subject_id,
         subject_name=req.subject_name,
         faculty_id=faculty_id,
         class_lat=req.class_lat,
@@ -660,6 +809,7 @@ def start_session(
         "session": {
             "session_id": session_id,
             "session_code": session_code,
+            "subject_id": str(subject_id) if subject_id else None,
             "subject_name": req.subject_name,
             "faculty_id": faculty_id,
             "class_lat": req.class_lat,
@@ -753,71 +903,24 @@ def end_session(
     session.status = "ENDED"
     session.ended_at = now
 
-    # Phase 3 Requirement: Auto-create ABSENT attendance records for enrolled students
-    # who did not mark attendance during this lecture session.
-    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
-
-    enrollments = db.query(StudentSubjectEnrollment).filter(
-        (StudentSubjectEnrollment.subject_code == session.subject_name) |
-        (StudentSubjectEnrollment.subject_code == subject_code_prefix) |
-        (StudentSubjectEnrollment.subject_name == session.subject_name)
-    ).all()
-
-    if enrollments:
-        candidate_students = [(enr.roll_no, enr.student_name) for enr in enrollments]
-    else:
-        # Fallback: When no explicit StudentSubjectEnrollment exists for this subject,
-        # default to all active students in the database so no absentees are silently dropped.
-        active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
-        candidate_students = [(s.roll_no, s.name) for s in active_students]
-
-    # Find who already has an AttendanceRecord in this session
-    existing_records = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == session.session_id
-    ).all()
-    already_marked_rolls = {r.roll_no for r in existing_records}
-
-    absentees_created = 0
-    affected_rolls = set()
-
-    for roll_no, student_name in candidate_students:
-        if roll_no not in already_marked_rolls:
-            absent_record = AttendanceRecord(
-                session_id=session.session_id,
-                roll_no=roll_no,
-                student_name=student_name,
-                used_device_id=f"ABSENT_{roll_no}",
-                distance_meters=0.0,
-                face_match_score=0.0,
-                face_status="ABSENT",
-                is_exception_mode=False,
-                is_manual_override=False,
-                status="ABSENT",
-                reason="Marked absent automatically upon lecture session end.",
-                marked_at=now
-            )
-            db.add(absent_record)
-            absentees_created += 1
-            already_marked_rolls.add(roll_no)
-            affected_rolls.add(roll_no)
-
-    db.flush()
-
-    # Recompute stats for all affected students
-    for roll_no in affected_rolls:
-        student_user = db.query(User).filter(User.roll_no == roll_no).first()
-        if student_user:
-            recompute_student_stats(db, student_user.id)
-            recompute_student_subject_enrollment(db, roll_no, subject_code_prefix)
-
+    absentees_created, has_enrollments = finalize_session_absentees(
+        db,
+        session,
+        now,
+        absent_reason="Marked absent automatically upon lecture session end."
+    )
     db.commit()
 
-    return {
+    res_data = {
         "success": True,
         "message": f"Lecture session '{session.subject_name}' ended successfully. Attendance is now closed.",
         "session": session.to_dict(),
         "absentees_created": absentees_created
     }
+    if not has_enrollments:
+        res_data["warning"] = "Subject has no enrolled students. No absentees created."
+
+    return res_data
 
 # ------------------------------------------------------------------------------
 # 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine with ACID Transactions)
@@ -1004,17 +1107,27 @@ def mark_attendance(
         status=attendance_status,
         marked_at=timestamp_now
     )
-    db.add(attendance_record)
+    try:
+        db.add(attendance_record)
+        db.flush()
 
-    db.flush()
+        # Phase 3: Single Source of Truth - Recompute stats directly from attendance records
+        stats = recompute_student_stats(db, student.id)
+        subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+        recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
 
-    # Phase 3: Single Source of Truth - Recompute stats directly from attendance records
-    stats = recompute_student_stats(db, student.id)
-    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
-    recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
-
-    student.updated_at = timestamp_now
-    db.commit()
+        student.updated_at = timestamp_now
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "failed_gate": "DUPLICATE_SUBMISSION",
+                "reason": "Attendance has already been recorded for this student or device in this lecture session."
+            }
+        )
 
     return {
         "success": True,

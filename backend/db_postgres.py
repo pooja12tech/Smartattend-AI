@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Load environment variables from backend/.env or root .env
-env_path = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=env_path, override=True)
+# Load environment variables from backend/.env or root .env (never read during testing)
+if not os.getenv("TESTING") and not os.getenv("PYTEST_CURRENT_TEST"):
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
 
 Base = declarative_base()
 

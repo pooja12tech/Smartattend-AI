@@ -94,6 +94,9 @@ class LectureSession(Base):
     __tablename__ = "lecture_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    subject_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     session_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     session_code: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -120,6 +123,7 @@ class LectureSession(Base):
         return {
             "session_id": self.session_id,
             "session_code": self.session_code,
+            "subject_id": str(self.subject_id) if self.subject_id else None,
             "subject_name": self.subject_name,
             "faculty_id": self.faculty_id,
             "room_no": self.room_no,

@@ -259,6 +259,10 @@ def run_postgres_seed(session: Session = None) -> bool:
 
         session.flush()
 
+        cs301 = session.query(Subject).filter(Subject.code == "CS301").first()
+        if cs301 and sample_session:
+            sample_session.subject_id = cs301.id
+
         # 6. Student Subject Enrollments
         # STU01 (High: 85%), STU02 (Borderline: 76%), STU03 (At-risk: 65%)
         enrollments = [
