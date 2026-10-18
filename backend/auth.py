@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 from db_postgres import get_pg_db
 from models import User
 
-JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_smartattend_jwt_key_2026_dev")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    raise RuntimeError("JWT_SECRET environment variable is missing or shorter than 32 characters.")
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
 
@@ -24,8 +27,8 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, stored_password: str) -> bool:
     """
-    Verifies a password against its bcrypt hash.
-    Maintains safe backward compatibility for legacy plaintext passwords during transition.
+    Verifies a password against its bcrypt hash only.
+    Rejects legacy plaintext passwords with no fallback.
     """
     if not stored_password:
         return False
@@ -36,8 +39,7 @@ def verify_password(plain_password: str, stored_password: str) -> bool:
             return bcrypt.checkpw(plain_password.encode("utf-8"), stored_password.encode("utf-8"))
         except Exception:
             return False
-    # Backward compatibility: legacy plaintext match
-    return plain_password == stored_password
+    return False
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Generates a signed JWT access token with role and subject claims."""

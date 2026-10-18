@@ -195,11 +195,37 @@ export default function StudentPortal({ user }) {
       }
     } catch (err) {
       // Fallback if session is not active yet, create a token format
-      const curEpoch = int(Date.now() / 1000);
+      const curEpoch = Math.floor(Date.now() / 1000);
       setScannedToken(`${sessionId}.${curEpoch}.demo_valid_sig`);
       if (!selfieCaptured) {
         setSelfieCaptured(generateSyntheticSelfie('#6366f1'));
       }
+    }
+  };
+
+  const [submittingException, setSubmittingException] = useState(false);
+  const [exceptionResult, setExceptionResult] = useState(null);
+
+  const handleRequestException = async () => {
+    if (!confirm('Submit request: "I don\'t have my registered device" for this session? This will be marked as PENDING APPROVAL for faculty review.')) return;
+    setSubmittingException(true);
+    setExceptionResult(null);
+    try {
+      const res = await api.requestDeviceException({
+        session_id: sessionId,
+        device_id: deviceId,
+        reason: "I don't have my registered device",
+        live_selfie_base64: selfieCaptured
+      });
+      setExceptionResult(res.message || 'Exception request submitted. Awaiting faculty approval.');
+      setTimeout(() => {
+        setExceptionResult(null);
+        setIsScannerOpen(false);
+      }, 3500);
+    } catch (err) {
+      alert('Error submitting exception request: ' + err.message);
+    } finally {
+      setSubmittingException(false);
     }
   };
 
@@ -242,8 +268,7 @@ export default function StudentPortal({ user }) {
       device_id: usedDeviceId,
       user_lat: userLat,
       user_lng: userLng,
-      live_selfie_base64: liveSelfie,
-      is_exception_mode: false
+      live_selfie_base64: liveSelfie
     };
 
     // Animate Gate 1 (Device Lock)
@@ -470,68 +495,70 @@ export default function StudentPortal({ user }) {
           ) : (
             <div className="text-left space-y-4 pt-2">
               
-              {/* Viva Simulator Toggle (For Presentation / Defense) */}
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setShowSimulator(!showSimulator)}
-                  className="w-full flex items-center justify-between text-slate-300 font-semibold"
-                >
-                  <span className="flex items-center gap-1.5 text-amber-400">
-                    <Sparkles className="w-4 h-4" /> Viva / Defense Anti-Proxy Testing Simulator
-                  </span>
-                  {showSimulator ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-                </button>
+              {/* Viva Simulator Toggle (Shown only in DEMO mode) */}
+              {import.meta.env.VITE_DEMO_MODE === 'true' && (
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setShowSimulator(!showSimulator)}
+                    className="w-full flex items-center justify-between text-slate-300 font-semibold"
+                  >
+                    <span className="flex items-center gap-1.5 text-amber-400">
+                      <Sparkles className="w-4 h-4" /> Viva / Defense Anti-Proxy Testing Simulator
+                    </span>
+                    {showSimulator ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  </button>
 
-                {showSimulator && (
-                  <div className="mt-3 pt-3 border-t border-slate-800 space-y-2 text-slate-300">
-                    <p className="text-[11px] text-slate-400">
-                      Toggle any of these switches to demonstrate how SmartAttend-AI immediately catches and blocks fraud attempts:
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={simExpiredQR}
-                          onChange={(e) => setSimExpiredQR(e.target.checked)}
-                          className="rounded text-rose-500"
-                        />
-                        <span className="text-[11px]">Simulate Expired QR (&gt;7s)</span>
-                      </label>
+                  {showSimulator && (
+                    <div className="mt-3 pt-3 border-t border-slate-800 space-y-2 text-slate-300">
+                      <p className="text-[11px] text-slate-400">
+                        Toggle any of these switches to demonstrate how SmartAttend-AI immediately catches and blocks fraud attempts:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={simExpiredQR}
+                            onChange={(e) => setSimExpiredQR(e.target.checked)}
+                            className="rounded text-rose-500"
+                          />
+                          <span className="text-[11px]">Simulate Expired QR (&gt;7s)</span>
+                        </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={simFarGPS}
-                          onChange={(e) => setSimFarGPS(e.target.checked)}
-                          className="rounded text-rose-500"
-                        />
-                        <span className="text-[11px]">Simulate 3km Away GPS</span>
-                      </label>
+                        <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={simFarGPS}
+                            onChange={(e) => setSimFarGPS(e.target.checked)}
+                            className="rounded text-rose-500"
+                          />
+                          <span className="text-[11px]">Simulate 3km Away GPS</span>
+                        </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={simWrongDevice}
-                          onChange={(e) => setSimWrongDevice(e.target.checked)}
-                          className="rounded text-rose-500"
-                        />
-                        <span className="text-[11px]">Simulate Alien / Proxy Phone</span>
-                      </label>
+                        <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={simWrongDevice}
+                            onChange={(e) => setSimWrongDevice(e.target.checked)}
+                            className="rounded text-rose-500"
+                          />
+                          <span className="text-[11px]">Simulate Alien / Proxy Phone</span>
+                        </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={simFaceMismatch}
-                          onChange={(e) => setSimFaceMismatch(e.target.checked)}
-                          className="rounded text-rose-500"
-                        />
-                        <span className="text-[11px]">Simulate Face Mismatch</span>
-                      </label>
+                        <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={simFaceMismatch}
+                            onChange={(e) => setSimFaceMismatch(e.target.checked)}
+                            className="rounded text-rose-500"
+                          />
+                          <span className="text-[11px]">Simulate Face Mismatch</span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Dynamic QR Token Input & Desktop Helper */}
               <div className="space-y-1.5">
@@ -709,6 +736,25 @@ export default function StudentPortal({ user }) {
                 >
                   Close
                 </button>
+              </div>
+
+              {/* Student Exception Request (I don't have my registered device) */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleRequestException}
+                  disabled={submittingException || submittingAttendance}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  {submittingException ? 'Submitting Exception Request...' : "I don't have my registered device (Submit for Faculty Approval)"}
+                </button>
+                {exceptionResult && (
+                  <div className="p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2 mt-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>{exceptionResult}</span>
+                  </div>
+                )}
               </div>
 
             </div>

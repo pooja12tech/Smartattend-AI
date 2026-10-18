@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export const getDeviceId = () => {
   let devId = localStorage.getItem('smartattend_device_id');
@@ -41,15 +41,15 @@ const getHeaders = (extraHeaders = {}) => {
 
 export const api = {
   async getHealth() {
-    const res = await fetch(`${API_BASE}/`);
+    const res = await fetch(`${API_BASE}/api/health`);
     return res.json();
   },
 
-  async login({ roll_no, password, device_id, is_exception_mode = false }) {
+  async login({ roll_no, password, device_id }) {
     const res = await fetch(`${API_BASE}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roll_no, password, device_id, is_exception_mode })
+      body: JSON.stringify({ roll_no, password, device_id })
     });
     const data = await res.json();
     if (!res.ok) {
@@ -122,6 +122,17 @@ export const api = {
     return data;
   },
 
+  async requestDeviceException({ session_id, device_id, reason, live_selfie_base64 }) {
+    const res = await fetch(`${API_BASE}/api/attendance/request-exception`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ session_id, device_id, reason, live_selfie_base64 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Exception request failed');
+    return data;
+  },
+
   async getStudentDashboard(rollNo) {
     const res = await fetch(`${API_BASE}/api/student/${rollNo}/dashboard`, {
       headers: getHeaders()
@@ -137,6 +148,15 @@ export const api = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load faculty live session');
+    return data;
+  },
+
+  async getSessionRoster(sessionId) {
+    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/roster`, {
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to fetch session roster');
     return data;
   },
 

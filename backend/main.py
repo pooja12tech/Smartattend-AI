@@ -116,11 +116,15 @@ def startup_db_init():
     with session_factory() as db:
         user_count = db.query(User).count()
         if user_count == 0:
-            print("[Main Startup] Database is empty. Executing initial seed...")
-            try:
-                run_postgres_seed(db)
-            except Exception as e:
-                print(f"[Main Startup Warning] Seeding failed: {e}")
+            env = os.getenv("ENVIRONMENT", "").strip().lower()
+            if env == "development":
+                print("[Main Startup] Database is empty and ENVIRONMENT=development. Executing initial seed...")
+                try:
+                    run_postgres_seed(db)
+                except Exception as e:
+                    print(f"[Main Startup Warning] Seeding failed: {e}")
+            else:
+                print(f"[Main Startup] Database is empty but ENVIRONMENT is '{env}'. Auto-seed skipped.")
 
 # ==============================================================================
 # Helper Utilities (Haversine, Dynamic QR, Face Matching, Bunk Calculator)
@@ -413,8 +417,7 @@ def evaluate_student_risk(stats: Dict[str, Any]) -> Dict[str, Any]:
 class LoginRequest(BaseModel):
     roll_no: str = Field(..., description="Student Roll No (STU01), Faculty ID (FAC01), or Admin ID (ADM01)")
     password: str = Field(..., description="Password (stu123, fac123, admin123)")
-    device_id: str = Field("DEFAULT-DEV-ID", description="Unique hardware/browser device fingerprint")
-    is_exception_mode: bool = Field(False, description="Whether logging in from an alternate/temporary device")
+    device_id: Optional[str] = Field("DEFAULT-DEV-ID", description="Unique hardware/browser device fingerprint")
 
 class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
@@ -428,7 +431,14 @@ class MarkAttendanceRequest(BaseModel):
     user_lat: float = Field(..., example=19.07602)
     user_lng: float = Field(..., example=72.87768)
     live_selfie_base64: str = Field(..., description="Base64 encoded live camera capture")
-    is_exception_mode: bool = Field(False, description="Flag for temporary phone/exception attendance")
+
+class StudentExceptionRequest(BaseModel):
+    session_id: str = Field(..., example="CS301-SEC-A")
+    device_id: Optional[str] = Field("UNREGISTERED-DEV", description="Device ID used when requesting exception")
+    reason: Optional[str] = Field("I don't have my registered device", description="Reason for exception request")
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
+    live_selfie_base64: Optional[str] = None
 
 class FacultyApproveRequest(BaseModel):
     session_id: str
@@ -504,6 +514,7 @@ def record_audit_log(
 # ==============================================================================
 
 @app.get("/")
+@app.get("/api/health")
 def root():
     conn_info = check_postgres_connection()
     return {
@@ -577,7 +588,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             }
         }
 
-    # 3. Student Login (Enforce single-phone hardware lock)
+    # 3. Student Login
     bound_device = user.bound_device_id or user.registered_device_id
 
     if not bound_device:
@@ -587,13 +598,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
         bound_device = req.device_id
         binding_status = "DEVICE_BOUND_SUCCESSFULLY"
     elif bound_device != req.device_id:
-        if not req.is_exception_mode:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account bound to another device. Please use your registered phone or request Faculty Exception Mode."
-            )
-        else:
-            binding_status = "LOGGED_IN_UNDER_EXCEPTION_MODE"
+        binding_status = "UNREGISTERED_DEVICE"
     else:
         binding_status = "DEVICE_VERIFIED"
 
@@ -604,7 +609,6 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
         "access_token": token,
         "token_type": "bearer",
         "binding_status": binding_status,
-        "is_exception_mode": req.is_exception_mode,
         "user": {
             "id": str(user.id),
             "roll_no": user.roll_no,
@@ -838,7 +842,7 @@ def mark_attendance(
             user_lng=req.user_lng,
             distance_meters=extra_meta.get("distance_meters") if extra_meta else None,
             face_match_score=extra_meta.get("face_match_score") if extra_meta else None,
-            is_exception_mode=req.is_exception_mode,
+            is_exception_mode=False,
             resolved=False,
             created_at=timestamp_now
         )
@@ -902,12 +906,11 @@ def mark_attendance(
             reason=f"Proxy Alert: Device '{req.device_id}' was already used by roll number '{device_already_used.roll_no}' in this session. One phone cannot mark attendance for multiple students."
         )
 
-    if not req.is_exception_mode:
-        if bound_device and bound_device != req.device_id:
-            log_fraud_and_fail(
-                gate="GATE_1_DEVICE_LOCK",
-                reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
-            )
+    if bound_device and bound_device != req.device_id:
+        log_fraud_and_fail(
+            gate="GATE_1_DEVICE_LOCK",
+            reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
+        )
 
     # GATE 2: Dynamic QR Window Check (Configurable QR_WINDOW_SECONDS, Accepts Current & Previous Window)
     try:
@@ -984,7 +987,7 @@ def mark_attendance(
             face_status = "VERIFIED"
 
     # GATE 5: Decision & Attendance Logging (Atomic Transaction)
-    attendance_status = "PENDING_APPROVAL" if req.is_exception_mode else "PRESENT"
+    attendance_status = "PRESENT"
 
     attendance_record = AttendanceRecord(
         session_id=session.session_id,
@@ -996,7 +999,7 @@ def mark_attendance(
         distance_meters=round(distance_meters, 1),
         face_match_score=face_match_score,
         face_status=face_status,
-        is_exception_mode=req.is_exception_mode,
+        is_exception_mode=False,
         live_selfie_base64=req.live_selfie_base64,
         status=attendance_status,
         marked_at=timestamp_now
@@ -1016,14 +1019,81 @@ def mark_attendance(
     return {
         "success": True,
         "status": attendance_status,
-        "message": "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded under Exception Mode. Awaiting Faculty Approval.",
+        "message": "Attendance successfully recorded as PRESENT!",
         "details": {
             "roll_no": roll_no,
             "session_id": session.session_id,
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
-            "is_exception_mode": req.is_exception_mode,
             "marked_at": timestamp_now.isoformat()
+        }
+    }
+
+# ------------------------------------------------------------------------------
+# 3a. POST /api/attendance/request-exception (Student Request When Device is Absent)
+# ------------------------------------------------------------------------------
+@app.post("/api/attendance/request-exception")
+def request_device_exception(
+    req: StudentExceptionRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    timestamp_now = datetime.now(timezone.utc)
+    roll_no = current_user.roll_no
+
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if session.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lecture session is not active. Cannot submit exception request."
+        )
+
+    existing = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id,
+        AttendanceRecord.roll_no == roll_no
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attendance or exception request has already been recorded for this student in this session."
+        )
+
+    used_device = req.device_id or f"UNREGISTERED_{roll_no}"
+
+    # Stored as PENDING_APPROVAL - only faculty can turn this into PRESENT via /api/faculty/approve
+    record = AttendanceRecord(
+        session_id=session.session_id,
+        roll_no=roll_no,
+        student_name=current_user.name,
+        used_device_id=used_device,
+        user_lat=req.user_lat or 0.0,
+        user_lng=req.user_lng or 0.0,
+        distance_meters=0.0,
+        face_match_score=0.0,
+        face_status="PENDING_APPROVAL",
+        is_exception_mode=True,
+        live_selfie_base64=req.live_selfie_base64,
+        status="PENDING_APPROVAL",
+        reason=req.reason or "I don't have my registered device",
+        marked_at=timestamp_now
+    )
+    db.add(record)
+    db.commit()
+
+    return {
+        "success": True,
+        "status": "PENDING_APPROVAL",
+        "message": "Exception request submitted: 'I don't have my registered device'. Awaiting faculty approval.",
+        "record": {
+            "session_id": session.session_id,
+            "roll_no": roll_no,
+            "status": "PENDING_APPROVAL",
+            "reason": record.reason
         }
     }
 
@@ -1162,6 +1232,158 @@ def faculty_manual_attendance(
             "updated_streak": stats.current_streak,
             "marked_at": timestamp_now.isoformat()
         }
+    }
+
+# ------------------------------------------------------------------------------
+# 4b. POST /api/faculty/approve (Approve PENDING_APPROVAL Exception Requests)
+# ------------------------------------------------------------------------------
+@app.post("/api/faculty/approve")
+def faculty_approve_attendance(
+    req: FacultyApproveRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only approve exception attendance for sessions you started."
+        )
+
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id,
+        AttendanceRecord.roll_no == req.roll_no
+    ).first()
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Attendance record for student '{req.roll_no}' in session '{req.session_id}' not found."
+        )
+
+    # Phase 4b: only allow records currently in PENDING_APPROVAL (400 otherwise)
+    if record.status != "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Record is currently '{record.status}'. Only records in 'PENDING_APPROVAL' can be approved or rejected."
+        )
+
+    action_upper = req.action.upper()
+    if action_upper not in ["APPROVE", "REJECT"]:
+        raise HTTPException(status_code=400, detail="Action must be 'APPROVE' or 'REJECT'")
+
+    new_status = "PRESENT" if action_upper == "APPROVE" else "ABSENT"
+    old_status = record.status
+    timestamp_now = datetime.now(timezone.utc)
+
+    record.status = new_status
+    record.is_manual_override = True
+    record.manual_by = current_user.roll_no
+    record.reason = req.remarks or f"Faculty {action_upper} exception request"
+    record.reviewed_at = timestamp_now
+
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
+    if student:
+        stats = recompute_student_stats(db, student.id)
+        session_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+        recompute_student_subject_enrollment(db, student.roll_no, session_code_prefix)
+    else:
+        stats = None
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action=f"ATTENDANCE_EXCEPTION_{action_upper}",
+        target_type="ATTENDANCE_RECORD",
+        target_id=f"{session.session_id}:{req.roll_no}",
+        old_value=old_status,
+        new_value=new_status,
+        reason=req.remarks or f"Faculty {action_upper} exception request"
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "status": new_status,
+        "message": f"Student '{req.roll_no}' exception request {action_upper}ED. Status is now {new_status}.",
+        "details": {
+            "session_id": session.session_id,
+            "roll_no": req.roll_no,
+            "status": new_status,
+            "action": action_upper,
+            "updated_pct": stats.current_attendance_pct if stats else None
+        }
+    }
+
+# ------------------------------------------------------------------------------
+# 4c. GET /api/faculty/session/{session_id}/roster (Enrolled Students & Live Status)
+# ------------------------------------------------------------------------------
+@app.get("/api/faculty/session/{session_id}/roster")
+def get_faculty_session_roster(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view roster for sessions you started."
+        )
+
+    # Match subject enrollments
+    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+    enrollments = db.query(StudentSubjectEnrollment).filter(
+        (StudentSubjectEnrollment.subject_code == session.subject_name) |
+        (StudentSubjectEnrollment.subject_code == subject_code_prefix) |
+        (StudentSubjectEnrollment.subject_name == session.subject_name)
+    ).all()
+
+    if enrollments:
+        students_list = [(e.roll_no, e.student_name, e.department or "CSE") for e in enrollments]
+    else:
+        active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
+        students_list = [(s.roll_no, s.name, s.department or "CSE") for s in active_students]
+
+    # Map current session records
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+    records_by_roll = {r.roll_no: r for r in records}
+
+    roster = []
+    for roll_no, name, dept in students_list:
+        rec = records_by_roll.get(roll_no)
+        st = rec.status if rec else "UNMARKED"
+        roster.append({
+            "roll_no": roll_no,
+            "name": name,
+            "department": dept,
+            "status": st,
+            "reason": rec.reason if rec else None,
+            "marked_at": rec.marked_at.isoformat() if rec and rec.marked_at else None,
+            "is_exception_mode": rec.is_exception_mode if rec else False
+        })
+
+    return {
+        "success": True,
+        "session_id": session.session_id,
+        "subject_name": session.subject_name,
+        "total_enrolled": len(roster),
+        "roster": roster
     }
 
 # ------------------------------------------------------------------------------

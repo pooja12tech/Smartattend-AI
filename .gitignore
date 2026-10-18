@@ -34,6 +34,7 @@ backend/.env
 .env.local
 *.sqlite3
 *.db
+*.pkl
 
 # Node / Frontend
 frontend/node_modules/
