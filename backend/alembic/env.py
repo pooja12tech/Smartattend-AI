@@ -11,7 +11,7 @@ backend_dir = Path(__file__).resolve().parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from db_postgres import Base, NORM_DATABASE_URL, get_engine
+from db_postgres import Base, NORM_DATABASE_URL, NORM_DATABASE_URL_UNPOOLED, get_engine
 import models  # Ensure all model tables are registered in Base.metadata
 
 config = context.config
@@ -22,9 +22,12 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_effective_url() -> str:
-    """Retrieves normalized database URL from environment or fallback for offline generation."""
+    """Retrieves unpooled direct database URL for migrations, fallback to pooled, then sqlite."""
+    if NORM_DATABASE_URL_UNPOOLED and "YOUR_NEON_" not in NORM_DATABASE_URL_UNPOOLED:
+        return NORM_DATABASE_URL_UNPOOLED
     from db_postgres import get_effective_database_url
     return get_effective_database_url()
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""

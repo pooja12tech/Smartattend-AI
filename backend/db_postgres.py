@@ -6,8 +6,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Load environment variables from backend/.env or root .env
-env_path = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=env_path, override=True)
+backend_env = Path(__file__).resolve().parent / ".env"
+root_env = Path(__file__).resolve().parent.parent / ".env"
+if root_env.exists():
+    load_dotenv(dotenv_path=root_env, override=False)
+if backend_env.exists():
+    load_dotenv(dotenv_path=backend_env, override=True)
 
 Base = declarative_base()
 
@@ -30,6 +34,9 @@ def normalize_database_url(url: Optional[str]) -> Optional[str]:
 
 RAW_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 NORM_DATABASE_URL = normalize_database_url(RAW_DATABASE_URL)
+
+RAW_DATABASE_URL_UNPOOLED = os.getenv("DATABASE_URL_UNPOOLED", "").strip()
+NORM_DATABASE_URL_UNPOOLED = normalize_database_url(RAW_DATABASE_URL_UNPOOLED)
 
 _engine = None
 _SessionLocal = None
