@@ -32,6 +32,8 @@ ENV/
 backend/.env
 .env
 .env.local
+*.sqlite3
+*.db
 
 # Node / Frontend
 frontend/node_modules/
