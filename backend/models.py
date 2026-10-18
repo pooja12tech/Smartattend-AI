@@ -63,13 +63,13 @@ class StudentStats(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-    current_attendance_pct: Mapped[float] = mapped_column(Float, default=75.0)
-    last_14_days_pct: Mapped[float] = mapped_column(Float, default=75.0)
-    mon_fri_skip_rate: Mapped[float] = mapped_column(Float, default=0.20)
-    first_lecture_miss_rate: Mapped[float] = mapped_column(Float, default=0.15)
+    current_attendance_pct: Mapped[float] = mapped_column(Float, default=100.0)
+    last_14_days_pct: Mapped[float] = mapped_column(Float, default=100.0)
+    mon_fri_skip_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    first_lecture_miss_rate: Mapped[float] = mapped_column(Float, default=0.0)
     current_streak: Mapped[int] = mapped_column(Integer, default=0)
-    total_lectures: Mapped[int] = mapped_column(Integer, default=40)
-    attended_lectures: Mapped[int] = mapped_column(Integer, default=30)
+    total_lectures: Mapped[int] = mapped_column(Integer, default=0)
+    attended_lectures: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     # Relationships

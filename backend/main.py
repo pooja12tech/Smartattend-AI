@@ -7,7 +7,7 @@ import hmac
 import hashlib
 import secrets
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
 QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
@@ -213,13 +213,159 @@ def calculate_bunk_metrics(attended: int, total: int) -> Dict[str, Any]:
             "message": f"You must attend {needed} consecutive class{'es' if needed != 1 else ''} to recover to 75% attendance."
         }
 
+def recompute_student_stats(db: Session, user_id_or_roll: Any) -> Optional[StudentStats]:
+    """
+    Single source of truth for student statistics (Phase 3).
+    Recomputes total_lectures, attended_lectures, current_attendance_pct,
+    current_streak, last_14_days_pct, mon_fri_skip_rate, and first_lecture_miss_rate
+    directly from AttendanceRecord rows for this student.
+
+    - Records with status 'PRESENT' count as attended and towards total.
+    - Records with status 'ABSENT' count towards total.
+    - Records with status 'PENDING_APPROVAL' or 'REJECTED' do not count as attended.
+    - When a student has 0 records, attended = 0, total = 0, current_attendance_pct = 100.0, current_streak = 0.
+    """
+    if not user_id_or_roll:
+        return None
+
+    # Resolve student User object
+    user = None
+    if isinstance(user_id_or_roll, uuid.UUID):
+        user = db.query(User).filter(User.id == user_id_or_roll).first()
+    elif isinstance(user_id_or_roll, str):
+        try:
+            parsed_id = uuid.UUID(user_id_or_roll)
+            user = db.query(User).filter(User.id == parsed_id).first()
+        except ValueError:
+            user = db.query(User).filter(User.roll_no == user_id_or_roll).first()
+
+    if not user:
+        return None
+
+    # Fetch all attendance records for this student ordered chronologically
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.roll_no == user.roll_no
+    ).order_by(AttendanceRecord.marked_at.asc()).all()
+
+    valid_records = [r for r in records if r.status in ("PRESENT", "ABSENT")]
+    total_lectures = len(valid_records)
+    attended_records = [r for r in valid_records if r.status == "PRESENT"]
+    attended_lectures = len(attended_records)
+
+    current_attendance_pct = (
+        round((attended_lectures / total_lectures) * 100.0, 1)
+        if total_lectures > 0 else 100.0
+    )
+
+    # Streak calculation: count consecutive PRESENT (>0) or ABSENT (<0) chronologically
+    current_streak = 0
+    for r in valid_records:
+        if r.status == "PRESENT":
+            current_streak = (current_streak + 1) if current_streak > 0 else 1
+        elif r.status == "ABSENT":
+            current_streak = (current_streak - 1) if current_streak < 0 else -1
+
+    now = datetime.now(timezone.utc)
+    cutoff_14 = now - timedelta(days=14)
+
+    # Last 14 days attendance rate
+    recs_14 = [
+        r for r in valid_records
+        if r.marked_at and (r.marked_at if r.marked_at.tzinfo else r.marked_at.replace(tzinfo=timezone.utc)) >= cutoff_14
+    ]
+    if recs_14:
+        att_14 = sum(1 for r in recs_14 if r.status == "PRESENT")
+        last_14_days_pct = round((att_14 / len(recs_14)) * 100.0, 1)
+    else:
+        last_14_days_pct = current_attendance_pct
+
+    # Mon/Fri skip rate
+    recs_mf = [r for r in valid_records if r.marked_at and r.marked_at.weekday() in (0, 4)]
+    if recs_mf:
+        absent_mf = sum(1 for r in recs_mf if r.status == "ABSENT")
+        mon_fri_skip_rate = round(absent_mf / len(recs_mf), 2)
+    else:
+        mon_fri_skip_rate = 0.0
+
+    # First lecture miss rate (lectures before/at 9 AM)
+    recs_morning = [r for r in valid_records if r.marked_at and r.marked_at.hour <= 9]
+    if recs_morning:
+        absent_morning = sum(1 for r in recs_morning if r.status == "ABSENT")
+        first_lecture_miss_rate = round(absent_morning / len(recs_morning), 2)
+    else:
+        first_lecture_miss_rate = 0.0
+
+    # Upsert into StudentStats cache table
+    stats = db.query(StudentStats).filter(StudentStats.user_id == user.id).first()
+    if not stats:
+        stats = StudentStats(
+            user_id=user.id,
+            current_attendance_pct=current_attendance_pct,
+            last_14_days_pct=last_14_days_pct,
+            mon_fri_skip_rate=mon_fri_skip_rate,
+            first_lecture_miss_rate=first_lecture_miss_rate,
+            current_streak=current_streak,
+            total_lectures=total_lectures,
+            attended_lectures=attended_lectures,
+            updated_at=now
+        )
+        db.add(stats)
+    else:
+        stats.current_attendance_pct = current_attendance_pct
+        stats.last_14_days_pct = last_14_days_pct
+        stats.mon_fri_skip_rate = mon_fri_skip_rate
+        stats.first_lecture_miss_rate = first_lecture_miss_rate
+        stats.current_streak = current_streak
+        stats.total_lectures = total_lectures
+        stats.attended_lectures = attended_lectures
+        stats.updated_at = now
+
+    db.flush()
+    return stats
+
+def recompute_student_subject_enrollment(db: Session, roll_no: str, subject_code: str):
+    """
+    Recalculates total_classes, attended_classes, and current_pct for a student's
+    enrollment in a subject directly from AttendanceRecord matching lecture sessions for that subject.
+    """
+    enrollment = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == roll_no,
+        StudentSubjectEnrollment.subject_code == subject_code
+    ).first()
+    if not enrollment:
+        return None
+
+    records = (
+        db.query(AttendanceRecord)
+        .join(LectureSession, AttendanceRecord.session_id == LectureSession.session_id)
+        .filter(
+            AttendanceRecord.roll_no == roll_no,
+            (LectureSession.subject_name.startswith(subject_code)) |
+            (LectureSession.subject_name == subject_code) |
+            (LectureSession.session_code.startswith(subject_code))
+        )
+        .all()
+    )
+
+    valid_records = [r for r in records if r.status in ("PRESENT", "ABSENT")]
+    if valid_records:
+        total = len(valid_records)
+        attended = sum(1 for r in valid_records if r.status == "PRESENT")
+        enrollment.total_classes = total
+        enrollment.attended_classes = attended
+        enrollment.current_pct = round((attended / total) * 100.0, 1) if total > 0 else 100.0
+        enrollment.updated_at = datetime.now(timezone.utc)
+        db.flush()
+
+    return enrollment
+
 def evaluate_student_risk(stats: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to run ML risk prediction for a student stats dict."""
-    current_att = stats.get("current_attendance_pct", 75.0)
+    current_att = stats.get("current_attendance_pct", 100.0)
     streak = stats.get("current_streak", 0)
     last_14 = stats.get("last_14_days_pct", current_att)
-    mon_fri = stats.get("mon_fri_skip_rate", 0.20)
-    first_lec = stats.get("first_lecture_miss_rate", 0.15)
+    mon_fri = stats.get("mon_fri_skip_rate", 0.0)
+    first_lec = stats.get("first_lecture_miss_rate", 0.0)
 
     if ML_MODEL_PAYLOAD and "model" in ML_MODEL_PAYLOAD:
         model = ML_MODEL_PAYLOAD["model"]
@@ -591,15 +737,82 @@ def end_session(
             detail="Access denied. You can only end sessions you started."
         )
 
+    if session.status == "ENDED":
+        return {
+            "success": True,
+            "message": f"Lecture session '{session.subject_name}' is already ended.",
+            "session": session.to_dict(),
+            "absentees_created": 0
+        }
+
     now = datetime.now(timezone.utc)
     session.status = "ENDED"
     session.ended_at = now
+
+    # Phase 3 Requirement: Auto-create ABSENT attendance records for enrolled students
+    # who did not mark attendance during this lecture session.
+    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+
+    enrollments = db.query(StudentSubjectEnrollment).filter(
+        (StudentSubjectEnrollment.subject_code == session.subject_name) |
+        (StudentSubjectEnrollment.subject_code == subject_code_prefix) |
+        (StudentSubjectEnrollment.subject_name == session.subject_name)
+    ).all()
+
+    if enrollments:
+        candidate_students = [(enr.roll_no, enr.student_name) for enr in enrollments]
+    else:
+        # Fallback: When no explicit StudentSubjectEnrollment exists for this subject,
+        # default to all active students in the database so no absentees are silently dropped.
+        active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
+        candidate_students = [(s.roll_no, s.name) for s in active_students]
+
+    # Find who already has an AttendanceRecord in this session
+    existing_records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+    already_marked_rolls = {r.roll_no for r in existing_records}
+
+    absentees_created = 0
+    affected_rolls = set()
+
+    for roll_no, student_name in candidate_students:
+        if roll_no not in already_marked_rolls:
+            absent_record = AttendanceRecord(
+                session_id=session.session_id,
+                roll_no=roll_no,
+                student_name=student_name,
+                used_device_id=f"ABSENT_{roll_no}",
+                distance_meters=0.0,
+                face_match_score=0.0,
+                face_status="ABSENT",
+                is_exception_mode=False,
+                is_manual_override=False,
+                status="ABSENT",
+                reason="Marked absent automatically upon lecture session end.",
+                marked_at=now
+            )
+            db.add(absent_record)
+            absentees_created += 1
+            already_marked_rolls.add(roll_no)
+            affected_rolls.add(roll_no)
+
+    db.flush()
+
+    # Recompute stats for all affected students
+    for roll_no in affected_rolls:
+        student_user = db.query(User).filter(User.roll_no == roll_no).first()
+        if student_user:
+            recompute_student_stats(db, student_user.id)
+            recompute_student_subject_enrollment(db, roll_no, subject_code_prefix)
+
     db.commit()
 
     return {
         "success": True,
         "message": f"Lecture session '{session.subject_name}' ended successfully. Attendance is now closed.",
-        "session": session.to_dict()
+        "session": session.to_dict(),
+        "absentees_created": absentees_created
     }
 
 # ------------------------------------------------------------------------------
@@ -790,25 +1003,12 @@ def mark_attendance(
     )
     db.add(attendance_record)
 
-    # Update historical student streak and attended stats if PRESENT
-    if attendance_status == "PRESENT":
-        stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
-        if not stats:
-            stats = StudentStats(
-                user_id=student.id,
-                total_lectures=41,
-                attended_lectures=31,
-                current_streak=1,
-                current_attendance_pct=round((31 / 41) * 100.0, 1),
-                updated_at=timestamp_now
-            )
-            db.add(stats)
-        else:
-            stats.total_lectures += 1
-            stats.attended_lectures += 1
-            stats.current_streak = max(1, stats.current_streak + 1)
-            stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
-            stats.updated_at = timestamp_now
+    db.flush()
+
+    # Phase 3: Single Source of Truth - Recompute stats directly from attendance records
+    stats = recompute_student_stats(db, student.id)
+    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+    recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
 
     student.updated_at = timestamp_now
     db.commit()
@@ -896,7 +1096,7 @@ def faculty_manual_attendance(
 
     # Upsert manual record in attendance_records
     record = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.session_id == session.session_id,
         AttendanceRecord.roll_no == req.roll_no
     ).first()
 
@@ -904,10 +1104,10 @@ def faculty_manual_attendance(
 
     if not record:
         record = AttendanceRecord(
-            session_id=req.session_id,
+            session_id=session.session_id,
             roll_no=req.roll_no,
             student_name=student.name,
-            used_device_id="MANUAL-OVERRIDE",
+            used_device_id=f"MANUAL_{req.roll_no}",
             distance_meters=0.0,
             face_match_score=100.0,
             is_exception_mode=False,
@@ -925,41 +1125,14 @@ def faculty_manual_attendance(
         record.reason = req.reason
         record.reviewed_at = timestamp_now
 
-    # Update student's cumulative statistics
-    stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
-    if not stats:
-        stats = StudentStats(
-            user_id=student.id,
-            total_lectures=41,
-            attended_lectures=31 if action_status == "PRESENT" else 30,
-            current_streak=1 if action_status == "PRESENT" else -1,
-            current_attendance_pct=round((31 if action_status == "PRESENT" else 30) / 41 * 100.0, 1),
-            updated_at=timestamp_now
-        )
-        db.add(stats)
-    else:
-        stats.total_lectures += 1
-        if action_status == "PRESENT":
-            stats.attended_lectures += 1
-            stats.current_streak = max(1, stats.current_streak + 1)
-        else:
-            stats.current_streak = min(-1, stats.current_streak - 1 if stats.current_streak < 0 else -1)
+    db.flush()
 
-        stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
-        stats.updated_at = timestamp_now
+    # Phase 3 Requirement: Idempotent manual override recomputes stats from records so total is never double-incremented
+    stats = recompute_student_stats(db, student.id)
 
-    # Update subject-level enrollment tracking if matching subject exists
-    session_code_prefix = req.session_id.split("-")[0].upper()
-    enrollment = db.query(StudentSubjectEnrollment).filter(
-        StudentSubjectEnrollment.roll_no == req.roll_no,
-        StudentSubjectEnrollment.subject_code == session_code_prefix
-    ).first()
-    if enrollment:
-        enrollment.total_classes += 1
-        if action_status == "PRESENT":
-            enrollment.attended_classes += 1
-        enrollment.current_pct = round((enrollment.attended_classes / max(1, enrollment.total_classes)) * 100.0, 1)
-        enrollment.updated_at = timestamp_now
+    # Update subject-level enrollment tracking
+    session_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+    recompute_student_subject_enrollment(db, student.roll_no, session_code_prefix)
 
     # Immutable Audit Log
     record_audit_log(
@@ -1011,22 +1184,25 @@ def student_dashboard(
         raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
 
     stats_obj = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+    if not stats_obj:
+        stats_obj = recompute_student_stats(db, student.id)
+
     if stats_obj:
         stats = stats_obj.to_dict()
     else:
         stats = {
-            "current_attendance_pct": 75.0,
-            "last_14_days_pct": 75.0,
-            "mon_fri_skip_rate": 0.20,
-            "first_lecture_miss_rate": 0.15,
-            "current_streak": 2,
-            "total_lectures": 40,
-            "attended_lectures": 30
+            "current_attendance_pct": 100.0,
+            "last_14_days_pct": 100.0,
+            "mon_fri_skip_rate": 0.0,
+            "first_lecture_miss_rate": 0.0,
+            "current_streak": 0,
+            "total_lectures": 0,
+            "attended_lectures": 0
         }
 
-    current_att = stats.get("current_attendance_pct", 75.0)
-    attended_lec = stats.get("attended_lectures", int(current_att * 0.4))
-    total_lec = stats.get("total_lectures", 40)
+    current_att = stats.get("current_attendance_pct", 100.0)
+    attended_lec = stats.get("attended_lectures", 0)
+    total_lec = stats.get("total_lectures", 0)
     streak = stats.get("current_streak", 0)
 
     # What-If Bunk Calculator
@@ -1205,7 +1381,7 @@ def approve_exception(
     new_status = "PRESENT" if action == "APPROVE" else "REJECTED"
 
     record = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.session_id == session.session_id,
         AttendanceRecord.roll_no == req.roll_no
     ).first()
 
@@ -1218,17 +1394,13 @@ def approve_exception(
     record.status = new_status
     record.reviewed_at = datetime.now(timezone.utc)
     record.remarks = req.remarks or f"Faculty {action.lower()}d exception."
+    db.flush()
 
-    if new_status == "PRESENT":
-        student = db.query(User).filter(User.roll_no == req.roll_no).first()
-        if student:
-            stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
-            if stats:
-                stats.total_lectures += 1
-                stats.attended_lectures += 1
-                stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
-                stats.current_streak = max(1, stats.current_streak + 1)
-                stats.updated_at = datetime.now(timezone.utc)
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
+    if student:
+        stats = recompute_student_stats(db, student.id)
+        subj_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+        recompute_student_subject_enrollment(db, student.roll_no, subj_prefix)
 
     record_audit_log(
         db=db,
@@ -1358,16 +1530,16 @@ def admin_create_user(
         db.add(new_user)
         db.flush()
 
-        init_att = req.initial_attendance_pct or 80.0
+        init_att = req.initial_attendance_pct if req.initial_attendance_pct is not None else 100.0
         stats = StudentStats(
             user_id=new_user.id,
             current_attendance_pct=init_att,
             last_14_days_pct=init_att,
-            mon_fri_skip_rate=0.15,
-            first_lecture_miss_rate=0.10,
-            current_streak=3,
-            total_lectures=40,
-            attended_lectures=int(40 * (init_att / 100.0)),
+            mon_fri_skip_rate=0.0,
+            first_lecture_miss_rate=0.0,
+            current_streak=0,
+            total_lectures=0,
+            attended_lectures=0,
             updated_at=now
         )
         db.add(stats)
