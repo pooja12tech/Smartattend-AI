@@ -37,8 +37,9 @@ from db_postgres import (
 )
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
-    Subject, StudentSubjectEnrollment, AuditLog
+    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment
 )
+import face_service
 from seed_postgres import run_postgres_seed
 from auth import (
     hash_password,
@@ -123,6 +124,9 @@ async def auto_end_sessions_background_task():
 @app.on_event("startup")
 async def startup_db_init():
     """Ensure database schema is registered and seed users if database is empty."""
+    # Verify Fernet encryption key for biometric templates at rest (fails if missing/weak outside tests)
+    face_service.get_fernet()
+
     init_db_schema()
     conn_info = check_postgres_connection()
     print(f"[Main Startup] Database connection: {conn_info.get('status')} ({conn_info.get('message')})")
@@ -592,6 +596,8 @@ class CreateUserRequest(BaseModel):
 class EnrollFaceRequest(BaseModel):
     live_selfie_base64: str = Field(..., description="Base64 encoded reference face capture")
     consent_given: bool = Field(True, description="Explicit student consent for biometric template storage")
+    consent_text_version: Optional[str] = Field("v1.0", description="Version of consent notice acknowledged")
+
 
 class CreateSubjectRequest(BaseModel):
     code: str = Field(..., example="CS305", description="Unique subject code")
@@ -745,7 +751,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             "department": user.department or "CSE",
             "semester": user.semester or 6,
             "bound_device_id": bound_device,
-            "has_registered_face": bool(user.registered_face_base64)
+            "has_registered_face": bool(user.face_enrollment is not None)
         }
     }
 
@@ -1064,34 +1070,66 @@ def mark_attendance(
             extra_meta={"distance_meters": round(distance_meters, 1)}
         )
 
-    # GATE 4: AI Face Verification
-    live_img = decode_image_base64_to_cv2(req.live_selfie_base64)
-    if live_img is None:
-        log_fraud_and_fail(gate="GATE_4_FACE_VERIFICATION", reason="Unable to decode live selfie image data.")
+    # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
+    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "FACE_NOT_ENROLLED", "message": "Biometric face template not enrolled. Student must complete face enrollment first."}
+        )
 
-    registered_face_b64 = student.registered_face_base64
-    if not registered_face_b64:
-        student.registered_face_base64 = req.live_selfie_base64
-        face_match_score = 100.0
-        face_status = "FIRST_TIME_AUTO_REGISTERED"
+    # In-memory decode of live selfie bytes (never persisted to disk or DB)
+    try:
+        raw_b64 = req.live_selfie_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        live_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_IMAGE", "message": "Unable to decode live selfie image data."}
+        )
+
+    # Face quality check and feature extraction (returns retryable error, NOT security alert)
+    try:
+        live_embedding = face_service.extract_embedding(live_bytes)
+    except face_service.FaceQualityError as fqe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": fqe.code, "message": fqe.message}
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "EXTRACTION_FAILED", "message": f"Face embedding extraction failure: {str(err)}"}
+        )
+
+    # Decrypt enrolled embedding & compute cosine similarity
+    ref_embedding = face_service.decrypt_embedding(enrollment.embedding)
+    sim = face_service.cosine_similarity(live_embedding, ref_embedding)
+    face_match_score = round(float(sim * 100.0), 1)
+
+    match_thresh = float(os.getenv("FACE_MATCH_THRESHOLD", "0.50"))
+    review_thresh = float(os.getenv("FACE_REVIEW_THRESHOLD", "0.38"))
+
+    # Three outcomes from cosine similarity:
+    # 1. score >= match -> proceed to PRESENT
+    # 2. between review and match -> record as PENDING_APPROVAL (review required)
+    # 3. below review -> reject and write a SecurityAlert
+    if sim >= match_thresh:
+        face_status = "MATCH"
+        attendance_status = "PRESENT"
+    elif sim >= review_thresh:
+        face_status = "REVIEW_REQUIRED"
+        attendance_status = "PENDING_APPROVAL"
     else:
-        ref_img = decode_image_base64_to_cv2(registered_face_b64)
-        if ref_img is None:
-            face_match_score = 90.0
-            face_status = "REFERENCE_FALLBACK"
-        else:
-            face_match_score = compute_face_similarity_score(live_img, ref_img)
-            if face_match_score < 55.0:
-                log_fraud_and_fail(
-                    gate="GATE_4_FACE_VERIFICATION",
-                    reason=f"Face mismatch: Live selfie similarity was {face_match_score}%, which is below the 55% verification threshold.",
-                    extra_meta={"face_match_score": face_match_score}
-                )
-            face_status = "VERIFIED"
+        log_fraud_and_fail(
+            gate="GATE_4_FACE_VERIFICATION",
+            reason=f"Face mismatch: Live selfie similarity was {face_match_score}%, which is below the review threshold.",
+            extra_meta={"face_match_score": face_match_score}
+        )
 
     # GATE 5: Decision & Attendance Logging (Atomic Transaction)
-    attendance_status = "PRESENT"
-
     attendance_record = AttendanceRecord(
         session_id=session.session_id,
         roll_no=roll_no,
@@ -1102,9 +1140,10 @@ def mark_attendance(
         distance_meters=round(distance_meters, 1),
         face_match_score=face_match_score,
         face_status=face_status,
+        liveness_status="NOT_CHECKED",
         is_exception_mode=False,
-        live_selfie_base64=req.live_selfie_base64,
         status=attendance_status,
+        reason="Biometric similarity in review band (requires faculty review)" if attendance_status == "PENDING_APPROVAL" else None,
         marked_at=timestamp_now
     )
     try:
@@ -1129,15 +1168,18 @@ def mark_attendance(
             }
         )
 
+    msg = "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded as PENDING_APPROVAL (review required)."
     return {
         "success": True,
         "status": attendance_status,
-        "message": "Attendance successfully recorded as PRESENT!",
+        "message": msg,
         "details": {
             "roll_no": roll_no,
             "session_id": session.session_id,
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
+            "face_status": face_status,
+            "liveness_status": "NOT_CHECKED",
             "marked_at": timestamp_now.isoformat()
         }
     }
@@ -1189,8 +1231,8 @@ def request_device_exception(
         distance_meters=0.0,
         face_match_score=0.0,
         face_status="PENDING_APPROVAL",
+        liveness_status="NOT_CHECKED",
         is_exception_mode=True,
-        live_selfie_base64=req.live_selfie_base64,
         status="PENDING_APPROVAL",
         reason=req.reason or "I don't have my registered device",
         marked_at=timestamp_now
@@ -1225,22 +1267,64 @@ def enroll_face(
             detail="Biometric consent is mandatory to store face reference templates."
         )
 
-    student = current_user
-    roll_no = current_user.roll_no
+    # Re-enrollment forbidden without prior admin reset (HTTP 409 Conflict)
+    existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
+    if existing_enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Face template already enrolled for this student. Re-enrollment requires an administrator face reset."
+        )
 
-    cv2_img = decode_image_base64_to_cv2(req.live_selfie_base64)
-    if cv2_img is None:
-        raise HTTPException(status_code=400, detail="Unable to decode face image payload.")
+    # In-memory decode of base64 image bytes (never persisted to disk or DB)
+    try:
+        raw_b64 = req.live_selfie_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        image_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_IMAGE", "message": "Unable to decode face image payload."}
+        )
 
-    student.registered_face_base64 = req.live_selfie_base64
-    student.updated_at = datetime.now(timezone.utc)
+    # Extract normalized float32 facial embedding vector
+    try:
+        embedding = face_service.extract_embedding(image_bytes)
+    except face_service.FaceQualityError as fqe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": fqe.code, "message": fqe.message}
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "EXTRACTION_FAILED", "message": f"Face embedding extraction failure: {str(err)}"}
+        )
+
+    # Encrypt embedding at rest using Fernet
+    encrypted_emb = face_service.encrypt_embedding(embedding)
+    now = datetime.now(timezone.utc)
+    retention_expires = now + timedelta(days=365)
+
+    enrollment = FaceEnrollment(
+        user_id=current_user.id,
+        embedding=encrypted_emb,
+        model_name="buffalo_sc",
+        model_version="insightface-2.1",
+        consent_given_at=now,
+        consent_text_version=req.consent_text_version or "v1.0",
+        created_at=now,
+        retention_expires_at=retention_expires
+    )
+    db.add(enrollment)
+    current_user.updated_at = now
     db.commit()
 
     return {
         "success": True,
-        "roll_no": roll_no,
-        "message": f"Biometric face reference successfully enrolled for student {student.name} with explicit consent.",
-        "enrolled_at": datetime.now(timezone.utc).isoformat()
+        "roll_no": current_user.roll_no,
+        "message": f"Biometric face reference successfully enrolled for student {current_user.name} with explicit consent.",
+        "enrolled_at": now.isoformat()
     }
 
 # ------------------------------------------------------------------------------
@@ -1664,7 +1748,9 @@ def get_faculty_live_session(
                 "device_id": r.used_device_id,
                 "distance_meters": r.distance_meters,
                 "face_match_score": r.face_match_score,
-                "live_selfie_base64": r.live_selfie_base64
+                "face_status": r.face_status,
+                "liveness_status": r.liveness_status,
+                "reason": r.reason
             })
 
     alerts = db.query(SecurityAlert).filter(
@@ -1957,8 +2043,10 @@ def admin_reset_face(
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
 
-    had_face = bool(student.registered_face_base64)
-    student.registered_face_base64 = None
+    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
+    had_face = enrollment is not None
+    if enrollment:
+        db.delete(enrollment)
     student.updated_at = datetime.now(timezone.utc)
 
     reason = req.reason if req and req.reason else "Biometric reference template reset by administrator"

@@ -56,8 +56,32 @@ export default function StudentPortal({ user }) {
   const [enrollConsent, setEnrollConsent] = useState(true);
   const [enrollingFace, setEnrollingFace] = useState(false);
   const [faceEnrollSuccess, setFaceEnrollSuccess] = useState(null);
+  const [faceEnrollError, setFaceEnrollError] = useState(null);
   const enrollVideoRef = useRef(null);
   const [enrollCameraActive, setEnrollCameraActive] = useState(false);
+
+  const getFaceErrorMessage = (code, fallbackMsg) => {
+    switch (code) {
+      case 'NO_FACE':
+        return 'No face detected in the photo. Please align your face inside the camera circle and ensure good lighting.';
+      case 'MULTIPLE_FACES':
+        return 'Multiple faces detected. Anti-proxy security requires exactly one student in the camera frame.';
+      case 'FACE_IMAGE_BLURRY':
+        return 'Photo is too blurry. Please hold the phone steady and ensure clear lighting.';
+      case 'FACE_TOO_SMALL':
+        return 'Face is too far away (less than 80px). Please move the camera closer to your face.';
+      case 'LOW_DETECTION_CONFIDENCE':
+        return 'Face detection confidence is low. Please look directly at the camera in good lighting.';
+      case 'FACE_NOT_ENROLLED':
+        return 'Face template not enrolled. Please complete face enrollment first before marking attendance.';
+      case 'INVALID_IMAGE':
+        return 'Unable to process the image frame. Please retry.';
+      case 'EXTRACTION_FAILED':
+        return 'Face embedding extraction failed. Please try capturing again.';
+      default:
+        return fallbackMsg || 'Face verification failed. Please try again.';
+    }
+  };
 
   const deviceId = getDeviceId();
 
@@ -432,27 +456,39 @@ export default function StudentPortal({ user }) {
       gates.gate4 = 'PASSED';
       gates.gate5 = 'PASSED';
       setGateProgress({ ...gates, activeGate: 5 });
-      setSubmissionResult({ success: true, details: res.details, status: res.status });
+
+      const isPendingApproval = res.status === 'PENDING_APPROVAL';
+      setSubmissionResult({
+        success: true,
+        details: res.details,
+        status: res.status,
+        message: res.message
+      });
       setAttendanceStep('RESULT');
 
-      // Confetti celebration!
-      confetti({
-        particleCount: 90,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+      // Confetti celebration if confirmed PRESENT!
+      if (!isPendingApproval) {
+        confetti({
+          particleCount: 90,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
 
       fetchDashboardData();
     } catch (err) {
-      const failedGate = err.detail?.failed_gate || 'GATE_FAILED';
-      if (failedGate.includes('4') || simFaceMismatch) {
+      const faceCode = err.detail?.code;
+      const friendlyMsg = faceCode ? getFaceErrorMessage(faceCode, err.message) : (err.message || 'Verification failed');
+      const failedGate = err.detail?.failed_gate || (faceCode ? 'GATE_4_FACE_VERIFICATION' : 'GATE_FAILED');
+
+      if (failedGate.includes('4') || faceCode || simFaceMismatch) {
         gates.gate4 = 'FAILED';
       } else {
         gates.gate5 = 'FAILED';
       }
-      gates.error = err.message;
+      gates.error = friendlyMsg;
       setGateProgress({ ...gates });
-      setSubmissionResult({ success: false, reason: err.message, failed_gate: failedGate });
+      setSubmissionResult({ success: false, reason: friendlyMsg, failed_gate: failedGate });
       setAttendanceStep('RESULT');
     } finally {
       setSubmittingAttendance(false);
@@ -566,14 +602,16 @@ export default function StudentPortal({ user }) {
 
   const handleEnrollFace = async () => {
     if (!enrollSelfie) {
-      alert('Please capture or select a photo before saving.');
+      setFaceEnrollError('Please capture or select a photo before saving.');
       return;
     }
     if (!enrollConsent) {
-      alert('Explicit consent is required to store facial reference templates.');
+      setFaceEnrollError('Explicit biometric consent is required to store facial reference templates.');
       return;
     }
     setEnrollingFace(true);
+    setFaceEnrollError(null);
+    setFaceEnrollSuccess(null);
     try {
       const res = await api.enrollFace({
         live_selfie_base64: enrollSelfie,
@@ -586,7 +624,12 @@ export default function StudentPortal({ user }) {
       }, 2000);
       fetchDashboardData();
     } catch (err) {
-      alert('Face enrollment failed: ' + err.message);
+      if (err.status === 409) {
+        setFaceEnrollError('Face template is already enrolled. Re-enrollment requires an administrator face reset.');
+      } else {
+        const code = err.detail?.code;
+        setFaceEnrollError(getFaceErrorMessage(code, err.message));
+      }
     } finally {
       setEnrollingFace(false);
     }
@@ -1438,6 +1481,8 @@ export default function StudentPortal({ user }) {
                 type="button"
                 onClick={() => {
                   setShowFaceEnrollModal(false);
+                  setFaceEnrollError(null);
+                  setFaceEnrollSuccess(null);
                   if (enrollVideoRef.current?.srcObject) {
                     enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
                   }
@@ -1449,9 +1494,19 @@ export default function StudentPortal({ user }) {
               </button>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Register your high-resolution facial reference template. This image will serve as the biometric ground truth for Gate 4 during lecture attendance.
-            </p>
+            {/* Privacy & Template Storage Explanation */}
+            <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-slate-300 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-purple-300 font-semibold">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                <span>Privacy &amp; Cryptographic Storage</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                SmartAttend-AI stores an <strong>encrypted numeric template (512-D vector)</strong>, <span className="text-white font-semibold">NOT your photo</span>. The camera capture is processed strictly in-memory and immediately discarded. Templates are encrypted at rest with AES/Fernet encryption.
+              </p>
+              <p className="text-[10px] text-purple-300/80">
+                • <strong>Retention Policy:</strong> Encrypted templates expire after 1 academic year (365 days) or upon administrator reset.
+              </p>
+            </div>
 
             {/* Camera View / Photo Preview */}
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
@@ -1471,7 +1526,11 @@ export default function StudentPortal({ user }) {
                   <img src={enrollSelfie} alt="Enrolled reference" className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500/50 shadow-lg" />
                   <button
                     type="button"
-                    onClick={startEnrollCamera}
+                    onClick={() => {
+                      setEnrollSelfie(null);
+                      setFaceEnrollError(null);
+                      startEnrollCamera();
+                    }}
                     className="text-[11px] text-purple-400 hover:underline font-medium"
                   >
                     Retake Photo
@@ -1485,7 +1544,10 @@ export default function StudentPortal({ user }) {
                   <div className="flex gap-2 justify-center">
                     <button
                       type="button"
-                      onClick={startEnrollCamera}
+                      onClick={() => {
+                        setFaceEnrollError(null);
+                        startEnrollCamera();
+                      }}
                       className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold"
                     >
                       Open Front Camera
@@ -1493,7 +1555,10 @@ export default function StudentPortal({ user }) {
                     {import.meta.env.VITE_DEMO_MODE === 'true' && (
                       <button
                         type="button"
-                        onClick={() => setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'))}
+                        onClick={() => {
+                          setFaceEnrollError(null);
+                          setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'));
+                        }}
                         className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
                       >
                         Test Photo
@@ -1513,9 +1578,17 @@ export default function StudentPortal({ user }) {
                 className="mt-0.5 rounded text-purple-600 focus:ring-purple-500"
               />
               <span className="text-[11px] text-slate-300 leading-tight">
-                <strong>Explicit Biometric Consent:</strong> I voluntarily consent to SmartAttend-AI storing a mathematical representation of my facial features exclusively for academic attendance verification and proxy deterrence.
+                <strong>Explicit Biometric Consent:</strong> I voluntarily consent to SmartAttend-AI generating and storing an encrypted numeric template of my facial features exclusively for academic attendance verification. I acknowledge that raw photos are never stored.
               </span>
             </label>
+
+            {/* Friendly Face Error Alert */}
+            {faceEnrollError && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>{faceEnrollError}</span>
+              </div>
+            )}
 
             {faceEnrollSuccess && (
               <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
@@ -1531,7 +1604,7 @@ export default function StudentPortal({ user }) {
               className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-600/25 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {enrollingFace ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>Save & Register Biometric Face</span>
+              <span>Save &amp; Register Biometric Template</span>
             </button>
           </div>
         </div>

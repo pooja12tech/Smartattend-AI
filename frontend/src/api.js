@@ -51,8 +51,11 @@ const safeParse = async (res, fallbackMsg = 'Request failed') => {
     throw new Error(`Invalid server response: ${text.slice(0, 150)}`);
   }
   if (!res.ok) {
-    const msg = typeof data.detail === 'object' ? data.detail.reason : data.detail || fallbackMsg;
+    const msg = typeof data.detail === 'object'
+      ? (data.detail.message || data.detail.reason || fallbackMsg)
+      : (data.detail || fallbackMsg);
     const err = new Error(msg);
+    err.status = res.status;
     err.detail = data.detail;
     throw err;
   }

@@ -131,6 +131,12 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
     prev_sig = generate_qr_signature(session_id, prev_window, secret_seed)
     prev_token = f"{session_id}.{prev_window}.{prev_sig}"
 
+    # STU02 completes face enrollment first
+    client.post("/api/student/enroll-face", json={
+        "live_selfie_base64": face_img,
+        "consent_given": True
+    }, headers=stu2_headers)
+
     mark_res2 = client.post("/api/attendance/mark", json={
         "session_id": session_id,
         "qr_token": prev_token,

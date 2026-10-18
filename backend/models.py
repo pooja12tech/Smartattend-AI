@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
-    String, Integer, Float, Boolean, Text, DateTime,
+    String, Integer, Float, Boolean, Text, DateTime, LargeBinary,
     ForeignKey, UniqueConstraint, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,7 +27,6 @@ class User(Base):
     semester: Mapped[Optional[int]] = mapped_column(Integer, default=6, nullable=True)
     bound_device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     registered_device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    registered_face_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
@@ -35,6 +34,9 @@ class User(Base):
     # Relationships
     stats: Mapped[Optional["StudentStats"]] = relationship(
         "StudentStats", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    face_enrollment: Mapped[Optional["FaceEnrollment"]] = relationship(
+        "FaceEnrollment", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
 
     def to_dict(self) -> dict:
@@ -50,7 +52,7 @@ class User(Base):
             "semester": self.semester,
             "bound_device_id": self.bound_device_id,
             "registered_device_id": self.registered_device_id,
-            "has_registered_face": bool(self.registered_face_base64),
+            "has_registered_face": bool(self.face_enrollment is not None),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
@@ -159,7 +161,7 @@ class AttendanceRecord(Base):
     manual_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="PRESENT")  # 'PRESENT', 'ABSENT', 'PENDING_APPROVAL', 'REJECTED'
-    live_selfie_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    liveness_status: Mapped[str] = mapped_column(String(32), default="NOT_CHECKED", nullable=False)
     marked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -187,6 +189,7 @@ class AttendanceRecord(Base):
             "distance_meters": self.distance_meters,
             "face_match_score": self.face_match_score,
             "face_status": self.face_status,
+            "liveness_status": self.liveness_status,
             "is_exception_mode": self.is_exception_mode,
             "is_manual_override": self.is_manual_override,
             "manual_by": self.manual_by,
@@ -349,4 +352,38 @@ class AuditLog(Base):
             "ip_address": self.ip_address,
             "timestamp": self.created_at.isoformat() if self.created_at else None
         }
+
+# ==============================================================================
+# 9. Face Enrollments (Fernet-Encrypted Normalized Float32 Embeddings at Rest)
+# ==============================================================================
+class FaceEnrollment(Base):
+    __tablename__ = "face_enrollments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    model_name: Mapped[str] = mapped_column(String(64), default="buffalo_sc", nullable=False)
+    model_version: Mapped[str] = mapped_column(String(32), default="insightface-2.1", nullable=False)
+    consent_given_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    consent_text_version: Mapped[str] = mapped_column(String(32), default="v1.0", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    retention_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="face_enrollment")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "model_name": self.model_name,
+            "model_version": self.model_version,
+            "consent_given_at": self.consent_given_at.isoformat() if self.consent_given_at else None,
+            "consent_text_version": self.consent_text_version,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "retention_expires_at": self.retention_expires_at.isoformat() if self.retention_expires_at else None
+        }
+
 

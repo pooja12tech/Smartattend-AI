@@ -12,7 +12,15 @@ Every attendance submission passes through 5 sequential identity, temporal, spat
 - **Gate 1: Browser-Stored Device Identifier & 1-Device Rule**: Binds an initial client-generated device ID stored in browser `localStorage`. Enforces relational database unique constraints (`uq_session_device`) ensuring a single browser session cannot submit attendance for multiple students during the same lecture session.
 - **Gate 2: Dynamic QR Window & Cryptographic Signature**: Projects a rotating QR token (`session_id.window_index.hmac_signature`) based on configurable time windows (default `QR_WINDOW_SECONDS=20s`). The backend validates HMAC-SHA256 signatures for the current and immediately preceding time window, rejecting stale or re-broadcast tokens.
 - **Gate 3: GPS Geofence (Haversine Formula)**: Calculates spherical distance between lecture classroom coordinates and the student's reported location. Submissions beyond **60 meters** are rejected.
-- **Gate 4: Prototype Face Similarity Heuristic**: Compares live camera capture against reference image using HSV color histogram and pixel structural similarity metrics as an educational prototype heuristic (not a certified biometric recognition engine).
+- **Gate 4: InsightFace Biometric Verification (WITHOUT Liveness)**:
+  - Extracts a normalized 512-dimensional float32 embedding vector using the **InsightFace `buffalo_sc` model pack** on CPU via `onnxruntime`.
+  - Raw selfie photographs are decoded strictly in-memory and **never persisted** to disk or database. Biometric templates are encrypted at rest using **Fernet (AES-128-CBC)** (`FACE_EMBED_KEY`).
+  - Strict image quality rejection: rejects on no face, multiple faces, detection score < `FACE_MIN_DET_SCORE` (default 0.60), face bounding box < 80px, or blurry image (Laplacian variance < `FACE_MIN_BLUR_SCORE`).
+  - Three verification outcomes via cosine similarity:
+    - `sim >= FACE_MATCH_THRESHOLD` (default 0.50) &rarr; `PRESENT` (`face_status="MATCH"`)
+    - `FACE_REVIEW_THRESHOLD <= sim < FACE_MATCH_THRESHOLD` (default 0.38) &rarr; `PENDING_APPROVAL` (requires faculty confirmation)
+    - `sim < FACE_REVIEW_THRESHOLD` &rarr; Rejection + Forensics `SecurityAlert` recorded.
+  - ⚠️ **Known Security Limitation:** This is embedding-based verification **WITHOUT active or passive liveness detection** (`liveness_status="NOT_CHECKED"`). A printed color photograph, displayed digital image, or replayed video recording can pass verification if positioned properly in the frame.
 - **Gate 5: Fraud Logger & ACID Decision Grant**: Breaches log forensics to `security_alerts`. Successful checks record attendance and update streaks inside an atomic database transaction with double-submission protection.
 
 ### 2. 🧠 Random Forest ML Defaulter Predictor & What-If Bunk Calculator

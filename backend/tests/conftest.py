@@ -16,6 +16,9 @@ import pytest
 os.environ["TESTING"] = "1"
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["JWT_SECRET"] = "test-secret-key-at-least-32-chars-long-for-testing-purposes-12345"
+os.environ["FACE_EMBED_KEY"] = "MCON8woyDxEDShtQ5a4UhdIC1KW5CAYID3llooYCQeA="
+os.environ["FACE_MATCH_THRESHOLD"] = "0.50"
+os.environ["FACE_REVIEW_THRESHOLD"] = "0.38"
 
 # Create a clean temp SQLite DB file for isolated test runs
 _temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -59,3 +62,18 @@ def enforce_test_isolation_and_init():
             os.remove(_temp_db_path)
     except Exception:
         pass
+
+@pytest.fixture(autouse=True)
+def default_mock_extract_embedding(monkeypatch):
+    """
+    Default monkeypatch so tests don't need the InsightFace model pack or camera hardware.
+    Returns a normalized unit float32 vector (512-D).
+    """
+    import face_service
+    import numpy as np
+
+    dummy_vector = np.zeros(512, dtype=np.float32)
+    dummy_vector[0] = 1.0
+
+    monkeypatch.setattr(face_service, "extract_embedding", lambda img_bytes: dummy_vector.copy())
+
