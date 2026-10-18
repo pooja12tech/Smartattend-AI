@@ -14,7 +14,7 @@ Base = declarative_base()
 def normalize_database_url(url: Optional[str]) -> Optional[str]:
     """
     Normalizes PostgreSQL connection strings for SQLAlchemy 2.0 with synchronous psycopg (v3).
-    Neon often provides strings formatted as:
+    Neon provides connection strings formatted as:
       postgresql://... or postgres://...
     SQLAlchemy requires:
       postgresql+psycopg://...
@@ -33,13 +33,28 @@ NORM_DATABASE_URL = normalize_database_url(RAW_DATABASE_URL)
 
 _engine = None
 _SessionLocal = None
+_is_fallback_sqlite = False
+
+def get_effective_database_url(override_url: Optional[str] = None) -> str:
+    """Returns configured PostgreSQL URL or local SQLite fallback if not configured."""
+    global _is_fallback_sqlite
+    target_url = normalize_database_url(override_url) or NORM_DATABASE_URL
+
+    if target_url and "YOUR_NEON_" not in target_url:
+        _is_fallback_sqlite = False
+        return target_url
+
+    _is_fallback_sqlite = True
+    base_dir = Path(__file__).resolve().parent
+    local_db_path = base_dir / "smartattend_local.db"
+    return f"sqlite:///{local_db_path.as_posix()}"
+
+def is_fallback_sqlite() -> bool:
+    return _is_fallback_sqlite
 
 def get_engine(override_url: Optional[str] = None):
     global _engine, _SessionLocal
-    target_url = normalize_database_url(override_url) or NORM_DATABASE_URL
-
-    if not target_url or "YOUR_NEON_" in target_url:
-        return None
+    target_url = get_effective_database_url(override_url)
 
     if _engine is None or override_url is not None:
         engine_args: Dict[str, Any] = {
@@ -66,40 +81,41 @@ def get_session_factory(override_url: Optional[str] = None):
     global _SessionLocal
     if _SessionLocal is None or override_url is not None:
         eng = get_engine(override_url)
-        if eng is None:
-            return None
         return sessionmaker(autocommit=False, autoflush=False, bind=eng)
     return _SessionLocal
 
 def get_pg_db():
     """FastAPI dependency for obtaining a database session."""
     session_factory = get_session_factory()
-    if session_factory is None:
-        raise RuntimeError(
-            "PostgreSQL database is not configured. Please set a valid DATABASE_URL in `backend/.env`."
-        )
     db = session_factory()
     try:
         yield db
     finally:
         db.close()
 
+def init_db_schema():
+    """Ensure relational tables are created."""
+    eng = get_engine()
+    Base.metadata.create_all(bind=eng)
+
 def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, Any]:
     """
     Verifies reachability and SSL connection to PostgreSQL / Neon.
     Returns status dict without crashing if connection is not configured or offline.
     """
-    target_url = normalize_database_url(override_url) or NORM_DATABASE_URL
+    raw_url = override_url or RAW_DATABASE_URL
+    target_url = normalize_database_url(raw_url)
 
     if not target_url or "YOUR_NEON_" in target_url:
         return {
-            "status": "NOT_CONFIGURED",
-            "connected": False,
-            "message": "DATABASE_URL is not set in backend/.env. Please configure your Neon PostgreSQL connection string.",
-            "url_hint": None
+            "status": "LOCAL_FALLBACK",
+            "connected": True,
+            "database_type": "sqlite",
+            "message": "DATABASE_URL is not set in backend/.env. Operating on local SQLite database (smartattend_local.db). Paste your Neon PostgreSQL connection string into backend/.env to connect to Neon cloud.",
+            "url_hint": "sqlite:///smartattend_local.db"
         }
 
-    # Hide password from URL hint
+    # Mask password for safe logging
     masked_url = target_url
     if "@" in masked_url:
         user_part = masked_url.split("@")[0]
@@ -108,17 +124,8 @@ def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, A
         masked_url = f"{scheme}://***:***@{host_part}"
 
     try:
-        eng = get_engine(override_url)
-        if eng is None:
-            return {
-                "status": "ERROR",
-                "connected": False,
-                "message": "Could not create database engine.",
-                "url_hint": masked_url
-            }
-
+        eng = get_engine(target_url)
         with eng.connect() as conn:
-            # Query version and current database
             result = conn.execute(text("SELECT version(), current_database();")).fetchone()
             version_str = result[0] if result else "Unknown"
             db_name = result[1] if result else "Unknown"
@@ -126,6 +133,7 @@ def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, A
             return {
                 "status": "CONNECTED",
                 "connected": True,
+                "database_type": "postgresql",
                 "message": f"Successfully connected to PostgreSQL database '{db_name}'.",
                 "version": version_str.split(",")[0] if version_str else version_str,
                 "database": db_name,
@@ -135,6 +143,7 @@ def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, A
         return {
             "status": "CONNECTION_FAILED",
             "connected": False,
+            "database_type": "postgresql",
             "error": str(exc),
             "message": f"Failed to connect to database at {masked_url}: {exc}",
             "url_hint": masked_url
@@ -142,5 +151,5 @@ def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, A
 
 if __name__ == "__main__":
     status_info = check_postgres_connection()
-    print("PostgreSQL Connection Check:")
+    print("Database Connection Status:")
     print(status_info)

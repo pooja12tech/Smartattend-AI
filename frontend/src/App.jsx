@@ -38,6 +38,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    api.logout();
     setCurrentUser(null);
     localStorage.removeItem('smartattend_current_user');
   };

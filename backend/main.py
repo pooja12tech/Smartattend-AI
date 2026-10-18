@@ -9,36 +9,47 @@ import base64
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 import numpy as np
 import pandas as pd
 import joblib
 from PIL import Image
 import cv2
 
-from database import (
-    get_users_collection,
-    get_lecture_sessions_collection,
-    get_attendance_logs_collection,
-    get_security_alerts_collection,
-    init_db_indexes,
-    is_mock_db
+from db_postgres import (
+    get_pg_db,
+    init_db_schema,
+    check_postgres_connection,
+    is_fallback_sqlite
 )
-from seed_data import run_seed
+from models import User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert
+from seed_postgres import run_postgres_seed
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user_optional,
+    require_admin,
+    require_faculty
+)
 
 app = FastAPI(
     title="SmartAttend-AI API",
-    description="Anti-Proxy & AI-Driven Smart Attendance System Backend with RBAC (Admin, Faculty, Student)",
-    version="1.1.0"
+    description="Anti-Proxy & AI-Driven Smart Attendance System Backend with RBAC (Admin, Faculty, Student) - PostgreSQL Edition",
+    version="2.0.0"
 )
 
-# Full CORS enabled for React + Vite Frontend / PWA
+# Secure CORS configuration
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
+allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins if "*" not in allowed_origins else ["*"],
+    allow_credentials=True if "*" not in allowed_origins else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -61,15 +72,21 @@ load_ml_model()
 
 @app.on_event("startup")
 def startup_db_init():
-    """Ensure database indexes are registered and seed users if database is empty."""
-    init_db_indexes()
-    users_col = get_users_collection()
-    if users_col.count_documents({}) == 0:
-        print("[Main Startup] Users collection is empty. Executing initial seed...")
-        try:
-            run_seed()
-        except Exception as e:
-            print(f"[Main Startup Warning] Seeding failed: {e}")
+    """Ensure database schema is registered and seed users if database is empty."""
+    init_db_schema()
+    conn_info = check_postgres_connection()
+    print(f"[Main Startup] Database connection: {conn_info.get('status')} ({conn_info.get('message')})")
+
+    from db_postgres import get_session_factory
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        user_count = db.query(User).count()
+        if user_count == 0:
+            print("[Main Startup] Database is empty. Executing initial seed...")
+            try:
+                run_postgres_seed(db)
+            except Exception as e:
+                print(f"[Main Startup Warning] Seeding failed: {e}")
 
 # ==============================================================================
 # Helper Utilities (Haversine, Dynamic QR, Face Matching, Bunk Calculator)
@@ -259,17 +276,24 @@ class CreateUserRequest(BaseModel):
     semester: Optional[int] = Field(6, description="Applicable for students")
     initial_attendance_pct: Optional[float] = Field(80.0, description="Initial attendance percentage")
 
+class EnrollFaceRequest(BaseModel):
+    roll_no: str = Field(..., example="STU01")
+    live_selfie_base64: str = Field(..., description="Base64 encoded reference face capture")
+    consent_given: bool = Field(True, description="Explicit student consent for biometric template storage")
+
 # ==============================================================================
 # API Endpoints
 # ==============================================================================
 
 @app.get("/")
 def root():
+    conn_info = check_postgres_connection()
     return {
         "system": "SmartAttend-AI Backend",
         "status": "ONLINE",
-        "version": "1.1.0",
-        "mock_db": is_mock_db(),
+        "version": "2.0.0",
+        "database": conn_info.get("database_type", "postgresql"),
+        "database_status": conn_info.get("status"),
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
@@ -277,14 +301,10 @@ def root():
 # 1. POST /api/login (Role-Based Access: Student, Faculty, Admin)
 # ------------------------------------------------------------------------------
 @app.post("/api/login")
-def login(req: LoginRequest):
-    users_col = get_users_collection()
-    user = users_col.find_one({"$or": [
-        {"roll_no": req.roll_no},
-        {"faculty_id": req.roll_no},
-        {"admin_id": req.roll_no},
-        {"email": req.roll_no}
-    ]})
+def login(req: LoginRequest, db: Session = Depends(get_pg_db)):
+    user = db.query(User).filter(
+        (User.roll_no == req.roll_no) | (User.email == req.roll_no)
+    ).first()
 
     if not user:
         raise HTTPException(
@@ -292,15 +312,20 @@ def login(req: LoginRequest):
             detail=f"User with identifier '{req.roll_no}' not found."
         )
 
-    # Password Verification
-    stored_password = user.get("password")
-    if stored_password and stored_password != req.password:
+    # Password Verification with bcrypt & legacy support
+    if not verify_password(req.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials. Please verify your username and password."
         )
 
-    role = user.get("role", "student")
+    # Automatically upgrade legacy plaintext password to bcrypt hash on login
+    if user.password and not user.password.startswith("$2b$") and not user.password.startswith("$2a$"):
+        user.password = hash_password(req.password)
+        db.commit()
+
+    role = user.role or "student"
+    token = create_access_token(data={"sub": user.roll_no, "role": role, "email": user.email, "user_id": str(user.id)})
 
     # 1. Admin Login
     if role == "admin":
@@ -308,13 +333,15 @@ def login(req: LoginRequest):
             "success": True,
             "message": "Admin authentication successful",
             "role": "admin",
+            "access_token": token,
+            "token_type": "bearer",
             "user": {
-                "id": str(user.get("_id", "")),
-                "admin_id": user.get("admin_id", req.roll_no),
-                "name": user.get("name"),
-                "email": user.get("email"),
+                "id": str(user.id),
+                "admin_id": user.roll_no,
+                "name": user.name,
+                "email": user.email,
                 "role": "admin",
-                "department": user.get("department", "Administration")
+                "department": user.department or "Administration"
             }
         }
 
@@ -324,25 +351,26 @@ def login(req: LoginRequest):
             "success": True,
             "message": "Faculty authentication successful",
             "role": "faculty",
+            "access_token": token,
+            "token_type": "bearer",
             "user": {
-                "id": str(user.get("_id", "")),
-                "faculty_id": user.get("faculty_id", req.roll_no),
-                "name": user.get("name"),
-                "email": user.get("email"),
+                "id": str(user.id),
+                "faculty_id": user.roll_no,
+                "name": user.name,
+                "email": user.email,
                 "role": "faculty",
-                "department": user.get("department", "CSE"),
-                "courses_taught": user.get("courses_taught", ["CS301 - Operating Systems"])
+                "department": user.department or "CSE",
+                "courses_taught": ["CS301 - Operating Systems"]
             }
         }
 
     # 3. Student Login (Enforce single-phone hardware lock)
-    bound_device = user.get("bound_device_id") or user.get("registered_device_id")
+    bound_device = user.bound_device_id or user.registered_device_id
 
     if not bound_device:
-        users_col.update_one(
-            {"_id": user["_id"]},
-            {"$set": {"bound_device_id": req.device_id, "registered_device_id": req.device_id}}
-        )
+        user.bound_device_id = req.device_id
+        user.registered_device_id = req.device_id
+        db.commit()
         bound_device = req.device_id
         binding_status = "DEVICE_BOUND_SUCCESSFULLY"
     elif bound_device != req.device_id:
@@ -360,18 +388,20 @@ def login(req: LoginRequest):
         "success": True,
         "message": "Student login successful",
         "role": "student",
+        "access_token": token,
+        "token_type": "bearer",
         "binding_status": binding_status,
         "is_exception_mode": req.is_exception_mode,
         "user": {
-            "id": str(user.get("_id", "")),
-            "roll_no": user.get("roll_no"),
-            "name": user.get("name"),
-            "email": user.get("email"),
+            "id": str(user.id),
+            "roll_no": user.roll_no,
+            "name": user.name,
+            "email": user.email,
             "role": "student",
-            "department": user.get("department", "CSE"),
-            "semester": user.get("semester", 6),
+            "department": user.department or "CSE",
+            "semester": user.semester or 6,
             "bound_device_id": bound_device,
-            "has_registered_face": bool(user.get("registered_face_base64"))
+            "has_registered_face": bool(user.registered_face_base64)
         }
     }
 
@@ -379,31 +409,35 @@ def login(req: LoginRequest):
 # 2. POST /api/sessions/start & GET /api/sessions/{session_id}/qr
 # ------------------------------------------------------------------------------
 @app.post("/api/sessions/start")
-def start_session(req: SessionStartRequest):
-    sessions_col = get_lecture_sessions_collection()
-
-    session_id = f"{req.subject_name.split()[0]}-{datetime.now().strftime('%m%d%H%M')}"
+def start_session(req: SessionStartRequest, db: Session = Depends(get_pg_db)):
+    session_id = f"{req.subject_name.split()[0]}-{datetime.now().strftime('%m%d%H%M%S')}"
     secret_seed = req.secret_seed or secrets.token_hex(16)
+    now = datetime.now(timezone.utc)
 
-    session_doc = {
-        "session_id": session_id,
-        "session_code": session_id,
-        "subject_name": req.subject_name,
-        "faculty_id": req.faculty_id,
-        "class_lat": req.class_lat,
-        "class_lng": req.class_lng,
-        "secret_seed": secret_seed,
-        "geofence_radius_meters": 60,
-        "status": "ACTIVE",
-        "started_at": datetime.now(timezone.utc),
-        "created_at": datetime.now(timezone.utc)
-    }
+    session = db.query(LectureSession).filter(LectureSession.session_id == session_id).first()
+    if not session:
+        session = LectureSession(
+            session_id=session_id,
+            session_code=session_id,
+            subject_name=req.subject_name,
+            faculty_id=req.faculty_id,
+            class_lat=req.class_lat,
+            class_lng=req.class_lng,
+            secret_seed=secret_seed,
+            geofence_radius_meters=60,
+            status="ACTIVE",
+            started_at=now,
+            created_at=now
+        )
+        db.add(session)
+    else:
+        session.status = "ACTIVE"
+        session.subject_name = req.subject_name
+        session.class_lat = req.class_lat
+        session.class_lng = req.class_lng
+        session.secret_seed = secret_seed
 
-    sessions_col.update_one(
-        {"session_id": session_id},
-        {"$set": session_doc},
-        upsert=True
-    )
+    db.commit()
 
     return {
         "success": True,
@@ -420,9 +454,10 @@ def start_session(req: SessionStartRequest):
     }
 
 @app.get("/api/sessions/{session_id}/qr")
-def get_session_qr(session_id: str):
-    sessions_col = get_lecture_sessions_collection()
-    session = sessions_col.find_one({"$or": [{"session_id": session_id}, {"session_code": session_id}]})
+def get_session_qr(session_id: str, db: Session = Depends(get_pg_db)):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
 
     if not session:
         raise HTTPException(
@@ -430,13 +465,13 @@ def get_session_qr(session_id: str):
             detail=f"Lecture session '{session_id}' not found."
         )
 
-    if session.get("status") != "ACTIVE":
+    if session.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Lecture session is currently {session.get('status')}. Attendance is closed."
+            detail=f"Lecture session is currently {session.status}. Attendance is closed."
         )
 
-    secret_seed = session.get("secret_seed", "default_smartattend_seed_2026")
+    secret_seed = session.secret_seed or "default_smartattend_seed_2026"
     current_time = int(time.time())
     remaining_seconds = 5 - (current_time % 5)
 
@@ -445,43 +480,39 @@ def get_session_qr(session_id: str):
 
     return {
         "session_id": session_id,
-        "subject_name": session.get("subject_name"),
+        "subject_name": session.subject_name,
         "qr_token": token,
         "timestamp": current_time,
         "expires_in_seconds": remaining_seconds,
         "refresh_interval_seconds": 5,
-        "class_lat": session.get("class_lat"),
-        "class_lng": session.get("class_lng")
+        "class_lat": session.class_lat,
+        "class_lng": session.class_lng
     }
 
 # ------------------------------------------------------------------------------
-# 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine)
+# 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine with ACID Transactions)
 # ------------------------------------------------------------------------------
 @app.post("/api/attendance/mark")
-def mark_attendance(req: MarkAttendanceRequest):
-    users_col = get_users_collection()
-    sessions_col = get_lecture_sessions_collection()
-    attendance_col = get_attendance_logs_collection()
-    alerts_col = get_security_alerts_collection()
-
+def mark_attendance(req: MarkAttendanceRequest, db: Session = Depends(get_pg_db)):
     timestamp_now = datetime.now(timezone.utc)
 
     def log_fraud_and_fail(gate: str, reason: str, extra_meta: Optional[Dict] = None):
-        alert_doc = {
-            "session_id": req.session_id,
-            "roll_no": req.roll_no,
-            "used_device_id": req.device_id,
-            "failed_gate": gate,
-            "reason": reason,
-            "user_lat": req.user_lat,
-            "user_lng": req.user_lng,
-            "is_exception_mode": req.is_exception_mode,
-            "timestamp": timestamp_now,
-            "resolved": False
-        }
-        if extra_meta:
-            alert_doc.update(extra_meta)
-        alerts_col.insert_one(alert_doc)
+        alert = SecurityAlert(
+            session_id=req.session_id,
+            roll_no=req.roll_no,
+            used_device_id=req.device_id,
+            failed_gate=gate,
+            reason=reason,
+            user_lat=req.user_lat,
+            user_lng=req.user_lng,
+            distance_meters=extra_meta.get("distance_meters") if extra_meta else None,
+            face_match_score=extra_meta.get("face_match_score") if extra_meta else None,
+            is_exception_mode=req.is_exception_mode,
+            resolved=False,
+            created_at=timestamp_now
+        )
+        db.add(alert)
+        db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -493,15 +524,20 @@ def mark_attendance(req: MarkAttendanceRequest):
             }
         )
 
-    student = users_col.find_one({"roll_no": req.roll_no})
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{req.roll_no}' not found.")
 
-    session = sessions_col.find_one({"$or": [{"session_id": req.session_id}, {"session_code": req.session_id}]})
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
 
-    existing_student_log = attendance_col.find_one({"session_id": req.session_id, "roll_no": req.roll_no})
+    existing_student_log = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.roll_no == req.roll_no
+    ).first()
     if existing_student_log:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -509,18 +545,21 @@ def mark_attendance(req: MarkAttendanceRequest):
                 "success": False,
                 "failed_gate": "DUPLICATE_SUBMISSION",
                 "reason": "Attendance has already been recorded for this student in this lecture session.",
-                "marked_at": existing_student_log.get("marked_at")
+                "marked_at": existing_student_log.marked_at.isoformat() if existing_student_log.marked_at else None
             }
         )
 
     # GATE 1: Device Lock (Hardware Fingerprint Verification & Anti-Proxy 1-Phone Rule)
-    bound_device = student.get("bound_device_id") or student.get("registered_device_id")
+    bound_device = student.bound_device_id or student.registered_device_id
 
-    device_already_used = attendance_col.find_one({"session_id": req.session_id, "used_device_id": req.device_id})
+    device_already_used = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.used_device_id == req.device_id
+    ).first()
     if device_already_used:
         log_fraud_and_fail(
             gate="GATE_1_DEVICE_LOCK",
-            reason=f"Proxy Alert: Device '{req.device_id}' was already used by roll number '{device_already_used.get('roll_no')}' in this session. One phone cannot mark attendance for multiple students."
+            reason=f"Proxy Alert: Device '{req.device_id}' was already used by roll number '{device_already_used.roll_no}' in this session. One phone cannot mark attendance for multiple students."
         )
 
     if not req.is_exception_mode:
@@ -548,7 +587,7 @@ def mark_attendance(req: MarkAttendanceRequest):
             reason=f"Dynamic QR Token expired ({age_seconds} seconds old, max allowed is 7 seconds). Scan the freshly refreshed QR code on the projector."
         )
 
-    secret_seed = session.get("secret_seed", "default_smartattend_seed_2026")
+    secret_seed = session.secret_seed or "default_smartattend_seed_2026"
     expected_sig = generate_qr_signature(tok_session_id, tok_timestamp, secret_seed)
     if not hmac.compare_digest(expected_sig, tok_sig):
         log_fraud_and_fail(
@@ -557,11 +596,11 @@ def mark_attendance(req: MarkAttendanceRequest):
         )
 
     # GATE 3: GPS Geofence (Haversine Distance <= 60 Meters)
-    class_lat = session.get("class_lat") or 19.0760
-    class_lng = session.get("class_lng") or 72.8777
+    class_lat = session.class_lat or 19.0760
+    class_lng = session.class_lng or 72.8777
 
     distance_meters = haversine_distance_meters(class_lat, class_lng, req.user_lat, req.user_lng)
-    max_radius = session.get("geofence_radius_meters", 60)
+    max_radius = session.geofence_radius_meters or 60
 
     if distance_meters > max_radius:
         log_fraud_and_fail(
@@ -575,12 +614,9 @@ def mark_attendance(req: MarkAttendanceRequest):
     if live_img is None:
         log_fraud_and_fail(gate="GATE_4_FACE_VERIFICATION", reason="Unable to decode live selfie image data.")
 
-    registered_face_b64 = student.get("registered_face_base64")
+    registered_face_b64 = student.registered_face_base64
     if not registered_face_b64:
-        users_col.update_one(
-            {"_id": student["_id"]},
-            {"$set": {"registered_face_base64": req.live_selfie_base64}}
-        )
+        student.registered_face_base64 = req.live_selfie_base64
         face_match_score = 100.0
         face_status = "FIRST_TIME_AUTO_REGISTERED"
     else:
@@ -598,47 +634,48 @@ def mark_attendance(req: MarkAttendanceRequest):
                 )
             face_status = "VERIFIED"
 
-    # GATE 5: Decision & Attendance Logging
+    # GATE 5: Decision & Attendance Logging (Atomic Transaction)
     attendance_status = "PENDING_APPROVAL" if req.is_exception_mode else "PRESENT"
 
-    attendance_record = {
-        "session_id": req.session_id,
-        "roll_no": req.roll_no,
-        "student_name": student.get("name", "Student"),
-        "used_device_id": req.device_id,
-        "user_lat": req.user_lat,
-        "user_lng": req.user_lng,
-        "distance_meters": round(distance_meters, 1),
-        "face_match_score": face_match_score,
-        "face_status": face_status,
-        "is_exception_mode": req.is_exception_mode,
-        "live_selfie_base64": req.live_selfie_base64,
-        "status": attendance_status,
-        "marked_at": timestamp_now
-    }
-
-    attendance_col.insert_one(attendance_record)
+    attendance_record = AttendanceRecord(
+        session_id=req.session_id,
+        roll_no=req.roll_no,
+        student_name=student.name,
+        used_device_id=req.device_id,
+        user_lat=req.user_lat,
+        user_lng=req.user_lng,
+        distance_meters=round(distance_meters, 1),
+        face_match_score=face_match_score,
+        face_status=face_status,
+        is_exception_mode=req.is_exception_mode,
+        live_selfie_base64=req.live_selfie_base64,
+        status=attendance_status,
+        marked_at=timestamp_now
+    )
+    db.add(attendance_record)
 
     # Update historical student streak and attended stats if PRESENT
     if attendance_status == "PRESENT":
-        stats = student.get("attendance_stats", {})
-        total_lec = stats.get("total_lectures", 40) + 1
-        att_lec = stats.get("attended_lectures", 30) + 1
-        new_streak = max(1, stats.get("current_streak", 0) + 1)
-        new_pct = round((att_lec / total_lec) * 100.0, 1)
+        stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+        if not stats:
+            stats = StudentStats(
+                user_id=student.id,
+                total_lectures=41,
+                attended_lectures=31,
+                current_streak=1,
+                current_attendance_pct=round((31 / 41) * 100.0, 1),
+                updated_at=timestamp_now
+            )
+            db.add(stats)
+        else:
+            stats.total_lectures += 1
+            stats.attended_lectures += 1
+            stats.current_streak = max(1, stats.current_streak + 1)
+            stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
+            stats.updated_at = timestamp_now
 
-        users_col.update_one(
-            {"roll_no": req.roll_no},
-            {
-                "$set": {
-                    "attendance_stats.total_lectures": total_lec,
-                    "attendance_stats.attended_lectures": att_lec,
-                    "attendance_stats.current_attendance_pct": new_pct,
-                    "attendance_stats.current_streak": new_streak,
-                    "updated_at": timestamp_now
-                }
-            }
-        )
+    student.updated_at = timestamp_now
+    db.commit()
 
     return {
         "success": True,
@@ -655,19 +692,47 @@ def mark_attendance(req: MarkAttendanceRequest):
     }
 
 # ------------------------------------------------------------------------------
-# 4. POST /api/faculty/manual-attendance (Teacher Manual Attendance Override)
+# 3b. POST /api/student/enroll-face (Consent-Based Biometric Enrollment)
 # ------------------------------------------------------------------------------
-@app.post("/api/faculty/manual-attendance")
-def faculty_manual_attendance(req: ManualAttendanceRequest):
-    users_col = get_users_collection()
-    sessions_col = get_lecture_sessions_collection()
-    attendance_col = get_attendance_logs_collection()
+@app.post("/api/student/enroll-face")
+def enroll_face(req: EnrollFaceRequest, db: Session = Depends(get_pg_db)):
+    if not req.consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Biometric consent is mandatory to store face reference templates."
+        )
 
-    student = users_col.find_one({"roll_no": req.roll_no})
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student '{req.roll_no}' not found.")
 
-    session = sessions_col.find_one({"$or": [{"session_id": req.session_id}, {"session_code": req.session_id}]})
+    cv2_img = decode_image_base64_to_cv2(req.live_selfie_base64)
+    if cv2_img is None:
+        raise HTTPException(status_code=400, detail="Unable to decode face image payload.")
+
+    student.registered_face_base64 = req.live_selfie_base64
+    student.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "success": True,
+        "roll_no": req.roll_no,
+        "message": f"Biometric face reference successfully enrolled for student {student.name} with explicit consent.",
+        "enrolled_at": datetime.now(timezone.utc).isoformat()
+    }
+
+# ------------------------------------------------------------------------------
+# 4. POST /api/faculty/manual-attendance (Teacher Manual Attendance Override)
+# ------------------------------------------------------------------------------
+@app.post("/api/faculty/manual-attendance")
+def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depends(get_pg_db)):
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student '{req.roll_no}' not found.")
+
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
 
@@ -677,55 +742,59 @@ def faculty_manual_attendance(req: ManualAttendanceRequest):
 
     timestamp_now = datetime.now(timezone.utc)
 
-    # Upsert manual record in attendance_logs
-    manual_record = {
-        "session_id": req.session_id,
-        "roll_no": req.roll_no,
-        "student_name": student.get("name", "Student"),
-        "used_device_id": "MANUAL-OVERRIDE",
-        "distance_meters": 0.0,
-        "face_match_score": 100.0,
-        "is_exception_mode": False,
-        "is_manual_override": True,
-        "manual_by": req.faculty_id,
-        "reason": req.reason,
-        "status": action_status,
-        "marked_at": timestamp_now
-    }
+    # Upsert manual record in attendance_records
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.roll_no == req.roll_no
+    ).first()
 
-    attendance_col.update_one(
-        {"session_id": req.session_id, "roll_no": req.roll_no},
-        {"$set": manual_record},
-        upsert=True
-    )
+    if not record:
+        record = AttendanceRecord(
+            session_id=req.session_id,
+            roll_no=req.roll_no,
+            student_name=student.name,
+            used_device_id="MANUAL-OVERRIDE",
+            distance_meters=0.0,
+            face_match_score=100.0,
+            is_exception_mode=False,
+            is_manual_override=True,
+            manual_by=req.faculty_id,
+            reason=req.reason,
+            status=action_status,
+            marked_at=timestamp_now
+        )
+        db.add(record)
+    else:
+        record.status = action_status
+        record.is_manual_override = True
+        record.manual_by = req.faculty_id
+        record.reason = req.reason
+        record.reviewed_at = timestamp_now
 
     # Update student's cumulative statistics
-    stats = student.get("attendance_stats", {})
-    total_lec = stats.get("total_lectures", 40) + 1
-    current_attended = stats.get("attended_lectures", 30)
-    current_streak = stats.get("current_streak", 0)
-
-    if action_status == "PRESENT":
-        new_attended = current_attended + 1
-        new_streak = max(1, current_streak + 1)
+    stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+    if not stats:
+        stats = StudentStats(
+            user_id=student.id,
+            total_lectures=41,
+            attended_lectures=31 if action_status == "PRESENT" else 30,
+            current_streak=1 if action_status == "PRESENT" else -1,
+            current_attendance_pct=round((31 if action_status == "PRESENT" else 30) / 41 * 100.0, 1),
+            updated_at=timestamp_now
+        )
+        db.add(stats)
     else:
-        new_attended = current_attended
-        new_streak = min(-1, current_streak - 1 if current_streak < 0 else -1)
+        stats.total_lectures += 1
+        if action_status == "PRESENT":
+            stats.attended_lectures += 1
+            stats.current_streak = max(1, stats.current_streak + 1)
+        else:
+            stats.current_streak = min(-1, stats.current_streak - 1 if stats.current_streak < 0 else -1)
 
-    new_pct = round((new_attended / total_lec) * 100.0, 1)
+        stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
+        stats.updated_at = timestamp_now
 
-    users_col.update_one(
-        {"roll_no": req.roll_no},
-        {
-            "$set": {
-                "attendance_stats.total_lectures": total_lec,
-                "attendance_stats.attended_lectures": new_attended,
-                "attendance_stats.current_attendance_pct": new_pct,
-                "attendance_stats.current_streak": new_streak,
-                "updated_at": timestamp_now
-            }
-        }
-    )
+    db.commit()
 
     return {
         "success": True,
@@ -735,8 +804,8 @@ def faculty_manual_attendance(req: ManualAttendanceRequest):
             "roll_no": req.roll_no,
             "status": action_status,
             "reason": req.reason,
-            "updated_pct": new_pct,
-            "updated_streak": new_streak,
+            "updated_pct": stats.current_attendance_pct,
+            "updated_streak": stats.current_streak,
             "marked_at": timestamp_now.isoformat()
         }
     }
@@ -745,23 +814,24 @@ def faculty_manual_attendance(req: ManualAttendanceRequest):
 # 5. GET /api/student/{roll_no}/dashboard
 # ------------------------------------------------------------------------------
 @app.get("/api/student/{roll_no}/dashboard")
-def student_dashboard(roll_no: str):
-    users_col = get_users_collection()
-    attendance_col = get_attendance_logs_collection()
-
-    student = users_col.find_one({"roll_no": roll_no})
+def student_dashboard(roll_no: str, db: Session = Depends(get_pg_db)):
+    student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
 
-    stats = student.get("attendance_stats", {
-        "current_attendance_pct": 75.0,
-        "last_14_days_pct": 75.0,
-        "mon_fri_skip_rate": 0.20,
-        "first_lecture_miss_rate": 0.15,
-        "current_streak": 2,
-        "total_lectures": 40,
-        "attended_lectures": 30
-    })
+    stats_obj = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+    if stats_obj:
+        stats = stats_obj.to_dict()
+    else:
+        stats = {
+            "current_attendance_pct": 75.0,
+            "last_14_days_pct": 75.0,
+            "mon_fri_skip_rate": 0.20,
+            "first_lecture_miss_rate": 0.15,
+            "current_streak": 2,
+            "total_lectures": 40,
+            "attended_lectures": 30
+        }
 
     current_att = stats.get("current_attendance_pct", 75.0)
     attended_lec = stats.get("attended_lectures", int(current_att * 0.4))
@@ -802,23 +872,19 @@ def student_dashboard(roll_no: str):
         if s["total"] > 0:
             s["pct"] = round((s["attended"] / s["total"]) * 100.0, 1)
 
-    recent_logs = list(attendance_col.find(
-        {"roll_no": roll_no},
-        {"live_selfie_base64": 0}
-    ).sort("marked_at", -1).limit(10))
+    recent_records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.roll_no == roll_no
+    ).order_by(AttendanceRecord.marked_at.desc()).limit(10).all()
 
-    for log in recent_logs:
-        log["_id"] = str(log["_id"])
-        if isinstance(log.get("marked_at"), datetime):
-            log["marked_at"] = log["marked_at"].isoformat()
+    recent_logs = [r.to_dict() for r in recent_records]
 
     return {
         "student": {
-            "roll_no": student.get("roll_no"),
-            "name": student.get("name"),
-            "department": student.get("department", "CSE"),
-            "semester": student.get("semester", 6),
-            "bound_device_id": student.get("bound_device_id") or student.get("registered_device_id")
+            "roll_no": student.roll_no,
+            "name": student.name,
+            "department": student.department or "CSE",
+            "semester": student.semester or 6,
+            "bound_device_id": student.bound_device_id or student.registered_device_id
         },
         "attendance": {
             "current_pct": current_att,
@@ -837,70 +903,57 @@ def student_dashboard(roll_no: str):
 # 6. GET /api/faculty/session/{session_id}/live & POST /api/faculty/approve
 # ------------------------------------------------------------------------------
 @app.get("/api/faculty/session/{session_id}/live")
-def get_faculty_live_session(session_id: str):
-    sessions_col = get_lecture_sessions_collection()
-    attendance_col = get_attendance_logs_collection()
-    alerts_col = get_security_alerts_collection()
+def get_faculty_live_session(session_id: str, db: Session = Depends(get_pg_db)):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
 
-    session = sessions_col.find_one({"$or": [{"session_id": session_id}, {"session_code": session_id}]})
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-    logs = list(attendance_col.find({"session_id": session_id}).sort("marked_at", -1))
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session_id
+    ).order_by(AttendanceRecord.marked_at.desc()).all()
 
     present_students = []
     pending_approvals = []
 
-    for log in logs:
-        log["_id"] = str(log["_id"])
-        if isinstance(log.get("marked_at"), datetime):
-            log["marked_at"] = log["marked_at"].isoformat()
-
-        if log.get("status") == "PRESENT":
+    for r in records:
+        if r.status == "PRESENT":
             present_students.append({
-                "roll_no": log.get("roll_no"),
-                "student_name": log.get("student_name"),
-                "marked_at": log.get("marked_at"),
-                "distance_meters": log.get("distance_meters"),
-                "face_match_score": log.get("face_match_score"),
-                "device_id": log.get("used_device_id"),
-                "is_manual_override": log.get("is_manual_override", False),
-                "reason": log.get("reason")
+                "roll_no": r.roll_no,
+                "student_name": r.student_name,
+                "marked_at": r.marked_at.isoformat() if r.marked_at else None,
+                "distance_meters": r.distance_meters,
+                "face_match_score": r.face_match_score,
+                "device_id": r.used_device_id,
+                "is_manual_override": r.is_manual_override,
+                "reason": r.reason
             })
-        elif log.get("status") == "PENDING_APPROVAL":
+        elif r.status == "PENDING_APPROVAL":
             pending_approvals.append({
-                "roll_no": log.get("roll_no"),
-                "student_name": log.get("student_name"),
-                "marked_at": log.get("marked_at"),
-                "device_id": log.get("used_device_id"),
-                "distance_meters": log.get("distance_meters"),
-                "face_match_score": log.get("face_match_score"),
-                "live_selfie_base64": log.get("live_selfie_base64")
+                "roll_no": r.roll_no,
+                "student_name": r.student_name,
+                "marked_at": r.marked_at.isoformat() if r.marked_at else None,
+                "device_id": r.used_device_id,
+                "distance_meters": r.distance_meters,
+                "face_match_score": r.face_match_score,
+                "live_selfie_base64": r.live_selfie_base64
             })
 
-    alerts = list(alerts_col.find({"session_id": session_id}).sort("timestamp", -1))
-    formatted_alerts = []
-    for a in alerts:
-        a["_id"] = str(a["_id"])
-        if isinstance(a.get("timestamp"), datetime):
-            a["timestamp"] = a["timestamp"].isoformat()
-        formatted_alerts.append({
-            "id": a["_id"],
-            "failed_gate": a.get("failed_gate"),
-            "reason": a.get("reason"),
-            "roll_no": a.get("roll_no"),
-            "device_id": a.get("used_device_id"),
-            "timestamp": a.get("timestamp"),
-            "resolved": a.get("resolved", False)
-        })
+    alerts = db.query(SecurityAlert).filter(
+        SecurityAlert.session_id == session_id
+    ).order_by(SecurityAlert.created_at.desc()).all()
+
+    formatted_alerts = [a.to_dict() for a in alerts]
 
     return {
         "session": {
-            "session_id": session.get("session_id"),
-            "subject_name": session.get("subject_name"),
-            "status": session.get("status"),
-            "class_lat": session.get("class_lat"),
-            "class_lng": session.get("class_lng")
+            "session_id": session.session_id,
+            "subject_name": session.subject_name,
+            "status": session.status,
+            "class_lat": session.class_lat,
+            "class_lng": session.class_lng
         },
         "counters": {
             "present_count": len(present_students),
@@ -913,53 +966,40 @@ def get_faculty_live_session(session_id: str):
     }
 
 @app.post("/api/faculty/approve")
-def approve_exception(req: FacultyApproveRequest):
-    attendance_col = get_attendance_logs_collection()
-    users_col = get_users_collection()
-
+def approve_exception(req: FacultyApproveRequest, db: Session = Depends(get_pg_db)):
     action = req.action.upper()
     if action not in ["APPROVE", "REJECT"]:
         raise HTTPException(status_code=400, detail="Action must be either 'APPROVE' or 'REJECT'")
 
     new_status = "PRESENT" if action == "APPROVE" else "REJECTED"
 
-    record = attendance_col.find_one({"session_id": req.session_id, "roll_no": req.roll_no})
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.roll_no == req.roll_no
+    ).first()
+
     if not record:
         raise HTTPException(
             status_code=404,
             detail=f"Attendance record for roll number '{req.roll_no}' in session '{req.session_id}' not found."
         )
 
-    attendance_col.update_one(
-        {"_id": record["_id"]},
-        {
-            "$set": {
-                "status": new_status,
-                "reviewed_at": datetime.now(timezone.utc),
-                "remarks": req.remarks or f"Faculty {action.lower()}d exception."
-            }
-        }
-    )
+    record.status = new_status
+    record.reviewed_at = datetime.now(timezone.utc)
+    record.remarks = req.remarks or f"Faculty {action.lower()}d exception."
 
     if new_status == "PRESENT":
-        student = users_col.find_one({"roll_no": req.roll_no})
+        student = db.query(User).filter(User.roll_no == req.roll_no).first()
         if student:
-            stats = student.get("attendance_stats", {})
-            total_lec = stats.get("total_lectures", 40) + 1
-            att_lec = stats.get("attended_lectures", 30) + 1
-            new_pct = round((att_lec / total_lec) * 100.0, 1)
-            new_streak = max(1, stats.get("current_streak", 0) + 1)
-            users_col.update_one(
-                {"roll_no": req.roll_no},
-                {
-                    "$set": {
-                        "attendance_stats.total_lectures": total_lec,
-                        "attendance_stats.attended_lectures": att_lec,
-                        "attendance_stats.current_attendance_pct": new_pct,
-                        "attendance_stats.current_streak": new_streak
-                    }
-                }
-            )
+            stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+            if stats:
+                stats.total_lectures += 1
+                stats.attended_lectures += 1
+                stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
+                stats.current_streak = max(1, stats.current_streak + 1)
+                stats.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
 
     return {
         "success": True,
@@ -974,79 +1014,49 @@ def approve_exception(req: FacultyApproveRequest):
 # 7. ADMIN ENDPOINTS: Overview, User Management, Device Reset
 # ------------------------------------------------------------------------------
 @app.get("/api/admin/overview")
-def admin_overview():
-    users_col = get_users_collection()
-    sessions_col = get_lecture_sessions_collection()
-    alerts_col = get_security_alerts_collection()
-
-    # User counts
-    students = list(users_col.find({"role": "student"}))
-    faculty_list = list(users_col.find({"role": "faculty"}))
-    admins = list(users_col.find({"role": "admin"}))
+def admin_overview(db: Session = Depends(get_pg_db)):
+    students = db.query(User).filter(User.role == "student").all()
+    faculty_list = db.query(User).filter(User.role == "faculty").all()
+    admins = db.query(User).filter(User.role == "admin").all()
 
     total_students = len(students)
     total_faculty = len(faculty_list)
     total_admins = len(admins)
 
-    # Calculate system average attendance
-    att_percentages = [
-        s.get("attendance_stats", {}).get("current_attendance_pct", 75.0)
-        for s in students
-    ]
+    # Average attendance
+    all_stats = db.query(StudentStats).all()
+    att_percentages = [s.current_attendance_pct for s in all_stats]
     sys_avg_attendance = round(float(np.mean(att_percentages)), 1) if att_percentages else 0.0
 
     # ML Defaulter Risk Evaluation across all students
     high_risk_defaulters = []
     for s in students:
-        stats = s.get("attendance_stats", {})
-        risk = evaluate_student_risk(stats)
+        s_stats_obj = db.query(StudentStats).filter(StudentStats.user_id == s.id).first()
+        stats_dict = s_stats_obj.to_dict() if s_stats_obj else {}
+        risk = evaluate_student_risk(stats_dict)
         if risk["will_be_defaulter"] == 1 or risk["risk_level"] in ["CRITICAL", "WARNING"]:
             high_risk_defaulters.append({
-                "roll_no": s.get("roll_no"),
-                "name": s.get("name"),
-                "email": s.get("email"),
-                "department": s.get("department", "CSE"),
-                "attendance_pct": stats.get("current_attendance_pct", 0.0),
+                "roll_no": s.roll_no,
+                "name": s.name,
+                "email": s.email,
+                "department": s.department or "CSE",
+                "attendance_pct": stats_dict.get("current_attendance_pct", 0.0),
                 "defaulter_probability": risk["defaulter_probability"],
                 "risk_pct": risk["defaulter_risk_pct"],
                 "risk_level": risk["risk_level"],
-                "current_streak": stats.get("current_streak", 0)
+                "current_streak": stats_dict.get("current_streak", 0)
             })
 
     # Sort defaulters by risk probability descending
     high_risk_defaulters.sort(key=lambda x: x["defaulter_probability"], reverse=True)
 
-    # Sessions list
-    sessions = list(sessions_col.find({}).sort("created_at", -1).limit(20))
-    formatted_sessions = []
-    for sess in sessions:
-        sess["_id"] = str(sess["_id"])
-        if isinstance(sess.get("created_at"), datetime):
-            sess["created_at"] = sess["created_at"].isoformat()
-        formatted_sessions.append({
-            "session_id": sess.get("session_id"),
-            "subject_name": sess.get("subject_name"),
-            "faculty_id": sess.get("faculty_id"),
-            "status": sess.get("status"),
-            "created_at": sess.get("created_at")
-        })
+    # Recent sessions
+    sessions = db.query(LectureSession).order_by(LectureSession.created_at.desc()).limit(20).all()
+    formatted_sessions = [sess.to_dict() for sess in sessions]
 
-    # Security alerts
-    alerts = list(alerts_col.find({}).sort("timestamp", -1).limit(30))
-    formatted_alerts = []
-    for a in alerts:
-        a["_id"] = str(a["_id"])
-        if isinstance(a.get("timestamp"), datetime):
-            a["timestamp"] = a["timestamp"].isoformat()
-        formatted_alerts.append({
-            "id": a["_id"],
-            "session_id": a.get("session_id"),
-            "roll_no": a.get("roll_no"),
-            "device_id": a.get("used_device_id"),
-            "failed_gate": a.get("failed_gate"),
-            "reason": a.get("reason"),
-            "timestamp": a.get("timestamp")
-        })
+    # Recent security alerts
+    alerts = db.query(SecurityAlert).order_by(SecurityAlert.created_at.desc()).limit(30).all()
+    formatted_alerts = [a.to_dict() for a in alerts]
 
     return {
         "counts": {
@@ -1064,49 +1074,60 @@ def admin_overview():
     }
 
 @app.post("/api/admin/users")
-def admin_create_user(req: CreateUserRequest):
-    users_col = get_users_collection()
-
+def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
     role = req.role.lower()
     if role not in ["student", "faculty", "admin"]:
         raise HTTPException(status_code=400, detail="Role must be 'student', 'faculty', or 'admin'.")
 
     # Check for existing email or roll_no
-    existing = users_col.find_one({"$or": [{"email": req.email}, {"roll_no": req.roll_no}, {"faculty_id": req.roll_no}, {"admin_id": req.roll_no}]})
+    existing = db.query(User).filter(
+        (User.email == req.email) | (User.roll_no == req.roll_no)
+    ).first()
     if existing:
-        raise HTTPException(status_code=400, detail=f"User with roll/ID '{req.roll_no}' or email '{req.email}' already exists.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"User with roll/ID '{req.roll_no}' or email '{req.email}' already exists."
+        )
 
-    new_user = {
-        "name": req.name,
-        "email": req.email,
-        "password": req.password,
-        "role": role,
-        "department": req.department,
-        "is_active": True,
-        "created_at": datetime.now(timezone.utc)
-    }
+    now = datetime.now(timezone.utc)
+    new_user = User(
+        name=req.name,
+        email=req.email,
+        password=hash_password(req.password),
+        role=role,
+        department=req.department,
+        is_active=True,
+        created_at=now,
+        updated_at=now
+    )
 
     if role == "student":
-        new_user["roll_no"] = req.roll_no
-        new_user["semester"] = req.semester or 6
-        new_user["bound_device_id"] = None
-        new_user["registered_device_id"] = None
-        new_user["attendance_stats"] = {
-            "current_attendance_pct": req.initial_attendance_pct or 80.0,
-            "last_14_days_pct": req.initial_attendance_pct or 80.0,
-            "mon_fri_skip_rate": 0.15,
-            "first_lecture_miss_rate": 0.10,
-            "current_streak": 3,
-            "total_lectures": 40,
-            "attended_lectures": int(40 * ((req.initial_attendance_pct or 80.0) / 100.0))
-        }
-    elif role == "faculty":
-        new_user["faculty_id"] = req.roll_no
-        new_user["courses_taught"] = [f"{req.department} Core Lecture"]
-    elif role == "admin":
-        new_user["admin_id"] = req.roll_no
+        new_user.roll_no = req.roll_no
+        new_user.semester = req.semester or 6
+        db.add(new_user)
+        db.flush()
 
-    users_col.insert_one(new_user)
+        init_att = req.initial_attendance_pct or 80.0
+        stats = StudentStats(
+            user_id=new_user.id,
+            current_attendance_pct=init_att,
+            last_14_days_pct=init_att,
+            mon_fri_skip_rate=0.15,
+            first_lecture_miss_rate=0.10,
+            current_streak=3,
+            total_lectures=40,
+            attended_lectures=int(40 * (init_att / 100.0)),
+            updated_at=now
+        )
+        db.add(stats)
+    elif role == "faculty":
+        new_user.roll_no = req.roll_no
+        db.add(new_user)
+    elif role == "admin":
+        new_user.roll_no = req.roll_no
+        db.add(new_user)
+
+    db.commit()
 
     return {
         "success": True,
@@ -1120,23 +1141,15 @@ def admin_create_user(req: CreateUserRequest):
     }
 
 @app.post("/api/admin/reset-device/{roll_no}")
-def admin_reset_device(roll_no: str):
-    users_col = get_users_collection()
-    student = users_col.find_one({"roll_no": roll_no})
-
+def admin_reset_device(roll_no: str, db: Session = Depends(get_pg_db)):
+    student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
 
-    users_col.update_one(
-        {"roll_no": roll_no},
-        {
-            "$set": {
-                "bound_device_id": None,
-                "registered_device_id": None,
-                "device_reset_at": datetime.now(timezone.utc)
-            }
-        }
-    )
+    student.bound_device_id = None
+    student.registered_device_id = None
+    student.updated_at = datetime.now(timezone.utc)
+    db.commit()
 
     return {
         "success": True,

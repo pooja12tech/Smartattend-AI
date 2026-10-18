@@ -6,8 +6,8 @@ from PIL import Image
 from fastapi.testclient import TestClient
 
 from main import app
-from database import get_users_collection, get_attendance_logs_collection, get_security_alerts_collection
-from seed_data import run_seed
+from seed_postgres import run_postgres_seed
+from db_postgres import init_db_schema
 
 def create_sample_face_b64(color=(255, 100, 100)) -> str:
     """Create a simple test image in base64 format for face verification testing."""
@@ -21,8 +21,18 @@ def run_tests():
     print(" SmartAttend-AI : Comprehensive API, RBAC & Anti-Proxy Tests ")
     print("=" * 60)
 
-    # Re-seed database with updated passwords and admin account
-    run_seed()
+    # Re-seed relational database with updated passwords and accounts
+    init_db_schema()
+    from db_postgres import get_session_factory
+    from models import User
+    _s = get_session_factory()()
+    _stu4 = _s.query(User).filter((User.roll_no == "STU04") | (User.email == "neha@smartattend.edu")).first()
+    if _stu4:
+        _s.delete(_stu4)
+        _s.commit()
+    _s.close()
+
+    run_postgres_seed()
 
     client = TestClient(app)
 
@@ -41,7 +51,20 @@ def run_tests():
     })
     assert res.status_code == 200, f"Login failed: {res.text}"
     assert res.json()["role"] == "student"
-    print("[PASS] 2a. Student Login & Device Binding OK:", res.json()["binding_status"])
+    assert "access_token" in res.json(), "Access token missing from login response"
+    assert res.json()["token_type"] == "bearer"
+    student_token = res.json()["access_token"]
+    print("[PASS] 2a. Student Login & JWT Token Issued:", student_token[:20] + "...")
+
+    # 2a-2. Test Consent-Based Face Enrollment
+    test_face_img = create_sample_face_b64((200, 150, 150))
+    enroll_res = client.post("/api/student/enroll-face", json={
+        "roll_no": "STU01",
+        "live_selfie_base64": test_face_img,
+        "consent_given": True
+    })
+    assert enroll_res.status_code == 200
+    print("[PASS] 2a-2. Face Enrollment with Consent Verified:", enroll_res.json()["message"])
 
     # 2b. Invalid Password Check
     res = client.post("/api/login", json={

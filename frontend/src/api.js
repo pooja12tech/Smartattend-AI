@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const getDeviceId = () => {
   let devId = localStorage.getItem('smartattend_device_id');
@@ -13,6 +13,30 @@ export const getDeviceId = () => {
 
 export const setCustomDeviceId = (newId) => {
   localStorage.setItem('smartattend_device_id', newId);
+};
+
+export const getAuthToken = () => {
+  return localStorage.getItem('smartattend_jwt_token');
+};
+
+export const setAuthToken = (token) => {
+  if (token) {
+    localStorage.setItem('smartattend_jwt_token', token);
+  } else {
+    localStorage.removeItem('smartattend_jwt_token');
+  }
+};
+
+const getHeaders = (extraHeaders = {}) => {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...extraHeaders
+  };
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 };
 
 export const api = {
@@ -31,13 +55,31 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.detail || 'Login failed');
     }
+    if (data.access_token) {
+      setAuthToken(data.access_token);
+    }
+    return data;
+  },
+
+  logout() {
+    setAuthToken(null);
+  },
+
+  async enrollFace({ roll_no, live_selfie_base64, consent_given = true }) {
+    const res = await fetch(`${API_BASE}/api/student/enroll-face`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ roll_no, live_selfie_base64, consent_given })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Face enrollment failed');
     return data;
   },
 
   async startSession({ subject_name, faculty_id, class_lat, class_lng }) {
     const res = await fetch(`${API_BASE}/api/sessions/start`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ subject_name, faculty_id, class_lat, class_lng })
     });
     const data = await res.json();
@@ -46,7 +88,9 @@ export const api = {
   },
 
   async getSessionQR(sessionId) {
-    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/qr`);
+    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/qr`, {
+      headers: getHeaders()
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to fetch QR');
     return data;
@@ -55,7 +99,7 @@ export const api = {
   async markAttendance(payload) {
     const res = await fetch(`${API_BASE}/api/attendance/mark`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(payload)
     });
     const data = await res.json();
@@ -68,14 +112,18 @@ export const api = {
   },
 
   async getStudentDashboard(rollNo) {
-    const res = await fetch(`${API_BASE}/api/student/${rollNo}/dashboard`);
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/dashboard`, {
+      headers: getHeaders()
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load student dashboard');
     return data;
   },
 
   async getFacultyLiveSession(sessionId) {
-    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/live`);
+    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/live`, {
+      headers: getHeaders()
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to load faculty live session');
     return data;
@@ -84,7 +132,7 @@ export const api = {
   async facultyApprove({ session_id, roll_no, action, remarks }) {
     const res = await fetch(`${API_BASE}/api/faculty/approve`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ session_id, roll_no, action, remarks })
     });
     const data = await res.json();
@@ -95,7 +143,7 @@ export const api = {
   async facultyManualAttendance({ session_id, roll_no, status, faculty_id, reason }) {
     const res = await fetch(`${API_BASE}/api/faculty/manual-attendance`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify({ session_id, roll_no, status, faculty_id, reason })
     });
     const data = await res.json();
@@ -104,7 +152,9 @@ export const api = {
   },
 
   async getAdminOverview() {
-    const res = await fetch(`${API_BASE}/api/admin/overview`);
+    const res = await fetch(`${API_BASE}/api/admin/overview`, {
+      headers: getHeaders()
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to fetch admin overview');
     return data;
@@ -113,7 +163,7 @@ export const api = {
   async adminCreateUser(userData) {
     const res = await fetch(`${API_BASE}/api/admin/users`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders(),
       body: JSON.stringify(userData)
     });
     const data = await res.json();
@@ -123,7 +173,8 @@ export const api = {
 
   async adminResetDevice(rollNo) {
     const res = await fetch(`${API_BASE}/api/admin/reset-device/${rollNo}`, {
-      method: 'POST'
+      method: 'POST',
+      headers: getHeaders()
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to reset device');
