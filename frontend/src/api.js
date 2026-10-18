@@ -171,13 +171,64 @@ export const api = {
     return data;
   },
 
-  async adminResetDevice(rollNo) {
+  async adminResetDevice(rollNo, reason = 'Hardware device lock reset by administrator') {
     const res = await fetch(`${API_BASE}/api/admin/reset-device/${rollNo}`, {
       method: 'POST',
-      headers: getHeaders()
+      headers: getHeaders(),
+      body: JSON.stringify({ reason })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to reset device');
+    return data;
+  },
+
+  async adminResetFace(rollNo, reason = 'Biometric reference reset by administrator') {
+    const res = await fetch(`${API_BASE}/api/admin/reset-face/${rollNo}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to reset biometric template');
+    return data;
+  },
+
+  async getAuditLogs(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/api/admin/audit-logs${query ? '?' + query : ''}`, {
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to fetch audit logs');
+    return data;
+  },
+
+  async getSubjects() {
+    const res = await fetch(`${API_BASE}/api/subjects`, {
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to fetch subjects');
+    return data;
+  },
+
+  async adminCreateSubject(subjectData) {
+    const res = await fetch(`${API_BASE}/api/admin/subjects`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(subjectData)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to create subject');
+    return data;
+  },
+
+  async getStudentSubjects(rollNo) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/subjects`, {
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to fetch student subjects');
     return data;
   }
 };

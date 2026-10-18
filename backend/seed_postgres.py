@@ -225,6 +225,100 @@ def run_postgres_seed(session: Session = None) -> bool:
             sample_session.secret_seed = "default_smartattend_seed_2026"
             print("[Seed] Updated Lecture Session: CS301-SEC-A")
 
+        # 5. Academic Subjects (CS301, CS302, CS303, CS304)
+        from models import Subject, StudentSubjectEnrollment, AuditLog
+        subjects_data = [
+            {"code": "CS301", "name": "Operating Systems", "credits": 4, "total_conducted": 20, "faculty_id": "FAC01", "faculty_name": "Prof. Alan Turing"},
+            {"code": "CS302", "name": "Database Management Systems", "credits": 4, "total_conducted": 18, "faculty_id": "FAC01", "faculty_name": "Prof. Alan Turing"},
+            {"code": "CS303", "name": "Machine Learning & AI", "credits": 4, "total_conducted": 22, "faculty_id": "FAC01", "faculty_name": "Prof. Alan Turing"},
+            {"code": "CS304", "name": "Distributed Systems", "credits": 3, "total_conducted": 16, "faculty_id": "FAC01", "faculty_name": "Prof. Alan Turing"},
+        ]
+
+        for s_info in subjects_data:
+            subj = session.query(Subject).filter(Subject.code == s_info["code"]).first()
+            if not subj:
+                subj = Subject(
+                    code=s_info["code"],
+                    name=s_info["name"],
+                    department="Computer Science & Engineering",
+                    semester=6,
+                    faculty_id=s_info["faculty_id"],
+                    faculty_name=s_info["faculty_name"],
+                    credits=s_info["credits"],
+                    min_attendance_pct=75.0,
+                    total_conducted=s_info["total_conducted"],
+                    created_at=now
+                )
+                session.add(subj)
+                print(f"[Seed] Created Subject: {subj.code} - {subj.name}")
+            else:
+                subj.name = s_info["name"]
+                subj.faculty_id = s_info["faculty_id"]
+                subj.faculty_name = s_info["faculty_name"]
+                subj.total_conducted = s_info["total_conducted"]
+
+        session.flush()
+
+        # 6. Student Subject Enrollments
+        # STU01 (High: 85%), STU02 (Borderline: 76%), STU03 (At-risk: 65%)
+        enrollments = [
+            # STU01
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS301", "subj": "Operating Systems", "tot": 20, "att": 18},
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS302", "subj": "Database Management Systems", "tot": 18, "att": 16},
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS303", "subj": "Machine Learning & AI", "tot": 22, "att": 19},
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS304", "subj": "Distributed Systems", "tot": 16, "att": 13},
+            # STU02
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS301", "subj": "Operating Systems", "tot": 20, "att": 15},
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS302", "subj": "Database Management Systems", "tot": 18, "att": 14},
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS303", "subj": "Machine Learning & AI", "tot": 22, "att": 17},
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS304", "subj": "Distributed Systems", "tot": 16, "att": 12},
+            # STU03
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS301", "subj": "Operating Systems", "tot": 20, "att": 12},
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS302", "subj": "Database Management Systems", "tot": 18, "att": 11},
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS303", "subj": "Machine Learning & AI", "tot": 22, "att": 14},
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS304", "subj": "Distributed Systems", "tot": 16, "att": 9},
+        ]
+
+        for enr in enrollments:
+            rec = session.query(StudentSubjectEnrollment).filter(
+                StudentSubjectEnrollment.roll_no == enr["roll_no"],
+                StudentSubjectEnrollment.subject_code == enr["code"]
+            ).first()
+            pct = (enr["att"] / max(1, enr["tot"])) * 100.0
+            if not rec:
+                rec = StudentSubjectEnrollment(
+                    roll_no=enr["roll_no"],
+                    student_name=enr["name"],
+                    subject_code=enr["code"],
+                    subject_name=enr["subj"],
+                    total_classes=enr["tot"],
+                    attended_classes=enr["att"],
+                    current_pct=round(pct, 1),
+                    updated_at=now
+                )
+                session.add(rec)
+            else:
+                rec.total_classes = enr["tot"]
+                rec.attended_classes = enr["att"]
+                rec.current_pct = round(pct, 1)
+
+        # 7. Initial Audit Log entry
+        initial_audit = session.query(AuditLog).filter(AuditLog.action == "SYSTEM_INIT").first()
+        if not initial_audit:
+            initial_audit = AuditLog(
+                actor_id="ADM01",
+                actor_name="System Administrator",
+                actor_role="admin",
+                action="SYSTEM_INIT",
+                target_type="SYSTEM",
+                target_id="DATABASE",
+                old_value=None,
+                new_value="Normalized Relational Schema v2.1 Initialized",
+                reason="System startup database initialization & verification",
+                created_at=now
+            )
+            session.add(initial_audit)
+
         session.commit()
         print("\n[SUCCESS] Relational seed completed successfully!")
         return True

@@ -36,7 +36,77 @@ export default function StudentPortal({ user }) {
   const [submittingAttendance, setSubmittingAttendance] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
 
+  // Biometric Face Enrollment Modal State
+  const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
+  const [enrollSelfie, setEnrollSelfie] = useState(null);
+  const [enrollConsent, setEnrollConsent] = useState(true);
+  const [enrollingFace, setEnrollingFace] = useState(false);
+  const [faceEnrollSuccess, setFaceEnrollSuccess] = useState(null);
+  const enrollVideoRef = useRef(null);
+  const [enrollCameraActive, setEnrollCameraActive] = useState(false);
+
   const deviceId = getDeviceId();
+
+  const startEnrollCamera = async () => {
+    try {
+      setEnrollCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      if (enrollVideoRef.current) {
+        enrollVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn('Webcam permission not granted or device lacks camera. Using synthetic capture:', err);
+      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+    }
+  };
+
+  const captureEnrollSelfie = () => {
+    if (enrollVideoRef.current && enrollVideoRef.current.srcObject) {
+      const video = enrollVideoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = 160;
+      canvas.height = 160;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, 160, 160);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setEnrollSelfie(dataUrl);
+
+      const stream = video.srcObject;
+      stream.getTracks().forEach(track => track.stop());
+      setEnrollCameraActive(false);
+    } else {
+      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+    }
+  };
+
+  const handleEnrollFace = async () => {
+    if (!enrollSelfie) {
+      alert('Please capture or select a photo before saving.');
+      return;
+    }
+    if (!enrollConsent) {
+      alert('Explicit consent is required to store facial reference templates.');
+      return;
+    }
+    setEnrollingFace(true);
+    try {
+      const res = await api.enrollFace({
+        roll_no: user.roll_no,
+        live_selfie_base64: enrollSelfie,
+        consent_given: enrollConsent
+      });
+      setFaceEnrollSuccess(res.message || 'Face registered successfully!');
+      setTimeout(() => {
+        setFaceEnrollSuccess(null);
+        setShowFaceEnrollModal(false);
+      }, 2000);
+      fetchDashboardData();
+    } catch (err) {
+      alert('Face enrollment failed: ' + err.message);
+    } finally {
+      setEnrollingFace(false);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -310,39 +380,67 @@ export default function StudentPortal({ user }) {
     <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Top Biometric & Device Binding Status Bar */}
-      <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
-            <Smartphone className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">Device Hardware Lock</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Bound & Protected
-              </span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Hardware Device Lock */}
+        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
+              <Smartphone className="w-6 h-6" />
             </div>
-            <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId}</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Hardware Device Lock</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Bound
+                </span>
+              </div>
+              <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId}</p>
+            </div>
+          </div>
+
+          <div>
+            {!biometricUnlocked ? (
+              <button
+                onClick={handleBiometricUnlock}
+                disabled={biometricScanning}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-[11px] font-semibold shadow-lg shadow-brand-500/25 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+              >
+                <Fingerprint className={`w-3.5 h-3.5 ${biometricScanning ? 'animate-bounce text-amber-300' : ''}`} />
+                <span>{biometricScanning ? 'Verifying...' : 'Unlock Touch ID'}</span>
+              </button>
+            ) : (
+              <div className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Unlocked</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Biometric Scan Trigger */}
-        <div>
-          {!biometricUnlocked ? (
-            <button
-              onClick={handleBiometricUnlock}
-              disabled={biometricScanning}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-brand-500/25 flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
-            >
-              <Fingerprint className={`w-4 h-4 ${biometricScanning ? 'animate-bounce text-amber-300' : ''}`} />
-              <span>{biometricScanning ? 'Scanning Passkey...' : 'Unlock Scanner (Touch ID)'}</span>
-            </button>
-          ) : (
-            <div className="px-3.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Biometric Verified</span>
+        {/* Biometric Face Template Registration */}
+        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-inner">
+              <Camera className="w-6 h-6" />
             </div>
-          )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Face Biometric Gate</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Consent Verified
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">Template stored for AI matching</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowFaceEnrollModal(true)}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 transition active:scale-95"
+          >
+            <Camera className="w-3.5 h-3.5 text-purple-400" />
+            <span>Enroll / Update</span>
+          </button>
         </div>
       </div>
 
@@ -712,30 +810,162 @@ export default function StudentPortal({ user }) {
 
       {/* Subject-Wise Attendance Breakdown */}
       <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-indigo-400" />
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider">Subject-Wise Breakdown</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Academic Curriculum & Subject Tracking</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Min. Target: 75.0%</span>
         </div>
 
-        <div className="space-y-4">
-          {subjects.map((sub, idx) => (
-            <div key={idx} className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-semibold">
-                <span className="text-slate-200">{sub.subject}</span>
-                <span className={`font-mono ${sub.pct >= 75 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {sub.attended}/{sub.total} ({sub.pct}%)
-                </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {subjects.map((sub, idx) => {
+            const isSafe = sub.pct >= 75.0;
+            const bCalc = sub.bunk_calculator;
+            return (
+              <div key={idx} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-white leading-snug">{sub.subject}</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {sub.attended} attended / {sub.total} conducted lectures
+                    </p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-black ${isSafe ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}`}>
+                    {sub.pct}%
+                  </span>
+                </div>
+
+                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${isSafe ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
+                    style={{ width: `${Math.min(100, sub.pct)}%` }}
+                  ></div>
+                </div>
+
+                {bCalc && (
+                  <div className={`p-2.5 rounded-lg text-[11px] flex items-center justify-between ${isSafe ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
+                    <span className="font-medium">
+                      {isSafe ? `✅ Safe Skips: ${bCalc.safe_skips}` : `⚠️ Attend Next: ${bCalc.classes_needed}`}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{bCalc.message}</span>
+                  </div>
+                )}
               </div>
-              <div className="w-full h-2.5 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${sub.pct >= 75 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
-                  style={{ width: `${Math.min(100, sub.pct)}%` }}
-                ></div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* Consent-Based Biometric Face Enrollment Modal */}
+      {showFaceEnrollModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md rounded-2xl p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">Biometric Face Enrollment</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFaceEnrollModal(false);
+                  if (enrollVideoRef.current?.srcObject) {
+                    enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
+                  }
+                  setEnrollCameraActive(false);
+                }}
+                className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded-lg bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Register your high-resolution facial reference template. This image will serve as the biometric ground truth for Gate 4 during lecture attendance.
+            </p>
+
+            {/* Camera View / Photo Preview */}
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
+              {enrollCameraActive ? (
+                <div className="space-y-2">
+                  <video ref={enrollVideoRef} autoPlay playsInline className="w-full h-48 object-cover rounded-xl bg-black" />
+                  <button
+                    type="button"
+                    onClick={captureEnrollSelfie}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold"
+                  >
+                    Capture Reference Frame
+                  </button>
+                </div>
+              ) : enrollSelfie ? (
+                <div className="flex flex-col items-center gap-2">
+                  <img src={enrollSelfie} alt="Enrolled reference" className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500/50 shadow-lg" />
+                  <button
+                    type="button"
+                    onClick={startEnrollCamera}
+                    className="text-[11px] text-purple-400 hover:underline font-medium"
+                  >
+                    Retake Photo
+                  </button>
+                </div>
+              ) : (
+                <div className="py-6 space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/10 text-purple-400 flex items-center justify-center mx-auto">
+                    <Camera className="w-7 h-7" />
+                  </div>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={startEnrollCamera}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold"
+                    >
+                      Open Front Camera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'))}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                    >
+                      Test Photo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Mandatory Explicit Consent Checkbox (DPDP Act Compliance) */}
+            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enrollConsent}
+                onChange={(e) => setEnrollConsent(e.target.checked)}
+                className="mt-0.5 rounded text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-[11px] text-slate-300 leading-tight">
+                <strong>Explicit Biometric Consent:</strong> I voluntarily consent to SmartAttend-AI storing a mathematical representation of my facial features exclusively for academic attendance verification and proxy deterrence.
+              </span>
+            </label>
+
+            {faceEnrollSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{faceEnrollSuccess}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleEnrollFace}
+              disabled={enrollingFace || !enrollSelfie || !enrollConsent}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-600/25 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {enrollingFace ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>Save & Register Biometric Face</span>
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

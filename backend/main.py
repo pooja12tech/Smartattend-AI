@@ -25,7 +25,10 @@ from db_postgres import (
     check_postgres_connection,
     is_fallback_sqlite
 )
-from models import User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert
+from models import (
+    User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
+    Subject, StudentSubjectEnrollment, AuditLog
+)
 from seed_postgres import run_postgres_seed
 from auth import (
     hash_password,
@@ -280,6 +283,49 @@ class EnrollFaceRequest(BaseModel):
     roll_no: str = Field(..., example="STU01")
     live_selfie_base64: str = Field(..., description="Base64 encoded reference face capture")
     consent_given: bool = Field(True, description="Explicit student consent for biometric template storage")
+
+class CreateSubjectRequest(BaseModel):
+    code: str = Field(..., example="CS305", description="Unique subject code")
+    name: str = Field(..., example="Information Security & Cryptography")
+    department: str = Field("Computer Science & Engineering")
+    semester: int = Field(6)
+    credits: int = Field(4)
+    faculty_id: Optional[str] = Field("FAC01")
+    faculty_name: Optional[str] = Field("Prof. Alan Turing")
+    min_attendance_pct: float = Field(75.0)
+
+class ResetDeviceRequest(BaseModel):
+    reason: Optional[str] = Field("Hardware device lock reset by administrator", description="Mandatory audit trail reason")
+
+def record_audit_log(
+    db: Session,
+    actor_id: str,
+    actor_name: str,
+    actor_role: str,
+    action: str,
+    target_type: str,
+    target_id: str,
+    reason: str,
+    old_value: Optional[str] = None,
+    new_value: Optional[str] = None,
+    ip_address: Optional[str] = None
+) -> AuditLog:
+    """Helper to append an immutable audit log entry."""
+    entry = AuditLog(
+        actor_id=actor_id,
+        actor_name=actor_name,
+        actor_role=actor_role,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        old_value=str(old_value) if old_value is not None else None,
+        new_value=str(new_value) if new_value is not None else None,
+        reason=reason,
+        ip_address=ip_address,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(entry)
+    return entry
 
 # ==============================================================================
 # API Endpoints
@@ -740,6 +786,9 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
     if action_status not in ["PRESENT", "ABSENT"]:
         raise HTTPException(status_code=400, detail="Status must be either 'PRESENT' or 'ABSENT'")
 
+    if not req.reason or not req.reason.strip():
+        raise HTTPException(status_code=400, detail="Mandatory audit reason required for manual attendance override.")
+
     timestamp_now = datetime.now(timezone.utc)
 
     # Upsert manual record in attendance_records
@@ -747,6 +796,8 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
         AttendanceRecord.session_id == req.session_id,
         AttendanceRecord.roll_no == req.roll_no
     ).first()
+
+    old_status = record.status if record else "ABSENT"
 
     if not record:
         record = AttendanceRecord(
@@ -793,6 +844,33 @@ def faculty_manual_attendance(req: ManualAttendanceRequest, db: Session = Depend
 
         stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
         stats.updated_at = timestamp_now
+
+    # Update subject-level enrollment tracking if matching subject exists
+    session_code_prefix = req.session_id.split("-")[0].upper()
+    enrollment = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == req.roll_no,
+        StudentSubjectEnrollment.subject_code == session_code_prefix
+    ).first()
+    if enrollment:
+        enrollment.total_classes += 1
+        if action_status == "PRESENT":
+            enrollment.attended_classes += 1
+        enrollment.current_pct = round((enrollment.attended_classes / max(1, enrollment.total_classes)) * 100.0, 1)
+        enrollment.updated_at = timestamp_now
+
+    # Immutable Audit Log
+    record_audit_log(
+        db=db,
+        actor_id=req.faculty_id,
+        actor_name=f"Faculty ({req.faculty_id})",
+        actor_role="faculty",
+        action="MANUAL_ATTENDANCE_OVERRIDE",
+        target_type="ATTENDANCE_RECORD",
+        target_id=f"{req.session_id}:{req.roll_no}",
+        old_value=old_status,
+        new_value=action_status,
+        reason=req.reason
+    )
 
     db.commit()
 
@@ -862,15 +940,29 @@ def student_dashboard(roll_no: str, db: Session = Depends(get_pg_db)):
 
     risk_info["insights"] = insights
 
-    # Subject-wise breakdown
-    subject_breakdown = [
-        {"subject": "CS301 - Operating Systems", "attended": int(attended_lec * 0.35), "total": int(total_lec * 0.35), "pct": current_att},
-        {"subject": "CS402 - Machine Learning", "attended": int(attended_lec * 0.30), "total": int(total_lec * 0.30), "pct": min(100.0, current_att + 2.0)},
-        {"subject": "CS305 - Database Systems", "attended": int(attended_lec * 0.35), "total": int(total_lec * 0.35), "pct": max(40.0, current_att - 3.0)}
-    ]
-    for s in subject_breakdown:
-        if s["total"] > 0:
-            s["pct"] = round((s["attended"] / s["total"]) * 100.0, 1)
+    # Subject-wise breakdown from normalized StudentSubjectEnrollment
+    db_enrollments = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == roll_no
+    ).order_by(StudentSubjectEnrollment.subject_code.asc()).all()
+
+    if db_enrollments:
+        subject_breakdown = []
+        for enr in db_enrollments:
+            b_calc = calculate_bunk_metrics(enr.attended_classes, enr.total_classes)
+            subject_breakdown.append({
+                "subject": f"{enr.subject_code} - {enr.subject_name}" if enr.subject_name else enr.subject_code,
+                "subject_code": enr.subject_code,
+                "attended": enr.attended_classes,
+                "total": enr.total_classes,
+                "pct": enr.current_pct,
+                "bunk_calculator": b_calc
+            })
+    else:
+        subject_breakdown = [
+            {"subject": "CS301 - Operating Systems", "subject_code": "CS301", "attended": int(attended_lec * 0.35), "total": int(total_lec * 0.35), "pct": current_att, "bunk_calculator": calculate_bunk_metrics(int(attended_lec * 0.35), int(total_lec * 0.35))},
+            {"subject": "CS302 - Database Systems", "subject_code": "CS302", "attended": int(attended_lec * 0.35), "total": int(total_lec * 0.35), "pct": max(40.0, current_att - 3.0), "bunk_calculator": calculate_bunk_metrics(int(attended_lec * 0.35), int(total_lec * 0.35))},
+            {"subject": "CS303 - Machine Learning", "subject_code": "CS303", "attended": int(attended_lec * 0.30), "total": int(total_lec * 0.30), "pct": min(100.0, current_att + 2.0), "bunk_calculator": calculate_bunk_metrics(int(attended_lec * 0.30), int(total_lec * 0.30))}
+        ]
 
     recent_records = db.query(AttendanceRecord).filter(
         AttendanceRecord.roll_no == roll_no
@@ -998,6 +1090,19 @@ def approve_exception(req: FacultyApproveRequest, db: Session = Depends(get_pg_d
                 stats.current_attendance_pct = round((stats.attended_lectures / stats.total_lectures) * 100.0, 1)
                 stats.current_streak = max(1, stats.current_streak + 1)
                 stats.updated_at = datetime.now(timezone.utc)
+
+    record_audit_log(
+        db=db,
+        actor_id="FACULTY",
+        actor_name="Faculty Reviewer",
+        actor_role="faculty",
+        action="EXCEPTION_APPROVAL",
+        target_type="ATTENDANCE_RECORD",
+        target_id=f"{req.session_id}:{req.roll_no}",
+        old_value="PENDING_APPROVAL",
+        new_value=new_status,
+        reason=req.remarks or f"Faculty {action.lower()}d exception."
+    )
 
     db.commit()
 
@@ -1127,6 +1232,17 @@ def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
         new_user.roll_no = req.roll_no
         db.add(new_user)
 
+    record_audit_log(
+        db=db,
+        actor_id="ADM01",
+        actor_name="System Administrator",
+        actor_role="admin",
+        action="USER_CREATED",
+        target_type="USER",
+        target_id=req.roll_no,
+        reason=f"Administrator provisioned new {role} account for {req.name}"
+    )
+
     db.commit()
 
     return {
@@ -1141,20 +1257,164 @@ def admin_create_user(req: CreateUserRequest, db: Session = Depends(get_pg_db)):
     }
 
 @app.post("/api/admin/reset-device/{roll_no}")
-def admin_reset_device(roll_no: str, db: Session = Depends(get_pg_db)):
+def admin_reset_device(roll_no: str, req: Optional[ResetDeviceRequest] = None, db: Session = Depends(get_pg_db)):
     student = db.query(User).filter(User.roll_no == roll_no).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
 
+    old_dev = student.bound_device_id or "UNBOUND"
     student.bound_device_id = None
     student.registered_device_id = None
     student.updated_at = datetime.now(timezone.utc)
+
+    reason = req.reason if req and req.reason else "Hardware device lock reset by administrator"
+    record_audit_log(
+        db=db,
+        actor_id="ADM01",
+        actor_name="System Administrator",
+        actor_role="admin",
+        action="DEVICE_RESET",
+        target_type="USER",
+        target_id=roll_no,
+        old_value=old_dev,
+        new_value="UNBOUND",
+        reason=reason
+    )
     db.commit()
 
     return {
         "success": True,
         "roll_no": roll_no,
         "message": f"Hardware device lock successfully reset for student {roll_no}. Student can now bind a new phone upon their next login."
+    }
+
+@app.post("/api/admin/reset-face/{roll_no}")
+def admin_reset_face(roll_no: str, req: Optional[ResetDeviceRequest] = None, db: Session = Depends(get_pg_db)):
+    student = db.query(User).filter(User.roll_no == roll_no).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
+
+    had_face = bool(student.registered_face_base64)
+    student.registered_face_base64 = None
+    student.updated_at = datetime.now(timezone.utc)
+
+    reason = req.reason if req and req.reason else "Biometric reference template reset by administrator"
+    record_audit_log(
+        db=db,
+        actor_id="ADM01",
+        actor_name="System Administrator",
+        actor_role="admin",
+        action="FACE_RESET",
+        target_type="USER",
+        target_id=roll_no,
+        old_value="ENROLLED" if had_face else "NONE",
+        new_value="RESET",
+        reason=reason
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "roll_no": roll_no,
+        "message": f"Biometric reference template reset for student {roll_no}. Student can now re-enroll their face."
+    }
+
+# ------------------------------------------------------------------------------
+# 8. AUDIT TRAILS & SUBJECT MANAGEMENT ENDPOINTS
+# ------------------------------------------------------------------------------
+@app.get("/api/admin/audit-logs")
+def get_admin_audit_logs(
+    limit: int = 50,
+    action: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    db: Session = Depends(get_pg_db)
+):
+    query = db.query(AuditLog)
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if actor_id:
+        query = query.filter(AuditLog.actor_id == actor_id)
+
+    logs = query.order_by(AuditLog.created_at.desc()).limit(min(100, limit)).all()
+    return {
+        "count": len(logs),
+        "audit_logs": [l.to_dict() for l in logs]
+    }
+
+@app.get("/api/subjects")
+def get_subjects(db: Session = Depends(get_pg_db)):
+    subjects = db.query(Subject).order_by(Subject.code.asc()).all()
+    return {
+        "count": len(subjects),
+        "subjects": [s.to_dict() for s in subjects]
+    }
+
+@app.post("/api/admin/subjects")
+def admin_create_subject(req: CreateSubjectRequest, db: Session = Depends(get_pg_db)):
+    existing = db.query(Subject).filter(Subject.code == req.code.upper()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Subject with code '{req.code}' already exists.")
+
+    subj = Subject(
+        code=req.code.upper(),
+        name=req.name,
+        department=req.department,
+        semester=req.semester,
+        credits=req.credits,
+        faculty_id=req.faculty_id,
+        faculty_name=req.faculty_name,
+        min_attendance_pct=req.min_attendance_pct,
+        total_conducted=0,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(subj)
+    record_audit_log(
+        db=db,
+        actor_id="ADM01",
+        actor_name="System Administrator",
+        actor_role="admin",
+        action="SUBJECT_CREATED",
+        target_type="SUBJECT",
+        target_id=req.code.upper(),
+        reason=f"Administrator added curriculum subject {subj.code} - {subj.name}"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Subject {subj.code} - {subj.name} successfully created.",
+        "subject": subj.to_dict()
+    }
+
+@app.get("/api/student/{roll_no}/subjects")
+def get_student_subjects(roll_no: str, db: Session = Depends(get_pg_db)):
+    student = db.query(User).filter(User.roll_no == roll_no).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
+
+    enrollments = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == roll_no
+    ).order_by(StudentSubjectEnrollment.subject_code.asc()).all()
+
+    results = []
+    for enr in enrollments:
+        bunk = calculate_bunk_metrics(enr.attended_classes, enr.total_classes)
+        results.append({
+            "id": str(enr.id),
+            "roll_no": enr.roll_no,
+            "subject_code": enr.subject_code,
+            "subject_name": enr.subject_name,
+            "total_classes": enr.total_classes,
+            "attended_classes": enr.attended_classes,
+            "current_pct": enr.current_pct,
+            "bunk_calculator": bunk
+        })
+
+    return {
+        "roll_no": roll_no,
+        "student_name": student.name,
+        "count": len(results),
+        "subjects": results
     }
 
 if __name__ == "__main__":

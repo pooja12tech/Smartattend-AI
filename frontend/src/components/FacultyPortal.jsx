@@ -80,6 +80,15 @@ export default function FacultyPortal({ user }) {
       alert('Please start a lecture session first before marking attendance!');
       return;
     }
+
+    const reason = window.prompt(
+      `Enter mandatory justification reason for marking ${studentName} (${rollNo}) PRESENT:`,
+      'Phone Dead / In-Person Verification in Classroom'
+    );
+    if (!reason || !reason.trim()) {
+      return; // Cancelled by faculty or blank reason
+    }
+
     setActionLoading(true);
     try {
       await api.facultyManualAttendance({
@@ -87,12 +96,12 @@ export default function FacultyPortal({ user }) {
         roll_no: rollNo,
         status: 'PRESENT',
         faculty_id: user.faculty_id || 'FAC01',
-        reason: 'Phone Dead / In-Person Verification by Teacher'
+        reason: reason.trim()
       });
 
       // Update local roster UI
       setRoster(prev => prev.map(s => s.roll_no === rollNo ? { ...s, status: 'MANUAL_PRESENT' } : s));
-      setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked PRESENT (Faculty Override).`);
+      setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked PRESENT (Faculty Override logged in Audit Trail).`);
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
       alert('Manual override failed: ' + err.message);

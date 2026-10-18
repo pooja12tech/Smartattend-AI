@@ -24,12 +24,15 @@ def run_tests():
     # Re-seed relational database with updated passwords and accounts
     init_db_schema()
     from db_postgres import get_session_factory
-    from models import User
+    from models import User, Subject
     _s = get_session_factory()()
     _stu4 = _s.query(User).filter((User.roll_no == "STU04") | (User.email == "neha@smartattend.edu")).first()
     if _stu4:
         _s.delete(_stu4)
-        _s.commit()
+    _sub9 = _s.query(Subject).filter(Subject.code == "CS309").first()
+    if _sub9:
+        _s.delete(_sub9)
+    _s.commit()
     _s.close()
 
     run_postgres_seed()
@@ -280,8 +283,56 @@ def run_tests():
     assert res.json()["binding_status"] == "DEVICE_BOUND_SUCCESSFULLY"
     print("[PASS] 8d. STU01 Successfully Bound to New Phone:", res.json()["binding_status"])
 
+    # 9a. Verify Audit Trail Logging
+    res = client.get("/api/admin/audit-logs")
+    assert res.status_code == 200
+    audit_data = res.json()
+    assert audit_data["count"] > 0, "Audit logs should not be empty"
+    actions = [log["action"] for log in audit_data["audit_logs"]]
+    assert "DEVICE_RESET" in actions, "DEVICE_RESET action must be in audit log"
+    assert "USER_CREATED" in actions, "USER_CREATED action must be in audit log"
+    assert "MANUAL_ATTENDANCE_OVERRIDE" in actions, "MANUAL_ATTENDANCE_OVERRIDE must be in audit log"
+    print(f"[PASS] 9a. Audit Trail Verified: {audit_data['count']} events logged with actor, target & mandatory reasons.")
+
+    # 9b. Verify Subject Catalog
+    res = client.get("/api/subjects")
+    assert res.status_code == 200
+    subjects = res.json()["subjects"]
+    assert len(subjects) >= 4, "Should have seeded subjects"
+    print(f"[PASS] 9b. Subjects Catalog Verified: {len(subjects)} subjects listed.")
+
+    # 9c. Admin Creates Subject
+    res = client.post("/api/admin/subjects", json={
+        "code": "CS309",
+        "name": "Cloud Native Architecture",
+        "department": "Computer Science & Engineering",
+        "semester": 6,
+        "credits": 4,
+        "faculty_id": "FAC01",
+        "faculty_name": "Prof. Alan Turing",
+        "min_attendance_pct": 75.0
+    })
+    assert res.status_code == 200
+    print("[PASS] 9c. Admin Created Subject:", res.json()["message"])
+
+    # 9d. Per-Subject Attendance Breakdown for Student
+    res = client.get("/api/student/STU01/subjects")
+    assert res.status_code == 200
+    stu_subjects = res.json()["subjects"]
+    assert len(stu_subjects) > 0
+    first_subj = stu_subjects[0]
+    assert "bunk_calculator" in first_subj
+    print(f"[PASS] 9d. Per-Subject Breakdown (STU01): {first_subj['subject_code']} - {first_subj['current_pct']}% attendance ({first_subj['bunk_calculator']['message']})")
+
+    # 9e. Admin Resets Biometric Face Reference
+    res = client.post("/api/admin/reset-face/STU01", json={
+        "reason": "Student requested re-enrollment with updated spectacles"
+    })
+    assert res.status_code == 200
+    print("[PASS] 9e. Admin Face Reset OK:", res.json()["message"])
+
     print("\n" + "=" * 60)
-    print(" ALL RBAC, MANUAL ATTENDANCE & ADMIN ENDPOINTS VERIFIED 100% ")
+    print(" ALL RBAC, AUDIT LOGS, SUBJECTS & ANTI-PROXY TESTS PASSED 100% ")
     print("=" * 60)
 
 if __name__ == "__main__":

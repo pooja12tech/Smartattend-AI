@@ -236,3 +236,111 @@ class SecurityAlert(Base):
             "resolved": self.resolved,
             "timestamp": self.created_at.isoformat() if self.created_at else None
         }
+
+# ==============================================================================
+# 6. Academic Subject Model
+# ==============================================================================
+class Subject(Base):
+    __tablename__ = "subjects"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    department: Mapped[str] = mapped_column(String(255), default="Computer Science & Engineering")
+    semester: Mapped[int] = mapped_column(Integer, default=6)
+    faculty_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    faculty_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    credits: Mapped[int] = mapped_column(Integer, default=4)
+    min_attendance_pct: Mapped[float] = mapped_column(Float, default=75.0)
+    total_conducted: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "code": self.code,
+            "name": self.name,
+            "department": self.department,
+            "semester": self.semester,
+            "faculty_id": self.faculty_id,
+            "faculty_name": self.faculty_name,
+            "credits": self.credits,
+            "min_attendance_pct": self.min_attendance_pct,
+            "total_conducted": self.total_conducted,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+# ==============================================================================
+# 7. Student-Subject Enrollment (Per-Subject Attendance Tracking)
+# ==============================================================================
+class StudentSubjectEnrollment(Base):
+    __tablename__ = "student_subject_enrollments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    student_name: Mapped[str] = mapped_column(String(255), default="Student")
+    subject_code: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    subject_name: Mapped[str] = mapped_column(String(255), default="")
+    total_classes: Mapped[int] = mapped_column(Integer, default=0)
+    attended_classes: Mapped[int] = mapped_column(Integer, default=0)
+    current_pct: Mapped[float] = mapped_column(Float, default=100.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("roll_no", "subject_code", name="uq_student_subject"),
+        Index("idx_enrollment_roll_subject", "roll_no", "subject_code"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "student_name": self.student_name,
+            "subject_code": self.subject_code,
+            "subject_name": self.subject_name,
+            "total_classes": self.total_classes,
+            "attended_classes": self.attended_classes,
+            "current_pct": round(self.current_pct, 1),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+# ==============================================================================
+# 8. Audit Trail Log (Mandatory Logging of Overrides, Resets, and Changes)
+# ==============================================================================
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    actor_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(32), nullable=False)  # 'faculty', 'admin', 'system'
+    action: Mapped[str] = mapped_column(String(64), index=True, nullable=False)  # 'MANUAL_ATTENDANCE_OVERRIDE', 'DEVICE_RESET', 'FACE_RESET', etc.
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)  # 'ATTENDANCE_RECORD', 'USER', 'SESSION'
+    target_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+    __table_args__ = (
+        Index("idx_audit_actor_time", "actor_id", "created_at"),
+        Index("idx_audit_action_time", "action", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "actor_id": self.actor_id,
+            "actor_name": self.actor_name,
+            "actor_role": self.actor_role,
+            "action": self.action,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "reason": self.reason,
+            "ip_address": self.ip_address,
+            "timestamp": self.created_at.isoformat() if self.created_at else None
+        }
+
