@@ -103,8 +103,9 @@ class LectureSession(Base):
     class_lng: Mapped[float] = mapped_column(Float, default=72.8777)
     geofence_radius_meters: Mapped[int] = mapped_column(Integer, default=60)
     secret_seed: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")  # 'ACTIVE', 'COMPLETED', 'CANCELLED'
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")  # 'ACTIVE', 'ENDED', 'COMPLETED', 'CANCELLED'
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     # Relationships
@@ -127,6 +128,7 @@ class LectureSession(Base):
             "geofence_radius_meters": self.geofence_radius_meters,
             "status": self.status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Play, Users, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle,
-  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck
+  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -12,6 +12,7 @@ export default function FacultyPortal({ user }) {
   const [qrData, setQrData] = useState(null);
   const [liveData, setLiveData] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [searchRoster, setSearchRoster] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
@@ -38,6 +39,24 @@ export default function FacultyPortal({ user }) {
       alert('Error starting session: ' + err.message);
     } finally {
       setStarting(false);
+    }
+  };
+
+  // End active lecture session
+  const handleEndSession = async () => {
+    if (!activeSession) return;
+    if (!confirm('Are you sure you want to end this lecture session? Attendance will be closed.')) return;
+    setEnding(true);
+    try {
+      await api.endSession(activeSession.session_id);
+      setActiveSession(null);
+      setQrData(null);
+      setManualSuccessMsg('Lecture session ended successfully. Attendance is now closed.');
+      setTimeout(() => setManualSuccessMsg(null), 4000);
+    } catch (err) {
+      alert('Error ending session: ' + err.message);
+    } finally {
+      setEnding(false);
     }
   };
 
@@ -148,7 +167,7 @@ export default function FacultyPortal({ user }) {
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Live Lecture & Smart Anti-Proxy Center</h1>
           <p className="text-xs text-slate-400">
-            Broadcasting 5-second dynamic encrypted tokens with real-time hardware fraud detection.
+            Broadcasting dynamic encrypted tokens (20-second rolling window) with real-time fraud detection.
           </p>
         </div>
 
@@ -174,9 +193,19 @@ export default function FacultyPortal({ user }) {
               Start Lecture Session
             </button>
           ) : (
-            <div className="px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-              SESSION ACTIVE: {activeSession.session_id}
+            <div className="flex items-center gap-2">
+              <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                ACTIVE: {activeSession.session_code || activeSession.session_id.substring(0, 8)}
+              </div>
+              <button
+                onClick={handleEndSession}
+                disabled={ending}
+                className="px-4 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-md shadow-rose-500/20 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+              >
+                {ending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-white" />}
+                End Session
+              </button>
             </div>
           )}
         </div>
@@ -192,7 +221,7 @@ export default function FacultyPortal({ user }) {
       {/* Main Grid: Rotating QR Code Panel + Live Counters */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Column 1: Rotating 5-Second QR Code Projector View */}
+        {/* Column 1: Rotating Dynamic QR Code Projector View */}
         <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col items-center justify-center text-center relative overflow-hidden">
           <div className="absolute top-3 left-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
             <Clock className="w-3.5 h-3.5 text-brand-400" /> Rotating Token
@@ -210,7 +239,7 @@ export default function FacultyPortal({ user }) {
                 />
               </div>
 
-              {/* 5-Second Visual Progress Bar */}
+              {/* 20-Second Visual Progress Bar */}
               <div className="w-full max-w-xs space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="text-slate-400">Refreshes in</span>
@@ -219,7 +248,7 @@ export default function FacultyPortal({ user }) {
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-brand-500 to-indigo-400 transition-all duration-300 ease-linear rounded-full"
-                    style={{ width: `${(qrData.expires_in_seconds / 5) * 100}%` }}
+                    style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
                   ></div>
                 </div>
               </div>

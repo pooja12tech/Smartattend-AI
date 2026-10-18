@@ -2,12 +2,15 @@ import os
 import io
 import time
 import math
+import uuid
 import hmac
 import hashlib
 import secrets
 import base64
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+
+QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
 
 import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
@@ -135,9 +138,9 @@ def haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return R * c
 
-def generate_qr_signature(session_id: str, timestamp: int, secret_seed: str) -> str:
-    message = f"{session_id}:{timestamp}".encode("utf-8")
-    return hmac.new(secret_seed.encode("utf-8"), message, hashlib.sha256).hexdigest()[:16]
+def generate_qr_signature(session_id: str, window_index: int, secret_seed: str) -> str:
+    message = f"{session_id}:{window_index}".encode("utf-8")
+    return hmac.new(secret_seed.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 def decode_image_base64_to_cv2(b64_str: str) -> Optional[np.ndarray]:
     try:
@@ -271,7 +274,6 @@ class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
     class_lat: float = Field(..., example=19.0760)
     class_lng: float = Field(..., example=72.8777)
-    secret_seed: Optional[str] = Field(None, description="Cryptographic secret seed for dynamic QR tokens")
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
@@ -480,34 +482,26 @@ def start_session(
     db: Session = Depends(get_pg_db)
 ):
     faculty_id = current_user.roll_no
-    session_id = f"{req.subject_name.split()[0]}-{datetime.now().strftime('%m%d%H%M%S')}"
-    secret_seed = req.secret_seed or secrets.token_hex(16)
+    session_id = str(uuid.uuid4())
+    subj_prefix = req.subject_name.split()[0].upper().replace("-", "")
+    session_code = f"{subj_prefix}-{secrets.token_hex(3).upper()}"
+    secret_seed = secrets.token_hex(32)
     now = datetime.now(timezone.utc)
 
-    session = db.query(LectureSession).filter(LectureSession.session_id == session_id).first()
-    if not session:
-        session = LectureSession(
-            session_id=session_id,
-            session_code=session_id,
-            subject_name=req.subject_name,
-            faculty_id=faculty_id,
-            class_lat=req.class_lat,
-            class_lng=req.class_lng,
-            secret_seed=secret_seed,
-            geofence_radius_meters=60,
-            status="ACTIVE",
-            started_at=now,
-            created_at=now
-        )
-        db.add(session)
-    else:
-        session.status = "ACTIVE"
-        session.subject_name = req.subject_name
-        session.faculty_id = faculty_id
-        session.class_lat = req.class_lat
-        session.class_lng = req.class_lng
-        session.secret_seed = secret_seed
-
+    session = LectureSession(
+        session_id=session_id,
+        session_code=session_code,
+        subject_name=req.subject_name,
+        faculty_id=faculty_id,
+        class_lat=req.class_lat,
+        class_lng=req.class_lng,
+        secret_seed=secret_seed,
+        geofence_radius_meters=60,
+        status="ACTIVE",
+        started_at=now,
+        created_at=now
+    )
+    db.add(session)
     db.commit()
 
     return {
@@ -515,12 +509,14 @@ def start_session(
         "message": f"Active lecture session created for {req.subject_name}",
         "session": {
             "session_id": session_id,
+            "session_code": session_code,
             "subject_name": req.subject_name,
             "faculty_id": faculty_id,
             "class_lat": req.class_lat,
             "class_lng": req.class_lng,
             "status": "ACTIVE",
-            "geofence_radius_meters": 60
+            "geofence_radius_meters": 60,
+            "started_at": now.isoformat()
         }
     }
 
@@ -553,22 +549,57 @@ def get_session_qr(
             detail=f"Lecture session is currently {session.status}. Attendance is closed."
         )
 
-    secret_seed = session.secret_seed or "default_smartattend_seed_2026"
     current_time = int(time.time())
-    remaining_seconds = 5 - (current_time % 5)
+    current_window = int(math.floor(current_time / QR_WINDOW_SECONDS))
+    remaining_seconds = QR_WINDOW_SECONDS - (current_time % QR_WINDOW_SECONDS)
 
-    signature = generate_qr_signature(session_id, current_time, secret_seed)
-    token = f"{session_id}.{current_time}.{signature}"
+    signature = generate_qr_signature(session.session_id, current_window, session.secret_seed)
+    token = f"{session.session_id}.{current_window}.{signature}"
 
     return {
-        "session_id": session_id,
+        "session_id": session.session_id,
+        "session_code": session.session_code,
         "subject_name": session.subject_name,
         "qr_token": token,
+        "window_index": current_window,
         "timestamp": current_time,
         "expires_in_seconds": remaining_seconds,
-        "refresh_interval_seconds": 5,
+        "refresh_interval_seconds": QR_WINDOW_SECONDS,
         "class_lat": session.class_lat,
         "class_lng": session.class_lng
+    }
+
+@app.post("/api/sessions/{session_id}/end")
+def end_session(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture session '{session_id}' not found."
+        )
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only end sessions you started."
+        )
+
+    now = datetime.now(timezone.utc)
+    session.status = "ENDED"
+    session.ended_at = now
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Lecture session '{session.subject_name}' ended successfully. Attendance is now closed.",
+        "session": session.to_dict()
     }
 
 # ------------------------------------------------------------------------------
@@ -619,8 +650,19 @@ def mark_attendance(
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
 
+    if session.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "failed_gate": "SESSION_NOT_ACTIVE",
+                "reason": f"Lecture session is currently {session.status}. Attendance is closed.",
+                "timestamp": timestamp_now.isoformat()
+            }
+        )
+
     existing_student_log = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.session_id == session.session_id,
         AttendanceRecord.roll_no == roll_no
     ).first()
     if existing_student_log:
@@ -638,7 +680,7 @@ def mark_attendance(
     bound_device = student.bound_device_id or student.registered_device_id
 
     device_already_used = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == req.session_id,
+        AttendanceRecord.session_id == session.session_id,
         AttendanceRecord.used_device_id == req.device_id
     ).first()
     if device_already_used:
@@ -654,30 +696,39 @@ def mark_attendance(
                 reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
             )
 
-    # GATE 2: Dynamic QR Time Check (<= 7 Seconds Expiry Window)
+    # GATE 2: Dynamic QR Window Check (Configurable QR_WINDOW_SECONDS, Accepts Current & Previous Window)
     try:
         parts = req.qr_token.split(".")
         if len(parts) != 3:
             log_fraud_and_fail(gate="GATE_2_DYNAMIC_QR", reason="Malformed QR token structure.")
-        tok_session_id, tok_time_str, tok_sig = parts
-        tok_timestamp = int(tok_time_str)
+        tok_session_id, tok_window_str, tok_sig = parts
+        tok_window = int(tok_window_str)
     except Exception:
-        log_fraud_and_fail(gate="GATE_2_DYNAMIC_QR", reason="Failed to parse QR token timestamp.")
+        log_fraud_and_fail(gate="GATE_2_DYNAMIC_QR", reason="Failed to parse QR token window index.")
 
-    current_epoch = int(time.time())
-    age_seconds = abs(current_epoch - tok_timestamp)
-    if age_seconds > 7:
+    # Verify that the session_id inside the token equals the session_id in the request
+    if tok_session_id != session.session_id and tok_session_id != session.session_code:
         log_fraud_and_fail(
             gate="GATE_2_DYNAMIC_QR",
-            reason=f"Dynamic QR Token expired ({age_seconds} seconds old, max allowed is 7 seconds). Scan the freshly refreshed QR code on the projector."
+            reason=f"QR token session ID mismatch. Scanned token belongs to session '{tok_session_id}', not '{session.session_id}'."
         )
 
-    secret_seed = session.secret_seed or "default_smartattend_seed_2026"
-    expected_sig = generate_qr_signature(tok_session_id, tok_timestamp, secret_seed)
-    if not hmac.compare_digest(expected_sig, tok_sig):
+    current_epoch = int(time.time())
+    current_window = int(math.floor(current_epoch / QR_WINDOW_SECONDS))
+    allowed_windows = [current_window, current_window - 1]
+
+    if tok_window not in allowed_windows:
         log_fraud_and_fail(
             gate="GATE_2_DYNAMIC_QR",
-            reason="Invalid QR signature. Token does not match this lecture session's cryptographic seed."
+            reason=f"Dynamic QR Token expired. Scanned window {tok_window} is outside allowed valid windows {allowed_windows}. Scan the freshly refreshed QR code on the projector."
+        )
+
+    expected_sig = generate_qr_signature(session.session_id, tok_window, session.secret_seed)
+    expected_sig_code = generate_qr_signature(session.session_code, tok_window, session.secret_seed)
+    if not (hmac.compare_digest(expected_sig, tok_sig) or hmac.compare_digest(expected_sig_code, tok_sig)):
+        log_fraud_and_fail(
+            gate="GATE_2_DYNAMIC_QR",
+            reason="Invalid QR signature. Token does not match this lecture session's cryptographic secret."
         )
 
     # GATE 3: GPS Geofence (Haversine Distance <= 60 Meters)
@@ -723,7 +774,7 @@ def mark_attendance(
     attendance_status = "PENDING_APPROVAL" if req.is_exception_mode else "PRESENT"
 
     attendance_record = AttendanceRecord(
-        session_id=req.session_id,
+        session_id=session.session_id,
         roll_no=roll_no,
         student_name=student.name,
         used_device_id=req.device_id,
@@ -768,7 +819,7 @@ def mark_attendance(
         "message": "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded under Exception Mode. Awaiting Faculty Approval.",
         "details": {
             "roll_no": roll_no,
-            "session_id": req.session_id,
+            "session_id": session.session_id,
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
             "is_exception_mode": req.is_exception_mode,

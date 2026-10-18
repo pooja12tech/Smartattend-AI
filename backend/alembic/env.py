@@ -23,12 +23,8 @@ target_metadata = Base.metadata
 
 def get_effective_url() -> str:
     """Retrieves normalized database URL from environment or fallback for offline generation."""
-    if NORM_DATABASE_URL and "YOUR_NEON_" not in NORM_DATABASE_URL:
-        return NORM_DATABASE_URL
-    ini_url = config.get_main_option("sqlalchemy.url")
-    if ini_url and not ini_url.startswith("driver://"):
-        return ini_url
-    return "sqlite:///alembic_schema.db"
+    from db_postgres import get_effective_database_url
+    return get_effective_database_url()
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""

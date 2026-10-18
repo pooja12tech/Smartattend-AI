@@ -251,7 +251,28 @@ def run_tests():
     res = client.get(f"/api/faculty/session/{session_id}/live", headers=faculty_headers)
     assert res.status_code == 200
     fac_data = res.json()
-    print(f"[PASS] 7. Faculty Live Dashboard: Present: {fac_data['counters']['present_count']}, Alerts: {fac_data['counters']['alerts_count']}")
+    print(f"[PASS] 7a. Faculty Live Dashboard: Present: {fac_data['counters']['present_count']}, Alerts: {fac_data['counters']['alerts_count']}")
+
+    # 7b. Faculty Ends Session
+    res_end = client.post(f"/api/sessions/{session_id}/end", headers=faculty_headers)
+    assert res_end.status_code == 200
+    assert res_end.json()["session"]["status"] == "ENDED"
+    assert res_end.json()["session"]["ended_at"] is not None
+    print(f"[PASS] 7b. Faculty Successfully Ended Session (Status: ENDED, Ended At: {res_end.json()['session']['ended_at']})")
+
+    # 7c. Marking attendance on ended session should now be rejected
+    res_mark_ended = client.post("/api/attendance/mark", json={
+        "session_id": session_id,
+        "qr_token": qr_token,
+        "device_id": "DEV-AARAV-PHONE-01",
+        "user_lat": 19.07601,
+        "user_lng": 72.87771,
+        "live_selfie_base64": test_face_b64,
+        "is_exception_mode": False
+    }, headers=student_headers)
+    assert res_mark_ended.status_code == 400
+    assert res_mark_ended.json()["detail"]["failed_gate"] == "SESSION_NOT_ACTIVE"
+    print("[PASS] 7c. Attendance Submission Blocked for Ended Session (GATE: SESSION_NOT_ACTIVE)")
 
     # 8. Admin Overview & User Management & Device Reset (Admin auth required)
     res = client.get("/api/admin/overview", headers=admin_headers)

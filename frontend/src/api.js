@@ -96,6 +96,16 @@ export const api = {
     return data;
   },
 
+  async endSession(sessionId) {
+    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/end`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to end session');
+    return data;
+  },
+
   async markAttendance(payload) {
     const { roll_no, ...cleanPayload } = payload;
     const res = await fetch(`${API_BASE}/api/attendance/mark`, {
