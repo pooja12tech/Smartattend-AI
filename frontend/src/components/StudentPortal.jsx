@@ -5,6 +5,7 @@ import {
   MapPin, ShieldAlert, Sparkles, Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { Html5Qrcode } from 'html5-qrcode';
 import { api, getDeviceId } from '../api';
 
 export default function StudentPortal({ user }) {
@@ -23,6 +24,12 @@ export default function StudentPortal({ user }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
   const videoRef = useRef(null);
+
+  // Real Camera QR Scanner state
+  const [isScanningQR, setIsScanningQR] = useState(false);
+  const [qrScanError, setQrScanError] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
+  const qrScannerRef = useRef(null);
 
   // Viva Simulator State (to demo proxy catches!)
   const [showSimulator, setShowSimulator] = useState(false);
@@ -49,14 +56,22 @@ export default function StudentPortal({ user }) {
 
   const startEnrollCamera = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined.');
+      }
       setEnrollCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       if (enrollVideoRef.current) {
         enrollVideoRef.current.srcObject = stream;
       }
     } catch (err) {
-      console.warn('Webcam permission not granted or device lacks camera. Using synthetic capture:', err);
-      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+      console.warn('Webcam permission not granted or device lacks camera:', err);
+      setEnrollCameraActive(false);
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+      } else {
+        alert('Camera access failed: ' + (err.message || 'Permission denied'));
+      }
     }
   };
 
@@ -75,7 +90,11 @@ export default function StudentPortal({ user }) {
       stream.getTracks().forEach(track => track.stop());
       setEnrollCameraActive(false);
     } else {
-      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+      } else {
+        alert('Unable to capture photo: camera stream is not active.');
+      }
     }
   };
 
@@ -136,15 +155,38 @@ export default function StudentPortal({ user }) {
   // Start live webcam for front camera selfie
   const startCamera = async () => {
     try {
+      setCameraError(null);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined.');
+      }
       setCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (err) {
-      console.warn('Real webcam not accessible or permission denied. Using synthetic verified selfie capture:', err);
-      // Fallback synthetic selfie
-      setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+      console.warn('Real webcam not accessible or permission denied:', err);
+      setCameraActive(false);
+      let errorMsg = 'Failed to access front camera.';
+      const msg = err?.message || String(err);
+      if (msg.includes('HTTPS') || msg.includes('navigator.mediaDevices')) {
+        errorMsg = 'Front camera requires HTTPS or localhost. Please open this app over a secure connection.';
+      } else if (msg.includes('NotAllowedError') || msg.includes('Permission') || msg.includes('denied')) {
+        errorMsg = 'Front camera permission was denied. Please allow camera access in browser settings.';
+      } else if (msg.includes('NotFoundError') || msg.includes('DevicesNotFoundError')) {
+        errorMsg = 'No front camera found on this device.';
+      } else if (msg.includes('NotReadableError') || msg.includes('TrackStartError')) {
+        errorMsg = 'Front camera is currently in use by another application or tab.';
+      } else {
+        errorMsg = `Camera error: ${msg}`;
+      }
+
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        // Fallback synthetic selfie only in demo mode
+        setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+      } else {
+        setCameraError(errorMsg);
+      }
     }
   };
 
@@ -163,9 +205,144 @@ export default function StudentPortal({ user }) {
       const stream = video.srcObject;
       stream.getTracks().forEach(track => track.stop());
       setCameraActive(false);
+      setCameraError(null);
     } else {
-      setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+      } else {
+        setCameraError('Unable to capture photo: no active camera stream.');
+      }
     }
+  };
+
+  // Real Camera QR Scanner (html5-qrcode with rear camera)
+  const stopQRScanner = async () => {
+    if (qrScannerRef.current) {
+      try {
+        if (qrScannerRef.current.isScanning) {
+          await qrScannerRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Error stopping QR scanner:', err);
+      }
+      try {
+        qrScannerRef.current.clear();
+      } catch (err) {
+        console.warn('Error clearing QR scanner:', err);
+      }
+      qrScannerRef.current = null;
+    }
+    setIsScanningQR(false);
+  };
+
+  const startQRScanner = async () => {
+    setQrScanError(null);
+
+    // Check HTTPS requirement
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setQrScanError('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined. Please ensure you are accessing this app over HTTPS.');
+      return;
+    }
+
+    setIsScanningQR(true);
+
+    setTimeout(async () => {
+      try {
+        if (qrScannerRef.current) {
+          try {
+            if (qrScannerRef.current.isScanning) {
+              await qrScannerRef.current.stop();
+            }
+            qrScannerRef.current.clear();
+          } catch (e) {}
+          qrScannerRef.current = null;
+        }
+
+        const scanner = new Html5Qrcode('smartattend-qr-reader');
+        qrScannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0
+          },
+          (decodedText) => {
+            const rawToken = decodedText.trim();
+            const parts = rawToken.split('.');
+            if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+              setQrScanError(`Scanned QR code is not a valid SmartAttend token ("${rawToken.slice(0, 30)}..."). Expected format: session_id.window.signature`);
+              return;
+            }
+
+            // Valid token scanned
+            setQrScanError(null);
+            setScannedToken(rawToken);
+            setSessionId(parts[0]);
+
+            // Stop the rear camera
+            stopQRScanner();
+
+            // Auto-trigger front camera for live selfie if not already captured
+            if (!selfieCaptured) {
+              setTimeout(() => {
+                startCamera();
+              }, 300);
+            }
+          },
+          (errorMessage) => {
+            // Per-frame non-detection: normal behavior, ignore
+          }
+        );
+      } catch (err) {
+        console.error('Failed to start rear camera QR scanner:', err);
+        let errorMsg = 'Failed to open camera.';
+        const msg = err?.message || String(err);
+        if (msg.includes('NotAllowedError') || msg.includes('Permission') || msg.includes('denied')) {
+          errorMsg = 'Camera permission was denied. Please allow camera access in your browser settings.';
+        } else if (msg.includes('NotFoundError') || msg.includes('DevicesNotFoundError') || msg.includes('No camera')) {
+          errorMsg = 'No camera found on this device.';
+        } else if (msg.includes('NotReadableError') || msg.includes('TrackStartError')) {
+          errorMsg = 'Camera is currently in use by another application or tab.';
+        } else {
+          errorMsg = `Camera error: ${msg}`;
+        }
+        setQrScanError(errorMsg);
+        setIsScanningQR(false);
+      }
+    }, 50);
+  };
+
+  // Cleanup cameras on component unmount
+  useEffect(() => {
+    return () => {
+      if (qrScannerRef.current) {
+        try {
+          if (qrScannerRef.current.isScanning) {
+            qrScannerRef.current.stop().catch(() => {}).then(() => {
+              try { qrScannerRef.current.clear(); } catch(e){}
+            });
+          }
+        } catch (e) {}
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        try {
+          videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+        } catch(e) {}
+      }
+    };
+  }, []);
+
+  const handleCloseScannerModal = () => {
+    stopQRScanner();
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      } catch(e) {}
+      setCameraActive(false);
+    }
+    setIsScannerOpen(false);
   };
 
   const generateSyntheticSelfie = (color = '#6366f1') => {
@@ -185,19 +362,20 @@ export default function StudentPortal({ user }) {
     return canvas.toDataURL('image/jpeg', 0.9);
   };
 
-  // Helper to fetch live fresh QR token for demonstration
+  // Demo Simulator Helper ONLY: student never calls this in normal flow
   const handleSimulateScanLatestQR = async () => {
     try {
-      const qrData = await api.getSessionQR(sessionId);
+      const targetSession = scannedToken && scannedToken.includes('.') ? scannedToken.split('.')[0] : sessionId;
+      const qrData = await api.getSessionQR(targetSession);
       setScannedToken(qrData.qr_token);
-      if (!selfieCaptured) {
+      setSessionId(qrData.session_id || targetSession);
+      if (!selfieCaptured && import.meta.env.VITE_DEMO_MODE === 'true') {
         setSelfieCaptured(generateSyntheticSelfie('#6366f1'));
       }
     } catch (err) {
-      // Fallback if session is not active yet, create a token format
       const curEpoch = Math.floor(Date.now() / 1000);
       setScannedToken(`${sessionId}.${curEpoch}.demo_valid_sig`);
-      if (!selfieCaptured) {
+      if (!selfieCaptured && import.meta.env.VITE_DEMO_MODE === 'true') {
         setSelfieCaptured(generateSyntheticSelfie('#6366f1'));
       }
     }
@@ -207,12 +385,13 @@ export default function StudentPortal({ user }) {
   const [exceptionResult, setExceptionResult] = useState(null);
 
   const handleRequestException = async () => {
-    if (!confirm('Submit request: "I don\'t have my registered device" for this session? This will be marked as PENDING APPROVAL for faculty review.')) return;
+    const targetSession = scannedToken && scannedToken.includes('.') ? scannedToken.split('.')[0] : sessionId;
+    if (!confirm(`Submit request: "I don't have my registered device" for session "${targetSession}"? This will be marked as PENDING APPROVAL for faculty review.`)) return;
     setSubmittingException(true);
     setExceptionResult(null);
     try {
       const res = await api.requestDeviceException({
-        session_id: sessionId,
+        session_id: targetSession,
         device_id: deviceId,
         reason: "I don't have my registered device",
         live_selfie_base64: selfieCaptured
@@ -220,7 +399,7 @@ export default function StudentPortal({ user }) {
       setExceptionResult(res.message || 'Exception request submitted. Awaiting faculty approval.');
       setTimeout(() => {
         setExceptionResult(null);
-        setIsScannerOpen(false);
+        handleCloseScannerModal();
       }, 3500);
     } catch (err) {
       alert('Error submitting exception request: ' + err.message);
@@ -231,6 +410,28 @@ export default function StudentPortal({ user }) {
 
   // Submit attendance through 5-Gate engine
   const handleExecuteAttendance = async () => {
+    let tokenToSend = scannedToken;
+    if (simExpiredQR || !tokenToSend) {
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        const oldEpoch = Math.floor(Date.now() / 1000) - 25;
+        tokenToSend = `${sessionId}.${oldEpoch}.expired_test_sig`;
+      } else {
+        alert('Please scan a valid session QR code first.');
+        return;
+      }
+    }
+
+    const derivedSessionId = tokenToSend && tokenToSend.includes('.') ? tokenToSend.split('.')[0] : sessionId;
+
+    const liveSelfie = simFaceMismatch
+      ? generateSyntheticSelfie('#dc2626')
+      : (selfieCaptured || (import.meta.env.VITE_DEMO_MODE === 'true' ? generateSyntheticSelfie('#4f46e5') : null));
+
+    if (!liveSelfie && import.meta.env.VITE_DEMO_MODE !== 'true') {
+      alert('Please capture a live front-camera selfie before submitting attendance.');
+      return;
+    }
+
     setSubmittingAttendance(true);
     setSubmissionResult(null);
 
@@ -251,19 +452,8 @@ export default function StudentPortal({ user }) {
     const userLat = simFarGPS ? 19.1050 : 19.07601; // ~3.2km away if simulator active
     const userLng = simFarGPS ? 72.8850 : 72.87771;
 
-    let tokenToSend = scannedToken;
-    if (simExpiredQR || !tokenToSend) {
-      // Create an expired token (25 seconds old)
-      const oldEpoch = Math.floor(Date.now() / 1000) - 25;
-      tokenToSend = `${sessionId}.${oldEpoch}.expired_test_sig`;
-    }
-
-    const liveSelfie = simFaceMismatch
-      ? generateSyntheticSelfie('#dc2626')
-      : (selfieCaptured || generateSyntheticSelfie('#4f46e5'));
-
     const payload = {
-      session_id: sessionId,
+      session_id: derivedSessionId,
       qr_token: tokenToSend,
       device_id: usedDeviceId,
       user_lat: userLat,
@@ -555,30 +745,91 @@ export default function StudentPortal({ user }) {
                           <span className="text-[11px]">Simulate Face Mismatch</span>
                         </label>
                       </div>
+
+                      <div className="pt-2 border-t border-slate-800/80">
+                        <button
+                          type="button"
+                          onClick={handleSimulateScanLatestQR}
+                          className="w-full py-1.5 px-3 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-semibold flex items-center justify-center gap-1.5 hover:bg-amber-500/30 transition"
+                        >
+                          <RefreshCw className="w-3 h-3" /> [Simulator] Auto-Fetch Faculty's Active Token
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Dynamic QR Token Input & Desktop Helper */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
-                  <label>Session Dynamic QR Token</label>
+              {/* Gate 2: Rear Camera QR Scanner */}
+              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-brand-400" /> Gate 2: Scan Classroom Dynamic QR
+                  </span>
+                  {scannedToken && (
+                    <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Token Scanned
+                    </span>
+                  )}
+                </div>
+
+                {/* Live QR Camera Viewport */}
+                <div className={isScanningQR ? "space-y-2" : "hidden"}>
+                  <div
+                    id="smartattend-qr-reader"
+                    className="w-full rounded-xl overflow-hidden bg-black border border-slate-700 min-h-[260px]"
+                  />
                   <button
                     type="button"
-                    onClick={handleSimulateScanLatestQR}
-                    className="text-brand-400 hover:text-brand-300 underline text-[11px] flex items-center gap-1"
+                    onClick={stopQRScanner}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
                   >
-                    <RefreshCw className="w-3 h-3" /> Fetch Faculty's Active Token
+                    <XCircle className="w-3.5 h-3.5 text-slate-400" /> Cancel Camera Scan
                   </button>
                 </div>
-                <input
-                  type="text"
-                  value={scannedToken}
-                  onChange={(e) => setScannedToken(e.target.value)}
-                  placeholder="CS301-SEC-A.1713400000.signature..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-brand-500"
-                />
+
+                {/* Scan Action Button */}
+                {!isScanningQR && (
+                  <button
+                    type="button"
+                    onClick={startQRScanner}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-brand-500/20 active:scale-[0.99] transition"
+                  >
+                    <Camera className="w-4 h-4" />
+                    {scannedToken ? 'Re-Scan QR Code' : 'Scan QR with Rear Camera'}
+                  </button>
+                )}
+
+                {/* QR Error Alerts (HTTPS requirement, permissions, non-SmartAttend QR) */}
+                {qrScanError && (
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">{qrScanError}</p>
+                      {qrScanError.includes('HTTPS') && (
+                        <p className="text-[11px] text-rose-200/80">
+                          Mobile browsers restrict camera hardware to secure contexts (HTTPS or localhost).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Scanned Token & Derived Session Display */}
+                {scannedToken && (
+                  <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-xs space-y-1 font-mono">
+                    <div className="flex items-center justify-between text-slate-400 text-[11px] font-sans">
+                      <span>Target Session:</span>
+                      <span className="text-brand-300 font-bold font-mono px-2 py-0.5 rounded bg-brand-500/10 border border-brand-500/20">
+                        {scannedToken.split('.')[0]}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate" title={scannedToken}>
+                      <span className="text-slate-500 font-sans">Token: </span>
+                      {scannedToken}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Camera / Live Selfie Capture Section */}
@@ -593,6 +844,15 @@ export default function StudentPortal({ user }) {
                     </span>
                   )}
                 </div>
+
+                {cameraError && (
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">{cameraError}</p>
+                    </div>
+                  </div>
+                )}
 
                 {cameraActive ? (
                   <div className="space-y-2">
@@ -628,13 +888,15 @@ export default function StudentPortal({ user }) {
                     >
                       <Camera className="w-3.5 h-3.5" /> Open Front Camera
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelfieCaptured(generateSyntheticSelfie('#6366f1'))}
-                      className="py-2 px-3 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold"
-                    >
-                      Quick Test Selfie
-                    </button>
+                    {import.meta.env.VITE_DEMO_MODE === 'true' && (
+                      <button
+                        type="button"
+                        onClick={() => setSelfieCaptured(generateSyntheticSelfie('#6366f1'))}
+                        className="py-2 px-3 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold"
+                      >
+                        Quick Test Selfie
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -731,7 +993,7 @@ export default function StudentPortal({ user }) {
 
                 <button
                   type="button"
-                  onClick={() => setIsScannerOpen(false)}
+                  onClick={handleCloseScannerModal}
                   className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs"
                 >
                   Close
@@ -966,13 +1228,15 @@ export default function StudentPortal({ user }) {
                     >
                       Open Front Camera
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'))}
-                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-                    >
-                      Test Photo
-                    </button>
+                    {import.meta.env.VITE_DEMO_MODE === 'true' && (
+                      <button
+                        type="button"
+                        onClick={() => setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'))}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                      >
+                        Test Photo
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
