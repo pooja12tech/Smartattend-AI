@@ -339,13 +339,15 @@ export default function FacultyPortal({ user }) {
                     <th className="py-2.5 px-3">Roll No</th>
                     <th className="py-2.5 px-3">Student Name</th>
                     <th className="py-2.5 px-3">Dept</th>
-                    <th className="py-2.5 px-3 text-right">Action</th>
+                    <th className="py-2.5 px-3">Time Marked</th>
+                    <th className="py-2.5 px-3">Location / Geofence</th>
+                    <th className="py-2.5 px-3 text-right">Status / Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {filteredRoster.length === 0 ? (
                     <tr>
-                      <td colSpan="4" className="py-6 text-center text-slate-500 text-xs">
+                      <td colSpan="6" className="py-6 text-center text-slate-500 text-xs">
                         {activeSession ? 'No students found matching search.' : 'Start a lecture session to load enrolled students.'}
                       </td>
                     </tr>
@@ -355,6 +357,21 @@ export default function FacultyPortal({ user }) {
                         <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
                         <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
                         <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
+                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
+                          {s.marked_at ? new Date(s.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                        </td>
+                        <td className="py-2.5 px-3 text-[11px]">
+                          {s.distance_meters != null ? (
+                            <span className="inline-flex items-center gap-1 font-mono text-emerald-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              {s.distance_meters}m (Inside Campus)
+                            </span>
+                          ) : s.status === 'MANUAL_PRESENT' ? (
+                            <span className="text-slate-400 italic">Teacher Override</span>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
                         <td className="py-2.5 px-3 text-right">
                           {s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT' ? (
                             <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">

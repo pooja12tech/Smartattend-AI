@@ -1573,6 +1573,9 @@ def get_faculty_session_roster(
             "status": st,
             "reason": rec.reason if rec else None,
             "marked_at": rec.marked_at.isoformat() if rec and rec.marked_at else None,
+            "distance_meters": rec.distance_meters if rec else None,
+            "user_lat": rec.user_lat if rec else None,
+            "user_lng": rec.user_lng if rec else None,
             "is_exception_mode": rec.is_exception_mode if rec else False
         })
 
