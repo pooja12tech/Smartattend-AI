@@ -481,11 +481,17 @@ export default function StudentPortal({ user }) {
     if (videoRef.current && videoRef.current.srcObject) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = 160;
-      canvas.height = 160;
+      canvas.width = 480;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 160, 160);
-      capturedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      // Centered square crop from video to maintain high resolution face landmarks
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
+      const minSide = Math.min(vWidth, vHeight);
+      const sx = (vWidth - minSide) / 2;
+      const sy = (vHeight - minSide) / 2;
+      ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
+      capturedBase64 = canvas.toDataURL('image/jpeg', 0.90);
 
       // Cleanly stop front camera stream
       const stream = video.srcObject;
@@ -756,11 +762,16 @@ export default function StudentPortal({ user }) {
     if (enrollVideoRef.current && enrollVideoRef.current.srcObject) {
       const video = enrollVideoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = 160;
-      canvas.height = 160;
+      canvas.width = 480;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 160, 160);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
+      const minSide = Math.min(vWidth, vHeight);
+      const sx = (vWidth - minSide) / 2;
+      const sy = (vHeight - minSide) / 2;
+      ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
       setEnrollSelfie(dataUrl);
 
       const stream = video.srcObject;
@@ -870,8 +881,37 @@ export default function StudentPortal({ user }) {
   const subjects = dashboard?.subject_breakdown || [];
   const logs = dashboard?.recent_logs || [];
 
+  const isFaceEnrolled = dashboard?.student?.has_registered_face ?? user?.has_registered_face ?? false;
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+
+      {/* Prominent Action Banner when Face Template is Not Yet Enrolled */}
+      {!isFaceEnrolled && (
+        <div className="rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-amber-500/15 via-purple-500/15 to-indigo-500/15 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl shadow-amber-500/5 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0 shadow-inner">
+              <Camera className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-white">Live Face Registration Required</h4>
+                <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40">Step 1</span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Attendance mark karne se pehle apni live photo register karein. AI model is photo se live attendance match karega.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowFaceEnrollModal(true)}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-brand-600 hover:from-purple-500 hover:to-brand-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 shrink-0 transition active:scale-95"
+          >
+            <Sparkles className="w-4 h-4" />
+            Enroll Face Now
+          </button>
+        </div>
+      )}
 
       {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -914,26 +954,38 @@ export default function StudentPortal({ user }) {
         {/* Biometric Face Reference Registration */}
         <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-inner">
+            <div className={`w-11 h-11 rounded-xl ${isFaceEnrolled ? 'bg-purple-500/15 border-purple-500/30 text-purple-400' : 'bg-amber-500/15 border-amber-500/30 text-amber-400'} border flex items-center justify-center shadow-inner`}>
               <Camera className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-white uppercase tracking-wider">Face Biometric Gate</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Consent Verified
-                </span>
+                {isFaceEnrolled ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Enrolled
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> Not Enrolled
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">Template registered for AI matching</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isFaceEnrolled ? 'Template registered for AI matching' : 'Enroll face to enable attendance'}
+              </p>
             </div>
           </div>
 
           <button
             onClick={() => setShowFaceEnrollModal(true)}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 transition active:scale-95"
+            className={`px-3 py-2 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition active:scale-95 ${
+              isFaceEnrolled
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-purple-500/25'
+            }`}
           >
-            <Camera className="w-3.5 h-3.5 text-purple-400" />
-            <span>Enroll / Update</span>
+            <Camera className="w-3.5 h-3.5" />
+            <span>{isFaceEnrolled ? 'Update Face' : 'Enroll Face'}</span>
           </button>
         </div>
       </div>
@@ -1419,23 +1471,38 @@ export default function StudentPortal({ user }) {
                       </p>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleStartAttendanceFlow}
-                        className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" /> Try Again
-                      </button>
+                    <div className="flex flex-col gap-2 pt-2">
+                      {(!isFaceEnrolled || submissionResult?.reason?.includes('enroll') || submissionResult?.failed_gate === 'GATE_4_FACE_VERIFICATION') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleCloseScannerModal();
+                            setShowFaceEnrollModal(true);
+                          }}
+                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/25 transition active:scale-95"
+                        >
+                          <Camera className="w-4 h-4" /> Enroll Face Template Now
+                        </button>
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={handleRequestException}
-                        disabled={submittingException}
-                        className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-                      >
-                        <AlertTriangle className="w-3.5 h-3.5" /> Request Faculty Review
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleStartAttendanceFlow}
+                          className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" /> Try Again
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleRequestException}
+                          disabled={submittingException}
+                          className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" /> Request Faculty Review
+                        </button>
+                      </div>
                     </div>
 
                     {exceptionResult && (

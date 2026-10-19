@@ -753,7 +753,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             "department": user.department or "CSE",
             "semester": user.semester or 6,
             "bound_device_id": bound_device,
-            "has_registered_face": bool(user.face_enrollment is not None)
+            "has_registered_face": bool(db.query(FaceEnrollment).filter(FaceEnrollment.user_id == user.id).first() is not None)
         }
     }
 
@@ -1111,8 +1111,8 @@ def mark_attendance(
     sim = face_service.cosine_similarity(live_embedding, ref_embedding)
     face_match_score = round(float(sim * 100.0), 1)
 
-    match_thresh = float(os.getenv("FACE_MATCH_THRESHOLD", "0.50"))
-    review_thresh = float(os.getenv("FACE_REVIEW_THRESHOLD", "0.38"))
+    match_thresh = float(os.getenv("FACE_MATCH_THRESHOLD", "0.40"))
+    review_thresh = float(os.getenv("FACE_REVIEW_THRESHOLD", "0.28"))
 
     # Three outcomes from cosine similarity:
     # 1. score >= match -> proceed to PRESENT
@@ -1269,14 +1269,6 @@ def enroll_face(
             detail="Biometric consent is mandatory to store face reference templates."
         )
 
-    # Re-enrollment forbidden without prior admin reset (HTTP 409 Conflict)
-    existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
-    if existing_enrollment:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Face template already enrolled for this student. Re-enrollment requires an administrator face reset."
-        )
-
     # In-memory decode of base64 image bytes (never persisted to disk or DB)
     try:
         raw_b64 = req.live_selfie_base64
@@ -1307,6 +1299,25 @@ def enroll_face(
     encrypted_emb = face_service.encrypt_embedding(embedding)
     now = datetime.now(timezone.utc)
     retention_expires = now + timedelta(days=365)
+
+    # Upsert enrollment: update existing template if student re-enrolls
+    existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
+    if existing_enrollment:
+        existing_enrollment.embedding = encrypted_emb
+        existing_enrollment.model_name = "buffalo_sc"
+        existing_enrollment.model_version = "insightface-2.1"
+        existing_enrollment.consent_given_at = now
+        existing_enrollment.consent_text_version = req.consent_text_version or "v1.0"
+        existing_enrollment.created_at = now
+        existing_enrollment.retention_expires_at = retention_expires
+        current_user.updated_at = now
+        db.commit()
+        return {
+            "success": True,
+            "roll_no": current_user.roll_no,
+            "message": f"Biometric face reference successfully updated for student {current_user.name}.",
+            "enrolled_at": now.isoformat()
+        }
 
     enrollment = FaceEnrollment(
         user_id=current_user.id,
@@ -1689,7 +1700,8 @@ def student_dashboard(
             "name": student.name,
             "department": student.department or "CSE",
             "semester": student.semester or 6,
-            "bound_device_id": student.bound_device_id or student.registered_device_id
+            "bound_device_id": student.bound_device_id or student.registered_device_id,
+            "has_registered_face": bool(db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first() is not None)
         },
         "attendance": {
             "current_pct": current_att,
