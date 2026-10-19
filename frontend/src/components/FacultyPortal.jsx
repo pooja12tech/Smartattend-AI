@@ -23,15 +23,15 @@ export default function FacultyPortal({ user }) {
   // Start lecture session with dynamic teacher GPS anchoring (100m radius)
   const handleStartSession = async () => {
     setStarting(true);
-    let teacherLat = 19.0760;
-    let teacherLng = 72.8777;
+    let teacherLat = null;
+    let teacherLng = null;
 
     if (navigator.geolocation) {
       try {
         const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: 4500,
+            timeout: 5000,
             maximumAge: 5000
           });
         });
@@ -40,7 +40,7 @@ export default function FacultyPortal({ user }) {
           teacherLng = pos.coords.longitude;
         }
       } catch (geoErr) {
-        console.warn('Teacher geolocation not accessible, using default:', geoErr);
+        console.warn('Teacher geolocation not accessible in browser:', geoErr);
       }
     }
 

@@ -528,27 +528,31 @@ export default function StudentPortal({ user }) {
     };
     setGateProgress({ ...gates });
 
-    // Geolocation coordinates (classroom default with browser geolocation override)
-    let userLat = 19.07601;
-    let userLng = 72.87771;
+    // Geolocation coordinates (captured from live device GPS)
+    let userLat = capturedLocation?.lat || null;
+    let userLng = capturedLocation?.lng || null;
 
-    if (navigator.geolocation && !simFarGPS) {
+    if (!userLat && navigator.geolocation && !simFarGPS) {
       try {
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2000, maximumAge: 10000 });
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 6000,
+            maximumAge: 10000
+          });
         });
         if (pos && pos.coords) {
           userLat = pos.coords.latitude;
           userLng = pos.coords.longitude;
         }
       } catch (e) {
-        console.warn('Geolocation read failed or timed out, using default classroom coordinates.');
+        console.warn('Geolocation read failed or timed out:', e);
       }
     }
 
     if (simFarGPS) {
-      userLat = 19.1050; // ~3.2km away breach
-      userLng = 72.8850;
+      userLat = (userLat || 28.6) + 0.05; // ~5.5km away breach simulation
+      userLng = (userLng || 77.2) + 0.05;
     }
 
     const usedDeviceId = simWrongDevice ? 'DEV-ALIEN-PROXY-PHONE-99' : deviceId;

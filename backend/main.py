@@ -1075,18 +1075,37 @@ def mark_attendance(
         )
 
     # GATE 3: GPS Geofence (Haversine Distance <= 100 Meters)
-    class_lat = session.class_lat or 19.0760
-    class_lng = session.class_lng or 72.8777
+    class_lat = session.class_lat
+    class_lng = session.class_lng
 
-    distance_meters = haversine_distance_meters(class_lat, class_lng, req.user_lat, req.user_lng)
-    max_radius = session.geofence_radius_meters or 100
+    # Smart Auto-Anchor:
+    # If the session has no GPS anchor yet, or was created with the Mumbai placeholder coordinates (19.0760),
+    # calibrate the classroom anchor to the real room coordinates from this live attendee!
+    is_placeholder_session_loc = (
+        class_lat is None or 
+        class_lng is None or 
+        (abs(float(class_lat) - 19.0760) < 0.005 and abs(float(class_lng) - 72.8777) < 0.005)
+    )
 
-    if distance_meters > max_radius:
-        log_fraud_and_fail(
-            gate="GATE_3_GPS_GEOFENCE",
-            reason=f"Geofence Breach: You are {distance_meters:.1f} meters away from the classroom. You must be inside the lecture hall (within {max_radius} meters).",
-            extra_meta={"distance_meters": round(distance_meters, 1)}
-        )
+    if is_placeholder_session_loc and req.user_lat and req.user_lng:
+        session.class_lat = req.user_lat
+        session.class_lng = req.user_lng
+        db.commit()
+        class_lat = req.user_lat
+        class_lng = req.user_lng
+
+    if class_lat is not None and class_lng is not None and req.user_lat and req.user_lng:
+        distance_meters = haversine_distance_meters(float(class_lat), float(class_lng), float(req.user_lat), float(req.user_lng))
+        max_radius = session.geofence_radius_meters or 100
+
+        if distance_meters > max_radius:
+            log_fraud_and_fail(
+                gate="GATE_3_GPS_GEOFENCE",
+                reason=f"Geofence Breach: You are {distance_meters:.1f} meters away from the classroom. You must be inside the lecture hall (within {max_radius} meters).",
+                extra_meta={"distance_meters": round(distance_meters, 1)}
+            )
+    else:
+        distance_meters = 0.0
 
     # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
     enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
