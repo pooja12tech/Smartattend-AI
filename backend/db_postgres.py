@@ -4,14 +4,14 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-
-# Load environment variables from backend/.env or root .env
-backend_env = Path(__file__).resolve().parent / ".env"
-root_env = Path(__file__).resolve().parent.parent / ".env"
-if root_env.exists():
-    load_dotenv(dotenv_path=root_env, override=False)
-if backend_env.exists():
-    load_dotenv(dotenv_path=backend_env, override=True)
+# Load environment variables from backend/.env or root .env (never read during testing)
+if not os.getenv("TESTING") and not os.getenv("PYTEST_CURRENT_TEST"):
+    backend_env = Path(__file__).resolve().parent / ".env"
+    root_env = Path(__file__).resolve().parent.parent / ".env"
+    if root_env.exists():
+        load_dotenv(dotenv_path=root_env, override=False)
+    if backend_env.exists():
+        load_dotenv(dotenv_path=backend_env, override=True)
 
 Base = declarative_base()
 

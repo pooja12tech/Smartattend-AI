@@ -131,6 +131,12 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
     prev_sig = generate_qr_signature(session_id, prev_window, secret_seed)
     prev_token = f"{session_id}.{prev_window}.{prev_sig}"
 
+    # STU02 completes face enrollment first
+    client.post("/api/student/enroll-face", json={
+        "live_selfie_base64": face_img,
+        "consent_given": True
+    }, headers=stu2_headers)
+
     mark_res2 = client.post("/api/attendance/mark", json={
         "session_id": session_id,
         "qr_token": prev_token,
@@ -271,3 +277,49 @@ def test_ended_session_invalidates_qr_and_attendance(client, faculty_auth, stude
     }, headers=student_auth)
     assert mark_after_end.status_code == 400
     assert mark_after_end.json()["detail"]["failed_gate"] == "SESSION_NOT_ACTIVE"
+
+def test_end_session_no_enrollments_returns_warning(client, faculty_auth):
+    """Verify that ending a session for a subject with no enrolled students returns a warning and 0 absentees."""
+    start_res = client.post("/api/sessions/start", json={
+        "subject_name": "CS999 - Advanced Quantum Computing",
+        "class_lat": 19.0760,
+        "class_lng": 72.8777
+    }, headers=faculty_auth)
+    assert start_res.status_code == 200
+    session_id = start_res.json()["session"]["session_id"]
+
+    end_res = client.post(f"/api/sessions/{session_id}/end", headers=faculty_auth)
+    assert end_res.status_code == 200
+    data = end_res.json()
+    assert data["absentees_created"] == 0
+    assert data.get("warning") == "Subject has no enrolled students. No absentees created."
+
+def test_auto_close_expired_sessions():
+    """Verify that auto_close_expired_sessions marks sessions past SESSION_MAX_MINUTES as ENDED."""
+    from main import auto_close_expired_sessions, SESSION_MAX_MINUTES
+    from datetime import datetime, timezone, timedelta
+
+    db = get_session_factory()()
+    session_id = f"TEST-EXPIRED-{uuid.uuid4().hex[:6]}"
+    try:
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=SESSION_MAX_MINUTES + 10)
+        sess = LectureSession(
+            session_id=session_id,
+            session_code=session_id,
+            subject_name="CS301 - Operating Systems",
+            faculty_id="FAC01",
+            secret_seed="test_seed_expired",
+            status="ACTIVE",
+            started_at=old_time
+        )
+        db.add(sess)
+        db.commit()
+
+        closed = auto_close_expired_sessions(db)
+        assert session_id in closed
+
+        db.refresh(sess)
+        assert sess.status == "ENDED"
+        assert sess.ended_at is not None
+    finally:
+        db.close()

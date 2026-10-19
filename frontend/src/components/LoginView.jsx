@@ -6,7 +6,6 @@ export default function LoginView({ onLoginSuccess }) {
   const [roleTab, setRoleTab] = useState('student'); // 'student' | 'faculty' | 'admin'
   const [identifier, setIdentifier] = useState('STU01');
   const [password, setPassword] = useState('stu123');
-  const [isExceptionMode, setIsExceptionMode] = useState(false);
   const [deviceId, setDeviceIdState] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -46,8 +45,7 @@ export default function LoginView({ onLoginSuccess }) {
       const res = await api.login({
         roll_no: identifier.trim(),
         password: password.trim(),
-        device_id: deviceId,
-        is_exception_mode: isExceptionMode
+        device_id: deviceId
       });
 
       if (res.success) {
@@ -191,18 +189,6 @@ export default function LoginView({ onLoginSuccess }) {
                   <div className="font-mono text-[11px] text-indigo-300 bg-slate-950/80 px-2 py-1 rounded border border-slate-800/80 truncate">
                     {deviceId}
                   </div>
-
-                  <label className="flex items-center gap-2 mt-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={isExceptionMode}
-                      onChange={(e) => setIsExceptionMode(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-brand-600 focus:ring-0 focus:ring-offset-0"
-                    />
-                    <span className="text-[11px] text-slate-400">
-                      Request <strong className="text-amber-400 font-semibold">Faculty Exception Mode</strong> (Using borrowed / temp phone)
-                    </span>
-                  </label>
                 </div>
               </div>
             )}

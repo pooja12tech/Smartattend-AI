@@ -158,7 +158,6 @@ def run_postgres_seed(session: Session = None) -> bool:
                     semester=s_data["semester"],
                     bound_device_id=s_data["bound_device_id"],
                     registered_device_id=s_data["registered_device_id"],
-                    registered_face_base64=seed_face_b64,
                     created_at=now,
                     updated_at=now
                 )
@@ -171,8 +170,6 @@ def run_postgres_seed(session: Session = None) -> bool:
                 stu.password = stu_pw_hash
                 stu.bound_device_id = s_data["bound_device_id"]
                 stu.registered_device_id = s_data["registered_device_id"]
-                if not stu.registered_face_base64:
-                    stu.registered_face_base64 = seed_face_b64
                 print(f"[Seed] Updated Student: {stu.name} ({stu.roll_no})")
 
             # Student stats
@@ -258,6 +255,10 @@ def run_postgres_seed(session: Session = None) -> bool:
                 subj.total_conducted = s_info["total_conducted"]
 
         session.flush()
+
+        cs301 = session.query(Subject).filter(Subject.code == "CS301").first()
+        if cs301 and sample_session:
+            sample_session.subject_id = cs301.id
 
         # 6. Student Subject Enrollments
         # STU01 (High: 85%), STU02 (Borderline: 76%), STU03 (At-risk: 65%)

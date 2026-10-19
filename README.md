@@ -1,19 +1,27 @@
 # SmartAttend-AI 🛡️🤖
-### Production-Ready Anti-Proxy & AI-Driven Attendance System (PWA)
+### Anti-Proxy & AI-Driven Smart Attendance System (PWA) [Prototype]
 
-A full-stack, production-grade attendance and retention management system featuring a **5-Gate Anti-Proxy Engine**, **Random Forest Machine Learning Defaulter Radar**, **What-If Bunk Calculator**, **Role-Based Access Control (Student, Faculty, Admin)**, and a **Cloud PostgreSQL (Neon)** relational data layer with Alembic migrations.
+An academic attendance and retention management system featuring a **5-Gate Anti-Proxy Verification Workflow**, **Random Forest Machine Learning Defaulter Radar**, **What-If Bunk Calculator**, **Role-Based Access Control (Student, Faculty, Admin)**, and a **Cloud PostgreSQL (Neon)** relational data layer with Alembic migrations.
 
 ---
 
 ## 🚀 Key Highlights & Architectural Features
 
-### 1. 🛡️ 5-Gate Anti-Proxy Verification Engine
-Every attendance submission passes through 5 sequential hardware, temporal, spatial, and biometric security gates:
-- **Gate 1: Hardware Device Lock & 1-Phone Rule**: Enforces physical device fingerprint binding (`DEV-XXXXXX`). Prevents proxy submissions via database unique constraints (`uq_session_device`) ensuring 1 phone cannot sign attendance for multiple students in the same lecture.
-- **Gate 2: Dynamic QR Timestamp & Cryptographic Signature**: Projects a dynamic QR token refreshed every 5 seconds (`session_id.epoch.hmac_signature`). Validates on the backend that the token age is $\le 7\text{ seconds}$, eliminating photo-sharing or projector re-broadcast attacks.
-- **Gate 3: GPS Geofence (Haversine Formula)**: Calculates spherical distance between lecture classroom coordinates and the student's live location. Submissions beyond **60 meters** are rejected.
-- **Gate 4: AI Face Match Verification**: Analyzes live selfie against student's reference image with explicit consent-based enrollment.
-- **Gate 5: Fraud Logger & ACID Decision Grant**: Breaches log forensics to `security_alerts`. Successful checks record attendance and update streaks inside an atomic database transaction.
+### 1. 🛡️ 5-Gate Anti-Proxy Verification Workflow
+Every attendance submission passes through 5 sequential identity, temporal, spatial, and validation checks:
+- **Gate 1: Browser-Stored Device Identifier & 1-Device Rule**: Binds an initial client-generated device ID stored in browser `localStorage`. Enforces relational database unique constraints (`uq_session_device`) ensuring a single browser session cannot submit attendance for multiple students during the same lecture session.
+- **Gate 2: Dynamic QR Window & Cryptographic Signature**: Projects a rotating QR token (`session_id.window_index.hmac_signature`) based on configurable time windows (default `QR_WINDOW_SECONDS=20s`). The backend validates HMAC-SHA256 signatures for the current and immediately preceding time window, rejecting stale or re-broadcast tokens.
+- **Gate 3: GPS Geofence (Haversine Formula)**: Calculates spherical distance between lecture classroom coordinates and the student's reported location. Submissions beyond **60 meters** are rejected.
+- **Gate 4: InsightFace Biometric Verification (WITHOUT Liveness)**:
+  - Extracts a normalized 512-dimensional float32 embedding vector using the **InsightFace `buffalo_sc` model pack** on CPU via `onnxruntime`.
+  - Raw selfie photographs are decoded strictly in-memory and **never persisted** to disk or database. Biometric templates are encrypted at rest using **Fernet (AES-128-CBC)** (`FACE_EMBED_KEY`).
+  - Strict image quality rejection: rejects on no face, multiple faces, detection score < `FACE_MIN_DET_SCORE` (default 0.60), face bounding box < 80px, or blurry image (Laplacian variance < `FACE_MIN_BLUR_SCORE`).
+  - Three verification outcomes via cosine similarity:
+    - `sim >= FACE_MATCH_THRESHOLD` (default 0.50) &rarr; `PRESENT` (`face_status="MATCH"`)
+    - `FACE_REVIEW_THRESHOLD <= sim < FACE_MATCH_THRESHOLD` (default 0.38) &rarr; `PENDING_APPROVAL` (requires faculty confirmation)
+    - `sim < FACE_REVIEW_THRESHOLD` &rarr; Rejection + Forensics `SecurityAlert` recorded.
+  - ⚠️ **Known Security Limitation:** This is embedding-based verification **WITHOUT active or passive liveness detection** (`liveness_status="NOT_CHECKED"`). A printed color photograph, displayed digital image, or replayed video recording can pass verification if positioned properly in the frame.
+- **Gate 5: Fraud Logger & ACID Decision Grant**: Breaches log forensics to `security_alerts`. Successful checks record attendance and update streaks inside an atomic database transaction with double-submission protection.
 
 ### 2. 🧠 Random Forest ML Defaulter Predictor & What-If Bunk Calculator
 - **Trained Scikit-Learn Model** (`attendance_risk_model.pkl`): Evaluates behavioral attendance features:
@@ -26,9 +34,9 @@ Every attendance submission passes through 5 sequential hardware, temporal, spat
 - **Interactive What-If Bunk Calculator**: Dynamically computes exact lectures safe to skip while staying above 75%, or consecutive lectures required to recover.
 
 ### 3. 👥 Role-Based Portals (RBAC) with JWT & Bcrypt
-- **Student Portal (Mobile-First PWA)**: Device fingerprint bar, Touch ID/Passkey simulation, live 5-gate animated checklist, Viva/Defense Testing Simulator, and subject attendance analytics.
-- **Faculty Portal (Desktop Console)**: 5-second auto-rotating QR code generator with visual countdown, **1-Click Teacher Manual Attendance Override** (for dead phone/battery exceptions), live security red feed, and Exception Approval Queue.
-- **Admin Portal (System Governance)**: Institutional overview KPI cards, **Hardware Device Reset Manager** (for students who switch/buy new phones), ML Defaulter Watchlist, and 1-click CSV report export.
+- **Student Portal (Mobile-First PWA)**: Device identifier banner, Touch ID/Passkey simulation, live 5-gate animated checklist, Viva/Defense Testing Simulator (dev mode), and subject attendance analytics.
+- **Faculty Portal (Desktop Console)**: Auto-rotating QR code generator with countdown, **1-Click Teacher Manual Attendance Override** (for dead phone/battery exceptions), live security feed, and Exception Approval Queue.
+- **Admin Portal (System Governance)**: Institutional overview KPI cards, **Device Reset Manager** (for students who switch/reset browsers or devices), ML Defaulter Watchlist, and 1-click CSV report export.
 
 ### 4. 📱 Progressive Web App (PWA) & Offline Shell
 - **Web App Manifest**: Installable on Android, iOS, and Desktop with custom theme colors (`#4f46e5`) and application icons.
@@ -125,7 +133,9 @@ python backend/test_endpoints.py
 
 ---
 
-## 🔑 Demo Credentials
+## 🔑 Development Demo Credentials
+
+> **Note**: Demo credentials are automatically seeded only when `ENVIRONMENT=development`. In production deployments, configure strong unique passwords and set a secure 32+ character `JWT_SECRET`.
 
 | Role | Roll No / ID | Password | Profile Details |
 | :--- | :--- | :--- | :--- |
@@ -138,4 +148,4 @@ python backend/test_endpoints.py
 ---
 
 ## 📄 License
-MIT License &bull; Designed for robust, tamper-proof academic attendance management.
+MIT License &bull; Developed as an educational prototype for academic attendance exploration and verification workflow research.

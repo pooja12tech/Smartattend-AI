@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export const getDeviceId = () => {
   let devId = localStorage.getItem('smartattend_device_id');
@@ -39,22 +39,42 @@ const getHeaders = (extraHeaders = {}) => {
   return headers;
 };
 
+const safeParse = async (res, fallbackMsg = 'Request failed') => {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    if (!res.ok) {
+      throw new Error(`Server error (${res.status}): ${text.slice(0, 150) || fallbackMsg}`);
+    }
+    throw new Error(`Invalid server response: ${text.slice(0, 150)}`);
+  }
+  if (!res.ok) {
+    const msg = typeof data.detail === 'object'
+      ? (data.detail.message || data.detail.reason || fallbackMsg)
+      : (data.detail || fallbackMsg);
+    const err = new Error(msg);
+    err.status = res.status;
+    err.detail = data.detail;
+    throw err;
+  }
+  return data;
+};
+
 export const api = {
   async getHealth() {
-    const res = await fetch(`${API_BASE}/`);
-    return res.json();
+    const res = await fetch(`${API_BASE}/api/health`);
+    return safeParse(res, 'Health check failed');
   },
 
-  async login({ roll_no, password, device_id, is_exception_mode = false }) {
+  async login({ roll_no, password, device_id }) {
     const res = await fetch(`${API_BASE}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roll_no, password, device_id, is_exception_mode })
+      body: JSON.stringify({ roll_no, password, device_id })
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Login failed');
-    }
+    const data = await safeParse(res, 'Login failed');
     if (data.access_token) {
       setAuthToken(data.access_token);
     }
@@ -71,9 +91,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ live_selfie_base64, consent_given })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Face enrollment failed');
-    return data;
+    return safeParse(res, 'Face enrollment failed');
   },
 
   async startSession({ subject_name, class_lat, class_lng }) {
@@ -82,18 +100,14 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ subject_name, class_lat, class_lng })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to start session');
-    return data;
+    return safeParse(res, 'Failed to start session');
   },
 
   async getSessionQR(sessionId) {
     const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/qr`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to fetch QR');
-    return data;
+    return safeParse(res, 'Failed to fetch QR');
   },
 
   async endSession(sessionId) {
@@ -101,9 +115,7 @@ export const api = {
       method: 'POST',
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to end session');
-    return data;
+    return safeParse(res, 'Failed to end session');
   },
 
   async markAttendance(payload) {
@@ -113,31 +125,37 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(cleanPayload)
     });
-    const data = await res.json();
-    if (!res.ok) {
-      const err = new Error(typeof data.detail === 'object' ? data.detail.reason : data.detail || 'Attendance failed');
-      err.detail = data.detail;
-      throw err;
-    }
-    return data;
+    return safeParse(res, 'Attendance failed');
+  },
+
+  async requestDeviceException({ session_id, device_id, reason, live_selfie_base64 }) {
+    const res = await fetch(`${API_BASE}/api/attendance/request-exception`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ session_id, device_id, reason, live_selfie_base64 })
+    });
+    return safeParse(res, 'Exception request failed');
   },
 
   async getStudentDashboard(rollNo) {
     const res = await fetch(`${API_BASE}/api/student/${rollNo}/dashboard`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to load student dashboard');
-    return data;
+    return safeParse(res, 'Failed to load student dashboard');
   },
 
   async getFacultyLiveSession(sessionId) {
     const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/live`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to load faculty live session');
-    return data;
+    return safeParse(res, 'Failed to load faculty live session');
+  },
+
+  async getSessionRoster(sessionId) {
+    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/roster`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch session roster');
   },
 
   async facultyApprove({ session_id, roll_no, action, remarks }) {
@@ -146,9 +164,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ session_id, roll_no, action, remarks })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Approval action failed');
-    return data;
+    return safeParse(res, 'Approval action failed');
   },
 
   async facultyManualAttendance({ session_id, roll_no, status, reason }) {
@@ -157,18 +173,14 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ session_id, roll_no, status, reason })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Manual attendance failed');
-    return data;
+    return safeParse(res, 'Manual attendance failed');
   },
 
   async getAdminOverview() {
     const res = await fetch(`${API_BASE}/api/admin/overview`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to fetch admin overview');
-    return data;
+    return safeParse(res, 'Failed to fetch admin overview');
   },
 
   async adminCreateUser(userData) {
@@ -177,9 +189,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(userData)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create user');
-    return data;
+    return safeParse(res, 'Failed to create user');
   },
 
   async adminResetDevice(rollNo, reason = 'Hardware device lock reset by administrator') {
@@ -188,9 +198,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ reason })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to reset device');
-    return data;
+    return safeParse(res, 'Failed to reset device');
   },
 
   async adminResetFace(rollNo, reason = 'Biometric reference reset by administrator') {
@@ -199,9 +207,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ reason })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to reset biometric template');
-    return data;
+    return safeParse(res, 'Failed to reset biometric template');
   },
 
   async getAuditLogs(params = {}) {
@@ -209,18 +215,14 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/admin/audit-logs${query ? '?' + query : ''}`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to fetch audit logs');
-    return data;
+    return safeParse(res, 'Failed to fetch audit logs');
   },
 
   async getSubjects() {
     const res = await fetch(`${API_BASE}/api/subjects`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to fetch subjects');
-    return data;
+    return safeParse(res, 'Failed to fetch subjects');
   },
 
   async adminCreateSubject(subjectData) {
@@ -229,17 +231,13 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(subjectData)
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to create subject');
-    return data;
+    return safeParse(res, 'Failed to create subject');
   },
 
   async getStudentSubjects(rollNo) {
     const res = await fetch(`${API_BASE}/api/student/${rollNo}/subjects`, {
       headers: getHeaders()
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Failed to fetch student subjects');
-    return data;
+    return safeParse(res, 'Failed to fetch student subjects');
   }
 };

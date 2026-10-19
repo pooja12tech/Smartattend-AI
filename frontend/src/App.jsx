@@ -4,7 +4,7 @@ import LoginView from './components/LoginView';
 import StudentPortal from './components/StudentPortal';
 import FacultyPortal from './components/FacultyPortal';
 import AdminPortal from './components/AdminPortal';
-import { api } from './api';
+import { api, getDeviceId } from './api';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -44,7 +44,29 @@ export default function App() {
   };
 
   // Quick switch role (Helper for live evaluations and demos)
-  const handleQuickSwitchRole = (targetRole) => {
+  const handleQuickSwitchRole = async (targetRole) => {
+    const creds = {
+      student: { roll_no: 'STU01', password: 'stu123' },
+      faculty: { roll_no: 'FAC01', password: 'fac123' },
+      admin: { roll_no: 'ADM01', password: 'admin123' }
+    };
+    const c = creds[targetRole];
+    if (c) {
+      try {
+        const res = await api.login({
+          roll_no: c.roll_no,
+          password: c.password,
+          device_id: getDeviceId()
+        });
+        if (res.success && res.user) {
+          handleLoginSuccess(res.user);
+          return;
+        }
+      } catch (err) {
+        console.warn('Quick switch login via API failed, using fallback:', err);
+      }
+    }
+
     if (targetRole === 'student') {
       const demoUser = {
         role: 'student',

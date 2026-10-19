@@ -17,13 +17,8 @@ export default function FacultyPortal({ user }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
 
-  // Pre-populated class roster for 1-click manual override
-  const [roster, setRoster] = useState([
-    { roll_no: 'STU01', name: 'Aarav Sharma', department: 'CSE', status: 'UNMARKED' },
-    { roll_no: 'STU02', name: 'Priya Patel', department: 'CSE', status: 'UNMARKED' },
-    { roll_no: 'STU03', name: 'Rohan Verma', department: 'CSE', status: 'UNMARKED' },
-    { roll_no: 'STU04', name: 'Neha Gupta', department: 'CSE', status: 'UNMARKED' }
-  ]);
+  // Live class roster loaded from GET /api/faculty/session/{id}/roster
+  const [roster, setRoster] = useState([]);
 
   // Start lecture session
   const handleStartSession = async () => {
@@ -51,6 +46,7 @@ export default function FacultyPortal({ user }) {
       await api.endSession(activeSession.session_id);
       setActiveSession(null);
       setQrData(null);
+      setRoster([]);
       setManualSuccessMsg('Lecture session ended successfully. Attendance is now closed.');
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
@@ -60,7 +56,7 @@ export default function FacultyPortal({ user }) {
     }
   };
 
-  // Poll dynamic rotating QR code every 1 second
+  // Poll dynamic rotating QR code and roster data
   useEffect(() => {
     let timer;
     if (activeSession?.session_id) {
@@ -82,12 +78,27 @@ export default function FacultyPortal({ user }) {
         }
       };
 
+      const fetchRoster = async () => {
+        try {
+          const rData = await api.getSessionRoster(activeSession.session_id);
+          if (rData && rData.roster) {
+            setRoster(rData.roster);
+          }
+        } catch (err) {
+          console.error('Error fetching roster:', err);
+        }
+      };
+
       fetchQR();
       fetchLiveStatus();
+      fetchRoster();
       timer = setInterval(() => {
         fetchQR();
         fetchLiveStatus();
-      }, 1000);
+        fetchRoster();
+      }, 2000);
+    } else {
+      setRoster([]);
     }
     return () => clearInterval(timer);
   }, [activeSession?.session_id]);
@@ -116,8 +127,10 @@ export default function FacultyPortal({ user }) {
         reason: reason.trim()
       });
 
-      // Update local roster UI
-      setRoster(prev => prev.map(s => s.roll_no === rollNo ? { ...s, status: 'MANUAL_PRESENT' } : s));
+      // Refresh live roster UI
+      const rData = await api.getSessionRoster(activeSession.session_id);
+      if (rData && rData.roster) setRoster(rData.roster);
+
       setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked PRESENT (Faculty Override logged in Audit Trail).`);
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
@@ -138,9 +151,11 @@ export default function FacultyPortal({ user }) {
         remarks: `Faculty ${action.toLowerCase()}d exception in classroom.`
       });
 
-      // Refresh live feed immediately
+      // Refresh live feed & roster immediately
       const live = await api.getFacultyLiveSession(activeSession.session_id);
       setLiveData(live);
+      const rData = await api.getSessionRoster(activeSession.session_id);
+      if (rData && rData.roster) setRoster(rData.roster);
     } catch (err) {
       alert('Approval action failed: ' + err.message);
     } finally {
@@ -328,29 +343,41 @@ export default function FacultyPortal({ user }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
-                  {filteredRoster.map((s) => (
-                    <tr key={s.roll_no} className="hover:bg-slate-900/40">
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
-                      <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
-                      <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
-                      <td className="py-2.5 px-3 text-right">
-                        {s.status === 'MANUAL_PRESENT' ? (
-                          <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Marked Present
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleManualOverride(s.roll_no, s.name)}
-                            disabled={actionLoading}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
-                          >
-                            Mark Present Manually
-                          </button>
-                        )}
+                  {filteredRoster.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="py-6 text-center text-slate-500 text-xs">
+                        {activeSession ? 'No students found matching search.' : 'Start a lecture session to load enrolled students.'}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredRoster.map((s) => (
+                      <tr key={s.roll_no} className="hover:bg-slate-900/40">
+                        <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
+                        <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
+                        <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          {s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT' ? (
+                            <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">
+                              <Check className="w-3 h-3" /> {s.status === 'MANUAL_PRESENT' ? 'Manual Present' : 'Present'}
+                            </span>
+                          ) : s.status === 'PENDING_APPROVAL' ? (
+                            <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-semibold text-[11px] inline-flex items-center gap-1">
+                              Pending Approval
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleManualOverride(s.roll_no, s.name)}
+                              disabled={actionLoading}
+                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
+                            >
+                              Mark Present Manually
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

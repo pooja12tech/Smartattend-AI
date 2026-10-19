@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Fingerprint, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
-  MapPin, ShieldAlert, Sparkles, Check
+  MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
+  HelpCircle, History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { Html5Qrcode } from 'html5-qrcode';
 import { api, getDeviceId } from '../api';
 
 export default function StudentPortal({ user }) {
@@ -16,96 +18,72 @@ export default function StudentPortal({ user }) {
   const [biometricUnlocked, setBiometricUnlocked] = useState(false);
   const [biometricScanning, setBiometricScanning] = useState(false);
 
-  // QR & Attendance flow
+  // Attendance Modal Step Flow: 'IDLE' | 'SCAN_QR' | 'FACE_VERIFY' | 'EVALUATING' | 'RESULT'
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [attendanceStep, setAttendanceStep] = useState('IDLE');
   const [scannedToken, setScannedToken] = useState('');
-  const [sessionId, setSessionId] = useState('CS301-SEC-A');
+  const [sessionId, setSessionId] = useState('');
+  const [qrScanError, setQrScanError] = useState(null);
+  const qrScannerRef = useRef(null);
+
+  // Front camera face verification
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
+  const [countdown, setCountdown] = useState(3);
   const videoRef = useRef(null);
+  const countdownTimerRef = useRef(null);
 
-  // Viva Simulator State (to demo proxy catches!)
+  // 5-Gate Checklist Animation State
+  const [gateProgress, setGateProgress] = useState(null);
+  const [submittingAttendance, setSubmittingAttendance] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
+
+  // Viva Simulator State (Strictly visible when VITE_DEMO_MODE === 'true')
   const [showSimulator, setShowSimulator] = useState(false);
   const [simExpiredQR, setSimExpiredQR] = useState(false);
   const [simFarGPS, setSimFarGPS] = useState(false);
   const [simWrongDevice, setSimWrongDevice] = useState(false);
   const [simFaceMismatch, setSimFaceMismatch] = useState(false);
 
-  // 5-Gate Checklist Animation State
-  const [gateProgress, setGateProgress] = useState(null); // { gate1, gate2, gate3, gate4, gate5, activeGate, error }
-  const [submittingAttendance, setSubmittingAttendance] = useState(false);
-  const [submissionResult, setSubmissionResult] = useState(null);
+  // Student Exception Request State
+  const [submittingException, setSubmittingException] = useState(false);
+  const [exceptionResult, setExceptionResult] = useState(null);
 
-  // Biometric Face Enrollment Modal State
+  // Face Biometric Reference Enrollment State
   const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
   const [enrollSelfie, setEnrollSelfie] = useState(null);
   const [enrollConsent, setEnrollConsent] = useState(true);
   const [enrollingFace, setEnrollingFace] = useState(false);
   const [faceEnrollSuccess, setFaceEnrollSuccess] = useState(null);
+  const [faceEnrollError, setFaceEnrollError] = useState(null);
   const enrollVideoRef = useRef(null);
   const [enrollCameraActive, setEnrollCameraActive] = useState(false);
 
+  const getFaceErrorMessage = (code, fallbackMsg) => {
+    switch (code) {
+      case 'NO_FACE':
+        return 'No face detected in the photo. Please align your face inside the camera circle and ensure good lighting.';
+      case 'MULTIPLE_FACES':
+        return 'Multiple faces detected. Anti-proxy security requires exactly one student in the camera frame.';
+      case 'FACE_IMAGE_BLURRY':
+        return 'Photo is too blurry. Please hold the phone steady and ensure clear lighting.';
+      case 'FACE_TOO_SMALL':
+        return 'Face is too far away (less than 80px). Please move the camera closer to your face.';
+      case 'LOW_DETECTION_CONFIDENCE':
+        return 'Face detection confidence is low. Please look directly at the camera in good lighting.';
+      case 'FACE_NOT_ENROLLED':
+        return 'Face template not enrolled. Please complete face enrollment first before marking attendance.';
+      case 'INVALID_IMAGE':
+        return 'Unable to process the image frame. Please retry.';
+      case 'EXTRACTION_FAILED':
+        return 'Face embedding extraction failed. Please try capturing again.';
+      default:
+        return fallbackMsg || 'Face verification failed. Please try again.';
+    }
+  };
+
   const deviceId = getDeviceId();
-
-  const startEnrollCamera = async () => {
-    try {
-      setEnrollCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-      if (enrollVideoRef.current) {
-        enrollVideoRef.current.srcObject = stream;
-      }
-    } catch (err) {
-      console.warn('Webcam permission not granted or device lacks camera. Using synthetic capture:', err);
-      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
-    }
-  };
-
-  const captureEnrollSelfie = () => {
-    if (enrollVideoRef.current && enrollVideoRef.current.srcObject) {
-      const video = enrollVideoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = 160;
-      canvas.height = 160;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 160, 160);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      setEnrollSelfie(dataUrl);
-
-      const stream = video.srcObject;
-      stream.getTracks().forEach(track => track.stop());
-      setEnrollCameraActive(false);
-    } else {
-      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
-    }
-  };
-
-  const handleEnrollFace = async () => {
-    if (!enrollSelfie) {
-      alert('Please capture or select a photo before saving.');
-      return;
-    }
-    if (!enrollConsent) {
-      alert('Explicit consent is required to store facial reference templates.');
-      return;
-    }
-    setEnrollingFace(true);
-    try {
-      const res = await api.enrollFace({
-        live_selfie_base64: enrollSelfie,
-        consent_given: enrollConsent
-      });
-      setFaceEnrollSuccess(res.message || 'Face registered successfully!');
-      setTimeout(() => {
-        setFaceEnrollSuccess(null);
-        setShowFaceEnrollModal(false);
-      }, 2000);
-      fetchDashboardData();
-    } catch (err) {
-      alert('Face enrollment failed: ' + err.message);
-    } finally {
-      setEnrollingFace(false);
-    }
-  };
 
   const fetchDashboardData = async () => {
     try {
@@ -124,31 +102,211 @@ export default function StudentPortal({ user }) {
     fetchDashboardData();
   }, [user.roll_no]);
 
-  // Simulate Passkey / Fingerprint unlock
+  // Passkey / Fingerprint unlock simulation
   const handleBiometricUnlock = () => {
     setBiometricScanning(true);
     setTimeout(() => {
       setBiometricScanning(false);
       setBiometricUnlocked(true);
-    }, 700);
+    }, 600);
   };
 
-  // Start live webcam for front camera selfie
-  const startCamera = async () => {
-    try {
-      setCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+  // Stop Rear Camera QR Scanner
+  const stopQRScanner = async () => {
+    if (qrScannerRef.current) {
+      try {
+        if (qrScannerRef.current.isScanning) {
+          await qrScannerRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Error stopping QR scanner:', err);
       }
-    } catch (err) {
-      console.warn('Real webcam not accessible or permission denied. Using synthetic verified selfie capture:', err);
-      // Fallback synthetic selfie
-      setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+      try {
+        qrScannerRef.current.clear();
+      } catch (err) {
+        console.warn('Error clearing QR scanner:', err);
+      }
+      qrScannerRef.current = null;
     }
   };
 
-  const captureLiveSelfie = () => {
+  // Stop Front Camera Stream
+  const stopFrontCamera = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  };
+
+  // Close & Reset Attendance Modal
+  const handleCloseScannerModal = async () => {
+    await stopQRScanner();
+    stopFrontCamera();
+    setIsScannerOpen(false);
+    setAttendanceStep('IDLE');
+    setQrScanError(null);
+    setCameraError(null);
+  };
+
+  // Open Attendance Flow (Step 1: Scan QR)
+  const handleStartAttendanceFlow = () => {
+    if (!biometricUnlocked) handleBiometricUnlock();
+    setIsScannerOpen(true);
+    setAttendanceStep('SCAN_QR');
+    setScannedToken('');
+    setSessionId('');
+    setSelfieCaptured(null);
+    setQrScanError(null);
+    setCameraError(null);
+    setGateProgress(null);
+    setSubmissionResult(null);
+    setExceptionResult(null);
+
+    // Start rear camera scanner
+    startQRScanner();
+  };
+
+  // Start Rear Camera QR Scanner
+  const startQRScanner = () => {
+    setQrScanError(null);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setQrScanError('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined. Please ensure you are accessing this app over HTTPS.');
+      return;
+    }
+
+    setTimeout(async () => {
+      try {
+        await stopQRScanner();
+
+        const scanner = new Html5Qrcode('smartattend-qr-reader');
+        qrScannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0
+          },
+          async (decodedText) => {
+            const rawToken = decodedText.trim();
+            const parts = rawToken.split('.');
+            if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+              setQrScanError(`Scanned QR code is not a valid SmartAttend token ("${rawToken.slice(0, 30)}..."). Expected format: session_id.window.signature`);
+              return;
+            }
+
+            // Valid QR token scanned!
+            setQrScanError(null);
+            setScannedToken(rawToken);
+            setSessionId(parts[0]);
+
+            // Stop rear camera to release hardware lock before front camera opens
+            await stopQRScanner();
+
+            // Transition directly to Step 2: Live Face Verification
+            setAttendanceStep('FACE_VERIFY');
+            setTimeout(() => {
+              startFrontCameraCountdown(rawToken, parts[0]);
+            }, 300);
+          },
+          () => {
+            // Frame-level non-detection: normal continuous scan
+          }
+        );
+      } catch (err) {
+        console.error('Failed to start rear camera QR scanner:', err);
+        let errorMsg = 'Failed to open camera.';
+        const msg = err?.message || String(err);
+        if (msg.includes('NotAllowedError') || msg.includes('Permission') || msg.includes('denied')) {
+          errorMsg = 'Camera permission was denied. Please allow camera access in browser settings.';
+        } else if (msg.includes('NotFoundError') || msg.includes('DevicesNotFoundError') || msg.includes('No camera')) {
+          errorMsg = 'No rear camera found on this device.';
+        } else if (msg.includes('NotReadableError') || msg.includes('TrackStartError')) {
+          errorMsg = 'Camera is currently in use by another application or tab.';
+        } else {
+          errorMsg = `Camera error: ${msg}`;
+        }
+        setQrScanError(errorMsg);
+      }
+    }, 100);
+  };
+
+  // Step 2: Start Front Camera with 3-Second Live Face Countdown
+  const startFrontCameraCountdown = async (tokenOverride, sessionOverride) => {
+    setCameraError(null);
+    setCountdown(3);
+
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access requires HTTPS or localhost.');
+      }
+      setCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      // Begin 3-second live countdown
+      let count = 3;
+      countdownTimerRef.current = setInterval(() => {
+        count -= 1;
+        setCountdown(count);
+        if (count <= 0) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+          // Auto-capture live frame and submit!
+          captureSelfieAndProceed(tokenOverride, sessionOverride);
+        }
+      }, 1000);
+
+    } catch (err) {
+      console.warn('Front camera error:', err);
+      setCameraActive(false);
+      let errorMsg = 'Failed to access front camera.';
+      const msg = err?.message || String(err);
+      if (msg.includes('NotAllowedError') || msg.includes('Permission') || msg.includes('denied')) {
+        errorMsg = 'Front camera permission denied. Please allow camera access.';
+      } else if (msg.includes('NotFoundError')) {
+        errorMsg = 'No front camera found on this device.';
+      } else {
+        errorMsg = `Front camera error: ${msg}`;
+      }
+
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        const fallback = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
+        setSelfieCaptured(fallback);
+        setAttendanceStep('EVALUATING');
+        execute5GateSubmission(tokenOverride || scannedToken, sessionOverride || sessionId, fallback);
+      } else {
+        setCameraError(errorMsg);
+      }
+    }
+  };
+
+  // Capture selfie frame onto canvas and transition to Step 3
+  const captureSelfieAndProceed = (tokenOverride, sessionOverride) => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    let capturedBase64 = null;
     if (videoRef.current && videoRef.current.srcObject) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
@@ -156,18 +314,234 @@ export default function StudentPortal({ user }) {
       canvas.height = 160;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, 160, 160);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      setSelfieCaptured(dataUrl);
+      capturedBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-      // Stop video tracks
+      // Cleanly stop front camera stream
       const stream = video.srcObject;
       stream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
       setCameraActive(false);
-    } else {
-      setSelfieCaptured(generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1'));
+    } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
+      capturedBase64 = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
+    }
+
+    if (!capturedBase64 && import.meta.env.VITE_DEMO_MODE !== 'true') {
+      setCameraError('Unable to capture face photo: camera stream was interrupted.');
+      return;
+    }
+
+    setSelfieCaptured(capturedBase64);
+    setAttendanceStep('EVALUATING');
+    execute5GateSubmission(tokenOverride || scannedToken, sessionOverride || sessionId, capturedBase64);
+  };
+
+  // Step 3: Execute 5-Gate ACID Verification
+  const execute5GateSubmission = async (token, session, selfie) => {
+    setSubmittingAttendance(true);
+    setSubmissionResult(null);
+
+    const gates = {
+      gate1: 'PENDING',
+      gate2: 'PENDING',
+      gate3: 'PENDING',
+      gate4: 'PENDING',
+      gate5: 'PENDING',
+      activeGate: 1,
+      error: null
+    };
+    setGateProgress({ ...gates });
+
+    // Geolocation coordinates (classroom default with browser geolocation override)
+    let userLat = 19.07601;
+    let userLng = 72.87771;
+
+    if (navigator.geolocation && !simFarGPS) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2000, maximumAge: 10000 });
+        });
+        if (pos && pos.coords) {
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+        }
+      } catch (e) {
+        console.warn('Geolocation read failed or timed out, using default classroom coordinates.');
+      }
+    }
+
+    if (simFarGPS) {
+      userLat = 19.1050; // ~3.2km away breach
+      userLng = 72.8850;
+    }
+
+    const usedDeviceId = simWrongDevice ? 'DEV-ALIEN-PROXY-PHONE-99' : deviceId;
+    const tokenToSend = simExpiredQR
+      ? `${session}.${Math.floor(Date.now() / 1000) - 25}.expired_sig`
+      : token;
+
+    const selfieToSend = simFaceMismatch
+      ? generateSyntheticSelfie('#dc2626')
+      : selfie;
+
+    const payload = {
+      session_id: session,
+      qr_token: tokenToSend,
+      device_id: usedDeviceId,
+      user_lat: userLat,
+      user_lng: userLng,
+      live_selfie_base64: selfieToSend
+    };
+
+    // Gate 1: Hardware Device Lock
+    gates.gate1 = 'RUNNING';
+    setGateProgress({ ...gates, activeGate: 1 });
+    await new Promise(r => setTimeout(r, 350));
+
+    if (simWrongDevice) {
+      gates.gate1 = 'FAILED';
+      gates.error = 'Gate 1 Failed: Hardware Device Lock mismatch (Untrusted phone)';
+      setGateProgress({ ...gates, activeGate: 1 });
+      setSubmittingAttendance(false);
+      setAttendanceStep('RESULT');
+      try { await api.markAttendance(payload); } catch (e) {
+        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_1_DEVICE_LOCK' });
+      }
+      return;
+    }
+    gates.gate1 = 'PASSED';
+
+    // Gate 2: Dynamic QR
+    gates.gate2 = 'RUNNING';
+    setGateProgress({ ...gates, activeGate: 2 });
+    await new Promise(r => setTimeout(r, 400));
+
+    if (simExpiredQR) {
+      gates.gate2 = 'FAILED';
+      gates.error = 'Gate 2 Failed: Dynamic QR Expired (> 7s old)';
+      setGateProgress({ ...gates, activeGate: 2 });
+      setSubmittingAttendance(false);
+      setAttendanceStep('RESULT');
+      try { await api.markAttendance(payload); } catch (e) {
+        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_2_DYNAMIC_QR' });
+      }
+      return;
+    }
+    gates.gate2 = 'PASSED';
+
+    // Gate 3: GPS Geofence
+    gates.gate3 = 'RUNNING';
+    setGateProgress({ ...gates, activeGate: 3 });
+    await new Promise(r => setTimeout(r, 400));
+
+    if (simFarGPS) {
+      gates.gate3 = 'FAILED';
+      gates.error = 'Gate 3 Failed: Geofence Breach (Distance > 60m from classroom)';
+      setGateProgress({ ...gates, activeGate: 3 });
+      setSubmittingAttendance(false);
+      setAttendanceStep('RESULT');
+      try { await api.markAttendance(payload); } catch (e) {
+        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_3_GPS_GEOFENCE' });
+      }
+      return;
+    }
+    gates.gate3 = 'PASSED';
+
+    // Gate 4: AI Face Match & Gate 5: Backend Atomic Grant
+    gates.gate4 = 'RUNNING';
+    setGateProgress({ ...gates, activeGate: 4 });
+    await new Promise(r => setTimeout(r, 450));
+
+    try {
+      const res = await api.markAttendance(payload);
+      gates.gate4 = 'PASSED';
+      gates.gate5 = 'PASSED';
+      setGateProgress({ ...gates, activeGate: 5 });
+
+      const isPendingApproval = res.status === 'PENDING_APPROVAL';
+      setSubmissionResult({
+        success: true,
+        details: res.details,
+        status: res.status,
+        message: res.message
+      });
+      setAttendanceStep('RESULT');
+
+      // Confetti celebration if confirmed PRESENT!
+      if (!isPendingApproval) {
+        confetti({
+          particleCount: 90,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+
+      fetchDashboardData();
+    } catch (err) {
+      const faceCode = err.detail?.code;
+      const friendlyMsg = faceCode ? getFaceErrorMessage(faceCode, err.message) : (err.message || 'Verification failed');
+      const failedGate = err.detail?.failed_gate || (faceCode ? 'GATE_4_FACE_VERIFICATION' : 'GATE_FAILED');
+
+      if (failedGate.includes('4') || faceCode || simFaceMismatch) {
+        gates.gate4 = 'FAILED';
+      } else {
+        gates.gate5 = 'FAILED';
+      }
+      gates.error = friendlyMsg;
+      setGateProgress({ ...gates });
+      setSubmissionResult({ success: false, reason: friendlyMsg, failed_gate: failedGate });
+      setAttendanceStep('RESULT');
+    } finally {
+      setSubmittingAttendance(false);
     }
   };
 
+  // Demo Simulator Helper ONLY: student never calls this in normal flow
+  const handleSimulateScanLatestQR = async () => {
+    try {
+      const targetSession = sessionId || 'CS301-SEC-A';
+      const qrData = await api.getSessionQR(targetSession);
+      setScannedToken(qrData.qr_token);
+      setSessionId(qrData.session_id || targetSession);
+      await stopQRScanner();
+      setAttendanceStep('FACE_VERIFY');
+      startFrontCameraCountdown(qrData.qr_token, qrData.session_id || targetSession);
+    } catch (err) {
+      const curEpoch = Math.floor(Date.now() / 1000);
+      const fakeToken = `${sessionId || 'CS301-SEC-A'}.${curEpoch}.demo_valid_sig`;
+      setScannedToken(fakeToken);
+      setSessionId(sessionId || 'CS301-SEC-A');
+      await stopQRScanner();
+      setAttendanceStep('FACE_VERIFY');
+      startFrontCameraCountdown(fakeToken, sessionId || 'CS301-SEC-A');
+    }
+  };
+
+  // Student Exception Request
+  const handleRequestException = async () => {
+    const targetSession = sessionId || (scannedToken.includes('.') ? scannedToken.split('.')[0] : 'CS301-SEC-A');
+    if (!confirm(`Submit request: "I don't have my registered device" for session "${targetSession}"? This will be marked as PENDING APPROVAL for faculty review.`)) return;
+    setSubmittingException(true);
+    setExceptionResult(null);
+    try {
+      const res = await api.requestDeviceException({
+        session_id: targetSession,
+        device_id: deviceId,
+        reason: "I don't have my registered device",
+        live_selfie_base64: selfieCaptured
+      });
+      setExceptionResult(res.message || 'Exception request submitted. Awaiting faculty approval.');
+      setTimeout(() => {
+        setExceptionResult(null);
+        handleCloseScannerModal();
+      }, 3500);
+    } catch (err) {
+      alert('Error submitting exception request: ' + err.message);
+    } finally {
+      setSubmittingException(false);
+    }
+  };
+
+  // Synthetic selfie helper (Strictly for Viva Simulator test modes)
   const generateSyntheticSelfie = (color = '#6366f1') => {
     const canvas = document.createElement('canvas');
     canvas.width = 120;
@@ -185,154 +559,105 @@ export default function StudentPortal({ user }) {
     return canvas.toDataURL('image/jpeg', 0.9);
   };
 
-  // Helper to fetch live fresh QR token for demonstration
-  const handleSimulateScanLatestQR = async () => {
+  // Face Biometric Reference Enrollment
+  const startEnrollCamera = async () => {
     try {
-      const qrData = await api.getSessionQR(sessionId);
-      setScannedToken(qrData.qr_token);
-      if (!selfieCaptured) {
-        setSelfieCaptured(generateSyntheticSelfie('#6366f1'));
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access requires HTTPS or localhost.');
+      }
+      setEnrollCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      if (enrollVideoRef.current) {
+        enrollVideoRef.current.srcObject = stream;
       }
     } catch (err) {
-      // Fallback if session is not active yet, create a token format
-      const curEpoch = int(Date.now() / 1000);
-      setScannedToken(`${sessionId}.${curEpoch}.demo_valid_sig`);
-      if (!selfieCaptured) {
-        setSelfieCaptured(generateSyntheticSelfie('#6366f1'));
+      console.warn('Webcam permission not granted:', err);
+      setEnrollCameraActive(false);
+      if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
+      } else {
+        alert('Camera access failed: ' + (err.message || 'Permission denied'));
       }
     }
   };
 
-  // Submit attendance through 5-Gate engine
-  const handleExecuteAttendance = async () => {
-    setSubmittingAttendance(true);
-    setSubmissionResult(null);
+  const captureEnrollSelfie = () => {
+    if (enrollVideoRef.current && enrollVideoRef.current.srcObject) {
+      const video = enrollVideoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = 160;
+      canvas.height = 160;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, 160, 160);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setEnrollSelfie(dataUrl);
 
-    // Initial Gate Progress
-    const gates = {
-      gate1: 'PENDING',
-      gate2: 'PENDING',
-      gate3: 'PENDING',
-      gate4: 'PENDING',
-      gate5: 'PENDING',
-      activeGate: 1,
-      error: null
-    };
-    setGateProgress({ ...gates });
-
-    // Determine payload factoring in Viva Simulator switches
-    const usedDeviceId = simWrongDevice ? 'DEV-ALIEN-HACKER-PHONE-99' : deviceId;
-    const userLat = simFarGPS ? 19.1050 : 19.07601; // ~3.2km away if simulator active
-    const userLng = simFarGPS ? 72.8850 : 72.87771;
-
-    let tokenToSend = scannedToken;
-    if (simExpiredQR || !tokenToSend) {
-      // Create an expired token (25 seconds old)
-      const oldEpoch = Math.floor(Date.now() / 1000) - 25;
-      tokenToSend = `${sessionId}.${oldEpoch}.expired_test_sig`;
+      const stream = video.srcObject;
+      stream.getTracks().forEach(track => track.stop());
+      setEnrollCameraActive(false);
+    } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
+      setEnrollSelfie(generateSyntheticSelfie('#6366f1'));
     }
+  };
 
-    const liveSelfie = simFaceMismatch
-      ? generateSyntheticSelfie('#dc2626')
-      : (selfieCaptured || generateSyntheticSelfie('#4f46e5'));
-
-    const payload = {
-      session_id: sessionId,
-      qr_token: tokenToSend,
-      device_id: usedDeviceId,
-      user_lat: userLat,
-      user_lng: userLng,
-      live_selfie_base64: liveSelfie,
-      is_exception_mode: false
-    };
-
-    // Animate Gate 1 (Device Lock)
-    gates.gate1 = 'RUNNING';
-    setGateProgress({ ...gates, activeGate: 1 });
-    await new Promise(r => setTimeout(r, 400));
-
-    if (simWrongDevice) {
-      gates.gate1 = 'FAILED';
-      gates.error = 'Gate 1 Failed: Hardware Device Lock mismatch (Untrusted phone)';
-      setGateProgress({ ...gates, activeGate: 1 });
-      setSubmittingAttendance(false);
-      try { await api.markAttendance(payload); } catch (e) {
-        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_1_DEVICE_LOCK' });
-      }
+  const handleEnrollFace = async () => {
+    if (!enrollSelfie) {
+      setFaceEnrollError('Please capture or select a photo before saving.');
       return;
     }
-    gates.gate1 = 'PASSED';
-
-    // Animate Gate 2 (Dynamic QR)
-    gates.gate2 = 'RUNNING';
-    setGateProgress({ ...gates, activeGate: 2 });
-    await new Promise(r => setTimeout(r, 450));
-
-    if (simExpiredQR) {
-      gates.gate2 = 'FAILED';
-      gates.error = 'Gate 2 Failed: Dynamic QR Expired (> 7s old)';
-      setGateProgress({ ...gates, activeGate: 2 });
-      setSubmittingAttendance(false);
-      try { await api.markAttendance(payload); } catch (e) {
-        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_2_DYNAMIC_QR' });
-      }
+    if (!enrollConsent) {
+      setFaceEnrollError('Explicit biometric consent is required to store facial reference templates.');
       return;
     }
-    gates.gate2 = 'PASSED';
-
-    // Animate Gate 3 (GPS Geofence)
-    gates.gate3 = 'RUNNING';
-    setGateProgress({ ...gates, activeGate: 3 });
-    await new Promise(r => setTimeout(r, 450));
-
-    if (simFarGPS) {
-      gates.gate3 = 'FAILED';
-      gates.error = 'Gate 3 Failed: Geofence Breach (You are >60m away)';
-      setGateProgress({ ...gates, activeGate: 3 });
-      setSubmittingAttendance(false);
-      try { await api.markAttendance(payload); } catch (e) {
-        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_3_GPS_GEOFENCE' });
-      }
-      return;
-    }
-    gates.gate3 = 'PASSED';
-
-    // Animate Gate 4 (AI Face Match)
-    gates.gate4 = 'RUNNING';
-    setGateProgress({ ...gates, activeGate: 4 });
-    await new Promise(r => setTimeout(r, 500));
-
-    // Execute actual backend call to finalize Gate 4 & Gate 5
+    setEnrollingFace(true);
+    setFaceEnrollError(null);
+    setFaceEnrollSuccess(null);
     try {
-      const res = await api.markAttendance(payload);
-      gates.gate4 = 'PASSED';
-      gates.gate5 = 'PASSED';
-      setGateProgress({ ...gates, activeGate: 5 });
-      setSubmissionResult({ success: true, details: res.details, status: res.status });
-
-      // Trigger Confetti Celebration!
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 }
+      const res = await api.enrollFace({
+        live_selfie_base64: enrollSelfie,
+        consent_given: enrollConsent
       });
-
-      // Refresh student stats
+      setFaceEnrollSuccess(res.message || 'Face registered successfully!');
+      setTimeout(() => {
+        setFaceEnrollSuccess(null);
+        setShowFaceEnrollModal(false);
+      }, 2000);
       fetchDashboardData();
     } catch (err) {
-      const failedGate = err.detail?.failed_gate || 'GATE_FAILED';
-      if (failedGate.includes('4') || simFaceMismatch) {
-        gates.gate4 = 'FAILED';
+      if (err.status === 409) {
+        setFaceEnrollError('Face template is already enrolled. Re-enrollment requires an administrator face reset.');
       } else {
-        gates.gate5 = 'FAILED';
+        const code = err.detail?.code;
+        setFaceEnrollError(getFaceErrorMessage(code, err.message));
       }
-      gates.error = err.message;
-      setGateProgress({ ...gates });
-      setSubmissionResult({ success: false, reason: err.message, failed_gate: failedGate });
     } finally {
-      setSubmittingAttendance(false);
+      setEnrollingFace(false);
     }
   };
+
+  // Clean unmount of all camera tracks and timers
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+      }
+      if (qrScannerRef.current) {
+        try {
+          if (qrScannerRef.current.isScanning) {
+            qrScannerRef.current.stop().catch(() => {}).then(() => {
+              try { qrScannerRef.current.clear(); } catch(e){}
+            });
+          }
+        } catch (e) {}
+      }
+      if (videoRef.current?.srcObject) {
+        try { videoRef.current.srcObject.getTracks().forEach(t => t.stop()); } catch(e){}
+      }
+      if (enrollVideoRef.current?.srcObject) {
+        try { enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop()); } catch(e){}
+      }
+    };
+  }, []);
 
   const getRiskBadge = (level) => {
     switch (level) {
@@ -377,7 +702,7 @@ export default function StudentPortal({ user }) {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
-      {/* Top Biometric & Device Binding Status Bar */}
+      {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Hardware Device Lock */}
         <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
@@ -415,7 +740,7 @@ export default function StudentPortal({ user }) {
           </div>
         </div>
 
-        {/* Biometric Face Template Registration */}
+        {/* Biometric Face Reference Registration */}
         <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-inner">
@@ -428,7 +753,7 @@ export default function StudentPortal({ user }) {
                   Consent Verified
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">Template stored for AI matching</p>
+              <p className="text-xs text-slate-400 mt-0.5">Template registered for AI matching</p>
             </div>
           </div>
 
@@ -442,6 +767,147 @@ export default function StudentPortal({ user }) {
         </div>
       </div>
 
+      {/* HERO UTILITY: Prominent Safe Bunk Margin & Attendance Runway */}
+      <div className={`glass-panel rounded-3xl p-6 sm:p-7 border relative overflow-hidden transition-all duration-300 ${
+        bunkCalc.status === 'SAFE' ? 'border-emerald-500/30 glow-emerald' : 'border-rose-500/30 glow-rose'
+      }`}>
+        <div className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-20 -mr-20 -mt-20 ${
+          bunkCalc.status === 'SAFE' ? 'bg-emerald-500' : 'bg-rose-500'
+        }`} />
+
+        <div className="relative z-10 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                bunkCalc.status === 'SAFE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              }`}>
+                <Award className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Attendance Runway & Bunk Calculator</h3>
+                <p className="text-xs text-slate-400">Calculated against the mandatory 75.0% university eligibility threshold</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-sm ${
+                bunkCalc.status === 'SAFE'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-emerald-500/20'
+                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-rose-500/20 animate-pulse'
+              }`}>
+                {bunkCalc.status === 'SAFE' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
+                {bunkCalc.status === 'SAFE' ? 'SAFE STANDING (NO DETENTION RISK)' : 'CRITICAL DEFICIT (DETENTION WARNING)'}
+              </span>
+            </div>
+          </div>
+
+          {/* Primary Hero Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Current Overall Attendance */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>Overall Attendance</span>
+                <span className="font-mono text-indigo-400">Target: 75.0%</span>
+              </div>
+              <div className="my-2">
+                <span className={`text-4xl sm:text-5xl font-black tracking-tight ${attendance.current_pct >= 75 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {attendance.current_pct}%
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${attendance.current_pct >= 75 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
+                    style={{ width: `${Math.min(100, attendance.current_pct)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-500 font-mono">
+                  <span>{attendance.attended_lectures} Attended</span>
+                  <span>{attendance.total_lectures} Total Held</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Safe Bunks / Classes Needed Major Metric */}
+            <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col justify-between md:col-span-2 ${
+              bunkCalc.status === 'SAFE' ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-rose-950/20 border-rose-500/30'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  {bunkCalc.status === 'SAFE' ? 'Safe Bunk Margin' : 'Recovery Requirement'}
+                </span>
+                <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
+                  bunkCalc.status === 'SAFE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}>
+                  {bunkCalc.status === 'SAFE' ? 'Eligible for Examination' : 'Detention Zone'}
+                </span>
+              </div>
+
+              <div className="my-3 flex items-baseline gap-3">
+                <span className={`text-4xl sm:text-5xl font-black tracking-tight ${
+                  bunkCalc.status === 'SAFE' ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {bunkCalc.status === 'SAFE' ? bunkCalc.safe_skips : bunkCalc.classes_needed}
+                </span>
+                <span className="text-sm sm:text-base font-bold text-slate-200">
+                  {bunkCalc.status === 'SAFE' ? 'Lectures You Can Safely Skip' : 'Consecutive Lectures You Must Attend'}
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                💡 {bunkCalc.message}
+              </p>
+            </div>
+          </div>
+
+          {/* Subject Quick Bunk Matrix Pills */}
+          {subjects.length > 0 && (
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Curriculum Bunk Status by Subject:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {subjects.map((sub, idx) => {
+                  const subCalc = sub.bunk_calculator;
+                  const isSubSafe = sub.pct >= 75.0;
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition ${
+                        isSubSafe
+                          ? 'bg-slate-900/70 border-slate-800 hover:border-emerald-500/30'
+                          : 'bg-rose-950/30 border-rose-500/30 hover:border-rose-500/50'
+                      }`}
+                    >
+                      <div className="truncate mr-2">
+                        <p className="font-bold text-white truncate text-xs">{sub.subject_code || sub.subject.split(' - ')[0]}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{sub.attended}/{sub.total} classes</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className={`text-xs font-mono font-bold ${isSubSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {sub.pct}%
+                        </span>
+                        <div>
+                          {subCalc?.status === 'SAFE' ? (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              +{subCalc.safe_skips} Bunk{subCalc.safe_skips !== 1 ? 's' : ''}
+                            </span>
+                          ) : (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse">
+                              Need {subCalc?.classes_needed || 1}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 5-Gate Live Attendance Scanner Trigger */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 text-center relative overflow-hidden">
         <div className="max-w-md mx-auto space-y-4">
@@ -452,26 +918,317 @@ export default function StudentPortal({ user }) {
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Mark Lecture Attendance</h2>
             <p className="text-xs text-slate-400 mt-1">
-              Protected by the 5-Gate Anti-Proxy Verification Engine (Device + Dynamic QR + GPS + AI Face Match).
+              Automated 2-Step Verification: Scan the dynamic classroom QR code, then complete a 3-second live face check.
             </p>
           </div>
 
-          {!isScannerOpen ? (
-            <button
-              onClick={() => {
-                if (!biometricUnlocked) handleBiometricUnlock();
-                setIsScannerOpen(true);
-              }}
-              className="w-full py-3.5 px-6 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 transition shadow-lg shadow-brand-500/30 active:scale-[0.99] flex items-center justify-center gap-2"
-            >
-              <QrCode className="w-5 h-5" />
-              Open 5-Gate QR & Face Scanner
-            </button>
-          ) : (
-            <div className="text-left space-y-4 pt-2">
-              
-              {/* Viva Simulator Toggle (For Presentation / Defense) */}
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+          <button
+            onClick={handleStartAttendanceFlow}
+            className="w-full py-3.5 px-6 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 transition shadow-lg shadow-brand-500/30 active:scale-[0.99] flex items-center justify-center gap-2"
+          >
+            <QrCode className="w-5 h-5" />
+            <span>Launch Attendance Camera</span>
+          </button>
+        </div>
+      </div>
+
+      {/* AUTOMATED ATTENDANCE MODAL (Steps: SCAN_QR -> FACE_VERIFY -> EVALUATING -> RESULT) */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="glass-panel w-full max-w-lg rounded-3xl p-5 sm:p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95 space-y-4 my-8">
+
+            {/* Top Modal Header & Step Indicator */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-brand-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">SmartAttend 5-Gate Verification</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseScannerModal}
+                className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Step Progress Tracker */}
+            <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-semibold">
+              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+                attendanceStep === 'SCAN_QR'
+                  ? 'bg-brand-500/20 text-brand-300 border-brand-500/40'
+                  : scannedToken
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-900/60 text-slate-500 border-slate-800'
+              }`}>
+                {scannedToken ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <span className="w-4 h-4 rounded-full bg-brand-500 text-white text-[10px] flex items-center justify-center">1</span>}
+                <span>1. Scan QR</span>
+              </div>
+
+              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+                attendanceStep === 'FACE_VERIFY'
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                  : selfieCaptured
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-900/60 text-slate-500 border-slate-800'
+              }`}>
+                {selfieCaptured ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <span className="w-4 h-4 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center">2</span>}
+                <span>2. Face Check</span>
+              </div>
+
+              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+                attendanceStep === 'EVALUATING' || attendanceStep === 'RESULT'
+                  ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
+                  : 'bg-slate-900/60 text-slate-500 border-slate-800'
+              }`}>
+                <span className="w-4 h-4 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center">3</span>
+                <span>3. 5-Gate Grant</span>
+              </div>
+            </div>
+
+            {/* STEP 1: SCAN QR CODE VIEW */}
+            {attendanceStep === 'SCAN_QR' && (
+              <div className="space-y-3">
+                <div className="text-center space-y-1">
+                  <h4 className="text-base font-bold text-white">Point Rear Camera at Dynamic QR</h4>
+                  <p className="text-xs text-slate-400">
+                    Scan the lecture QR code on the faculty projection screen. Auto-decodes in &lt; 0.5s.
+                  </p>
+                </div>
+
+                {/* html5-qrcode Viewport Container */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-700 min-h-[260px] shadow-inner">
+                  <div id="smartattend-qr-reader" className="w-full" />
+                </div>
+
+                {qrScanError && (
+                  <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">{qrScanError}</p>
+                      {qrScanError.includes('HTTPS') && (
+                        <p className="text-[11px] text-rose-200/80">
+                          Mobile browsers require HTTPS or localhost to unlock camera video streams.
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={startQRScanner}
+                        className="mt-1 px-3 py-1 rounded bg-rose-500/30 text-white text-[11px] font-semibold hover:bg-rose-500/40 transition"
+                      >
+                        Retry Camera Access
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2: FRONT CAMERA LIVE FACE COUNTDOWN */}
+            {attendanceStep === 'FACE_VERIFY' && (
+              <div className="space-y-4">
+                <div className="text-center space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mb-1">
+                    <Check className="w-3.5 h-3.5" /> QR Code Verified: {sessionId}
+                  </div>
+                  <h4 className="text-base font-bold text-white">Live Face Biometric Check</h4>
+                  <p className="text-xs text-slate-400">
+                    Hold still and look directly into the camera. Auto-capturing in <span className="text-amber-400 font-bold font-mono">{countdown}s</span>...
+                  </p>
+                </div>
+
+                {/* Front Camera Video Container with Live Reticle & Countdown Badge */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-indigo-500/40 aspect-square max-w-[280px] mx-auto shadow-2xl flex items-center justify-center">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+
+                  {/* Circular Face Alignment Framing Guide */}
+                  <div className="absolute inset-4 rounded-full border-2 border-dashed border-indigo-400/60 pointer-events-none animate-pulse-slow" />
+
+                  {/* Floating Live Countdown Badge */}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/75 backdrop-blur-md border border-white/20 text-white font-mono text-sm font-bold flex items-center gap-2 shadow-lg">
+                    <Camera className="w-4 h-4 text-indigo-400 animate-bounce" />
+                    <span>Auto-Snap in {countdown}s</span>
+                  </div>
+                </div>
+
+                {cameraError && (
+                  <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">{cameraError}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
+                    className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Snap Now (Skip Countdown)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: 5-GATE ACID EVALUATION IN PROGRESS */}
+            {attendanceStep === 'EVALUATING' && gateProgress && (
+              <div className="space-y-4 py-2">
+                <div className="text-center space-y-1">
+                  <h4 className="text-base font-bold text-white">5-Gate Anti-Proxy Evaluation</h4>
+                  <p className="text-xs text-slate-400">
+                    Executing atomic server verification across all physical and biometric gates...
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2.5 text-slate-200">
+                      {gateProgress.gate1 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate1 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />}
+                      Gate 1: Hardware Device Lock & 1-Phone Rule
+                    </span>
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate1 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate1 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate1}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2.5 text-slate-200">
+                      {gateProgress.gate2 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate2 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 2 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
+                      Gate 2: Dynamic QR Time & Signature Check
+                    </span>
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate2 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate2 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate2}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2.5 text-slate-200">
+                      {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 3 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
+                      Gate 3: GPS Geofence Check (&le; 60m Classroom)
+                    </span>
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate3}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2.5 text-slate-200">
+                      {gateProgress.gate4 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate4 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 4 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
+                      Gate 4: AI Face Match Verification
+                    </span>
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate4 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate4 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate4}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2.5 text-slate-200">
+                      {gateProgress.gate5 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate5 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 5 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
+                      Gate 5: Anti-Fraud Audit Logger & Final Grant
+                    </span>
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate5 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate5 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate5}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: VERIFICATION RESULT VIEW */}
+            {attendanceStep === 'RESULT' && (
+              <div className="space-y-4 py-2">
+                {submissionResult?.success ? (
+                  <div className="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center space-y-3">
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                      <CheckCircle2 className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-black text-white">ATTENDANCE CONFIRMED</h4>
+                      <p className="text-xs text-emerald-300 font-semibold mt-0.5">
+                        Status: {submissionResult.status}
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs grid grid-cols-2 gap-2 text-left font-mono">
+                      <div>
+                        <span className="text-slate-400 text-[10px]">Session ID:</span>
+                        <p className="font-bold text-white">{sessionId}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px]">Geofence Distance:</span>
+                        <p className="font-bold text-white">{submissionResult.details?.distance_meters}m (Inside)</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px]">AI Face Match:</span>
+                        <p className="font-bold text-emerald-400">{submissionResult.details?.face_match_score}%</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px]">Device Fingerprint:</span>
+                        <p className="font-bold text-white truncate">{deviceId}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleCloseScannerModal}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition"
+                    >
+                      Done & Return to Dashboard
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center space-y-3">
+                    <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/20">
+                      <XCircle className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-black text-white">ATTENDANCE REJECTED</h4>
+                      <p className="text-xs text-rose-300 font-medium mt-1">
+                        {submissionResult?.reason || gateProgress?.error || 'Verification check failed.'}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleStartAttendanceFlow}
+                        className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Try Again
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRequestException}
+                        disabled={submittingException}
+                        className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" /> Request Faculty Review
+                      </button>
+                    </div>
+
+                    {exceptionResult && (
+                      <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2 text-left mt-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>{exceptionResult}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VIVA / DEFENSE ANTI-PROXY SIMULATOR (Visible ONLY when VITE_DEMO_MODE === 'true') */}
+            {import.meta.env.VITE_DEMO_MODE === 'true' && (
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800/90 text-xs space-y-2 mt-2">
                 <button
                   type="button"
                   onClick={() => setShowSimulator(!showSimulator)}
@@ -484,12 +1241,12 @@ export default function StudentPortal({ user }) {
                 </button>
 
                 {showSimulator && (
-                  <div className="mt-3 pt-3 border-t border-slate-800 space-y-2 text-slate-300">
+                  <div className="pt-2 border-t border-slate-800 space-y-2.5 text-slate-300">
                     <p className="text-[11px] text-slate-400">
-                      Toggle any of these switches to demonstrate how SmartAttend-AI immediately catches and blocks fraud attempts:
+                      Toggle fraud vectors to demonstrate how SmartAttend-AI's 5-Gate ACID engine catches proxy attempts:
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={simExpiredQR}
@@ -499,27 +1256,27 @@ export default function StudentPortal({ user }) {
                         <span className="text-[11px]">Simulate Expired QR (&gt;7s)</span>
                       </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={simFarGPS}
                           onChange={(e) => setSimFarGPS(e.target.checked)}
                           className="rounded text-rose-500"
                         />
-                        <span className="text-[11px]">Simulate 3km Away GPS</span>
+                        <span className="text-[11px]">Simulate 3.2km Away GPS</span>
                       </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={simWrongDevice}
                           onChange={(e) => setSimWrongDevice(e.target.checked)}
                           className="rounded text-rose-500"
                         />
-                        <span className="text-[11px]">Simulate Alien / Proxy Phone</span>
+                        <span className="text-[11px]">Simulate Proxy Phone</span>
                       </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded bg-slate-950/80 border border-slate-800 cursor-pointer">
+                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={simFaceMismatch}
@@ -529,202 +1286,34 @@ export default function StudentPortal({ user }) {
                         <span className="text-[11px]">Simulate Face Mismatch</span>
                       </label>
                     </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Dynamic QR Token Input & Desktop Helper */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
-                  <label>Session Dynamic QR Token</label>
-                  <button
-                    type="button"
-                    onClick={handleSimulateScanLatestQR}
-                    className="text-brand-400 hover:text-brand-300 underline text-[11px] flex items-center gap-1"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Fetch Faculty's Active Token
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={scannedToken}
-                  onChange={(e) => setScannedToken(e.target.value)}
-                  placeholder="CS301-SEC-A.1713400000.signature..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-brand-500"
-                />
-              </div>
-
-              {/* Camera / Live Selfie Capture Section */}
-              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-indigo-400" /> Gate 4: Live Selfie Capture
-                  </span>
-                  {selfieCaptured && (
-                    <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Selfie Ready
-                    </span>
-                  )}
-                </div>
-
-                {cameraActive ? (
-                  <div className="space-y-2">
-                    <video ref={videoRef} autoPlay playsInline className="w-full h-44 object-cover rounded-xl bg-black" />
-                    <button
-                      type="button"
-                      onClick={captureLiveSelfie}
-                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold"
-                    >
-                      Capture Photo Now
-                    </button>
-                  </div>
-                ) : selfieCaptured ? (
-                  <div className="flex items-center gap-3">
-                    <img src={selfieCaptured} alt="Live Selfie" className="w-16 h-16 rounded-xl object-cover border border-slate-700 shadow" />
-                    <div className="text-xs text-slate-400 space-y-1">
-                      <p className="text-slate-200 font-medium">Front camera selfie registered.</p>
+                    <div className="pt-2 border-t border-slate-800/80">
                       <button
                         type="button"
-                        onClick={startCamera}
-                        className="text-brand-400 hover:underline text-[11px]"
+                        onClick={handleSimulateScanLatestQR}
+                        className="w-full py-2 px-3 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-semibold flex items-center justify-center gap-1.5 hover:bg-amber-500/30 transition"
                       >
-                        Retake Photo
+                        <RefreshCw className="w-3.5 h-3.5" /> [Simulator] Auto-Fetch Faculty QR & Test Flow
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={startCamera}
-                      className="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5"
-                    >
-                      <Camera className="w-3.5 h-3.5" /> Open Front Camera
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelfieCaptured(generateSyntheticSelfie('#6366f1'))}
-                      className="py-2 px-3 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold"
-                    >
-                      Quick Test Selfie
-                    </button>
-                  </div>
                 )}
               </div>
+            )}
 
-              {/* Animated 5-Gate Checklist View */}
-              {gateProgress && (
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
-                  <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span>5-Gate Anti-Proxy Evaluation</span>
-                    {submittingAttendance && <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-400" />}
-                  </div>
-
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/60">
-                      <span className="flex items-center gap-2">
-                        {gateProgress.gate1 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate1 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-indigo-400 animate-spin" />}
-                        Gate 1: Hardware Device Lock & 1-Phone Rule
-                      </span>
-                      <span className={`font-mono text-[10px] font-bold ${gateProgress.gate1 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate1 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {gateProgress.gate1}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/60">
-                      <span className="flex items-center gap-2">
-                        {gateProgress.gate2 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate2 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600" />}
-                        Gate 2: Dynamic QR Time & Signature Check
-                      </span>
-                      <span className={`font-mono text-[10px] font-bold ${gateProgress.gate2 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate2 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {gateProgress.gate2}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/60">
-                      <span className="flex items-center gap-2">
-                        {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600" />}
-                        Gate 3: GPS Geofence Check (&le; 60m Classroom)
-                      </span>
-                      <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {gateProgress.gate3}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/60">
-                      <span className="flex items-center gap-2">
-                        {gateProgress.gate4 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate4 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600" />}
-                        Gate 4: AI Face Match Verification
-                      </span>
-                      <span className={`font-mono text-[10px] font-bold ${gateProgress.gate4 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate4 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {gateProgress.gate4}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between p-2 rounded bg-slate-900/60">
-                      <span className="flex items-center gap-2">
-                        {gateProgress.gate5 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate5 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600" />}
-                        Gate 5: Anti-Fraud Audit Logger & Final Grant
-                      </span>
-                      <span className={`font-mono text-[10px] font-bold ${gateProgress.gate5 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate5 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                        {gateProgress.gate5}
-                      </span>
-                    </div>
-                  </div>
-
-                  {gateProgress.error && (
-                    <div className="p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium">
-                      ❌ {gateProgress.error}
-                    </div>
-                  )}
-
-                  {submissionResult?.success && (
-                    <div className="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                      <div>
-                        <p className="font-bold">ATTENDANCE RECORDED: {submissionResult.status}</p>
-                        <p className="text-[11px] text-emerald-300/80">Distance: {submissionResult.details?.distance_meters}m | AI Match: {submissionResult.details?.face_match_score}%</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleExecuteAttendance}
-                  disabled={submittingAttendance || !scannedToken}
-                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {submittingAttendance ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  Validate 5 Gates & Submit
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsScannerOpen(false)}
-                  className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs"
-                >
-                  Close
-                </button>
-              </div>
-
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Main Student Analytics Grid */}
+      {/* Main Student Analytics: AI Risk Engine & Attendance Trends */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* 1. AI Risk Predictor Card (Random Forest Output) */}
+        {/* 1. AI Defaulter Risk Predictor Card (Random Forest ML) */}
         <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-indigo-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Attendance Risk Engine</h3>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Defaulter Risk Engine</h3>
             </div>
             {getRiskBadge(risk.risk_level)}
           </div>
@@ -741,7 +1330,7 @@ export default function StudentPortal({ user }) {
 
           {/* Behavioral ML Insights */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Behavioral Insights:</p>
+            <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Behavioral Risk Insights:</p>
             <ul className="space-y-1.5 text-xs text-slate-400">
               {risk.insights && risk.insights.map((insight, idx) => (
                 <li key={idx} className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
@@ -753,67 +1342,48 @@ export default function StudentPortal({ user }) {
           </div>
         </div>
 
-        {/* 2. Interactive What-If Bunk Calculator */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+        {/* 2. Active Attendance Streak & Curriculum Health */}
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Award className="w-5 h-5 text-amber-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">What-If Bunk Calculator</h3>
+              <Flame className="w-5 h-5 text-amber-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Attendance Momentum</h3>
             </div>
-            <span className="text-xs font-bold font-mono text-indigo-300">Target: 75.0%</span>
+            <span className="text-xs font-bold font-mono text-indigo-300">Sem {dashboard?.student?.semester || 6}</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-center">
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-              <p className="text-xs text-slate-400">Current Attendance</p>
-              <p className={`text-3xl font-black mt-1 ${attendance.current_pct >= 75 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {attendance.current_pct}%
+          <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-amber-300 font-semibold">Active Streak Metric</p>
+              <p className="text-2xl font-black text-amber-400 mt-0.5">
+                {attendance.active_streak > 0 ? `+${attendance.active_streak} Lectures` : `${attendance.active_streak} Lectures Missed`}
               </p>
-              <p className="text-[11px] text-slate-500 mt-1 font-mono">{attendance.attended_lectures}/{attendance.total_lectures} Lectures</p>
             </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-center">
-              {bunkCalc.status === 'SAFE' ? (
-                <>
-                  <p className="text-xs text-emerald-400 font-semibold">Safe Bunks Remaining</p>
-                  <p className="text-3xl font-black text-emerald-400 mt-1">{bunkCalc.safe_skips}</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Without dropping below 75%</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-rose-400 font-semibold">Classes Needed</p>
-                  <p className="text-3xl font-black text-rose-400 mt-1">{bunkCalc.classes_needed}</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Consecutive attendance to hit 75%</p>
-                </>
-              )}
+            <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Flame className="w-6 h-6 animate-pulse" />
             </div>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 font-medium">
-            💡 {bunkCalc.message}
-          </div>
-
-          {/* Active Streak */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-xs">
-            <div className="flex items-center gap-2 text-amber-300 font-semibold">
-              <Flame className="w-4 h-4 text-amber-400 animate-pulse" /> Active Attendance Streak
-            </div>
-            <div className="text-sm font-black font-mono text-amber-400">
-              {attendance.active_streak > 0 ? `+${attendance.active_streak} Lectures` : `${attendance.active_streak} Lectures Missed`}
-            </div>
+          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 space-y-1">
+            <p className="font-semibold text-white flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> University Regulatory Rule
+            </p>
+            <p className="text-slate-400 leading-relaxed">
+              Minimum 75% aggregate attendance required to obtain exam hall ticket. Students below 75% are placed on the academic detention warning list.
+            </p>
           </div>
         </div>
 
       </div>
 
-      {/* Subject-Wise Attendance Breakdown */}
+      {/* Detailed Subject-Wise Academic Breakdown */}
       <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Academic Curriculum & Subject Tracking</h3>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Subject-Wise Attendance Breakdown</h3>
           </div>
-          <span className="text-[11px] text-slate-400">Min. Target: 75.0%</span>
+          <span className="text-[11px] text-slate-400">Mandatory: 75.0%</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -838,15 +1408,15 @@ export default function StudentPortal({ user }) {
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${isSafe ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
                     style={{ width: `${Math.min(100, sub.pct)}%` }}
-                  ></div>
+                  />
                 </div>
 
                 {bCalc && (
                   <div className={`p-2.5 rounded-lg text-[11px] flex items-center justify-between ${isSafe ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
-                    <span className="font-medium">
+                    <span className="font-semibold">
                       {isSafe ? `✅ Safe Skips: ${bCalc.safe_skips}` : `⚠️ Attend Next: ${bCalc.classes_needed}`}
                     </span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[150px]">{bCalc.message}</span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[180px]">{bCalc.message}</span>
                   </div>
                 )}
               </div>
@@ -855,9 +1425,52 @@ export default function StudentPortal({ user }) {
         </div>
       </div>
 
-      {/* Consent-Based Biometric Face Enrollment Modal */}
+      {/* Recent Attendance Verification Audit Logs */}
+      {logs.length > 0 && (
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Recent Attendance Verification Logs</h3>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
+                  <th className="pb-2 font-semibold">Session ID</th>
+                  <th className="pb-2 font-semibold">Status</th>
+                  <th className="pb-2 font-semibold">AI Face Match</th>
+                  <th className="pb-2 font-semibold">GPS Distance</th>
+                  <th className="pb-2 font-semibold">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                {logs.slice(0, 5).map((log, idx) => (
+                  <tr key={idx} className="hover:bg-slate-900/40">
+                    <td className="py-2.5 text-slate-200">{log.session_id}</td>
+                    <td className="py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        log.status === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
+                        log.status === 'PENDING_APPROVAL' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
+                        'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                      }`}>
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-slate-300">{log.face_match_score != null ? `${log.face_match_score}%` : 'N/A'}</td>
+                    <td className="py-2.5 text-slate-300">{log.distance_meters != null ? `${log.distance_meters}m` : 'N/A'}</td>
+                    <td className="py-2.5 text-slate-400 font-sans text-[10px]">{log.marked_at ? new Date(log.marked_at).toLocaleTimeString() : 'Recent'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Biometric Face Reference Enrollment Modal */}
       {showFaceEnrollModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-md rounded-2xl p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -868,6 +1481,8 @@ export default function StudentPortal({ user }) {
                 type="button"
                 onClick={() => {
                   setShowFaceEnrollModal(false);
+                  setFaceEnrollError(null);
+                  setFaceEnrollSuccess(null);
                   if (enrollVideoRef.current?.srcObject) {
                     enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
                   }
@@ -879,15 +1494,25 @@ export default function StudentPortal({ user }) {
               </button>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Register your high-resolution facial reference template. This image will serve as the biometric ground truth for Gate 4 during lecture attendance.
-            </p>
+            {/* Privacy & Template Storage Explanation */}
+            <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-slate-300 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-purple-300 font-semibold">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                <span>Privacy &amp; Cryptographic Storage</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                SmartAttend-AI stores an <strong>encrypted numeric template (512-D vector)</strong>, <span className="text-white font-semibold">NOT your photo</span>. The camera capture is processed strictly in-memory and immediately discarded. Templates are encrypted at rest with AES/Fernet encryption.
+              </p>
+              <p className="text-[10px] text-purple-300/80">
+                • <strong>Retention Policy:</strong> Encrypted templates expire after 1 academic year (365 days) or upon administrator reset.
+              </p>
+            </div>
 
             {/* Camera View / Photo Preview */}
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-3">
               {enrollCameraActive ? (
                 <div className="space-y-2">
-                  <video ref={enrollVideoRef} autoPlay playsInline className="w-full h-48 object-cover rounded-xl bg-black" />
+                  <video ref={enrollVideoRef} autoPlay playsInline className="w-full h-48 object-cover rounded-xl bg-black scale-x-[-1]" />
                   <button
                     type="button"
                     onClick={captureEnrollSelfie}
@@ -901,7 +1526,11 @@ export default function StudentPortal({ user }) {
                   <img src={enrollSelfie} alt="Enrolled reference" className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-500/50 shadow-lg" />
                   <button
                     type="button"
-                    onClick={startEnrollCamera}
+                    onClick={() => {
+                      setEnrollSelfie(null);
+                      setFaceEnrollError(null);
+                      startEnrollCamera();
+                    }}
                     className="text-[11px] text-purple-400 hover:underline font-medium"
                   >
                     Retake Photo
@@ -915,18 +1544,26 @@ export default function StudentPortal({ user }) {
                   <div className="flex gap-2 justify-center">
                     <button
                       type="button"
-                      onClick={startEnrollCamera}
+                      onClick={() => {
+                        setFaceEnrollError(null);
+                        startEnrollCamera();
+                      }}
                       className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold"
                     >
                       Open Front Camera
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'))}
-                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-                    >
-                      Test Photo
-                    </button>
+                    {import.meta.env.VITE_DEMO_MODE === 'true' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFaceEnrollError(null);
+                          setEnrollSelfie(generateSyntheticSelfie('#8b5cf6'));
+                        }}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                      >
+                        Test Photo
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -941,9 +1578,17 @@ export default function StudentPortal({ user }) {
                 className="mt-0.5 rounded text-purple-600 focus:ring-purple-500"
               />
               <span className="text-[11px] text-slate-300 leading-tight">
-                <strong>Explicit Biometric Consent:</strong> I voluntarily consent to SmartAttend-AI storing a mathematical representation of my facial features exclusively for academic attendance verification and proxy deterrence.
+                <strong>Explicit Biometric Consent:</strong> I voluntarily consent to SmartAttend-AI generating and storing an encrypted numeric template of my facial features exclusively for academic attendance verification. I acknowledge that raw photos are never stored.
               </span>
             </label>
+
+            {/* Friendly Face Error Alert */}
+            {faceEnrollError && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>{faceEnrollError}</span>
+              </div>
+            )}
 
             {faceEnrollSuccess && (
               <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
@@ -959,7 +1604,7 @@ export default function StudentPortal({ user }) {
               className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-600/25 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {enrollingFace ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>Save & Register Biometric Face</span>
+              <span>Save &amp; Register Biometric Template</span>
             </button>
           </div>
         </div>

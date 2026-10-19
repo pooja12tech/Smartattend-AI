@@ -7,16 +7,19 @@ import hmac
 import hashlib
 import secrets
 import base64
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
 QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
+SESSION_MAX_MINUTES = int(os.getenv("SESSION_MAX_MINUTES", "120"))
 
 import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import numpy as np
 import pandas as pd
 import joblib
@@ -34,8 +37,9 @@ from db_postgres import (
 )
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
-    Subject, StudentSubjectEnrollment, AuditLog
+    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment
 )
+import face_service
 from seed_postgres import run_postgres_seed
 from auth import (
     hash_password,
@@ -104,9 +108,25 @@ def load_ml_model():
 
 load_ml_model()
 
+async def auto_end_sessions_background_task():
+    while True:
+        try:
+            await asyncio.sleep(60)
+            from db_postgres import get_session_factory
+            session_factory = get_session_factory()
+            with session_factory() as db:
+                auto_close_expired_sessions(db)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Auto-End Background Task Error]: {e}")
+
 @app.on_event("startup")
-def startup_db_init():
+async def startup_db_init():
     """Ensure database schema is registered and seed users if database is empty."""
+    # Verify Fernet encryption key for biometric templates at rest (fails if missing/weak outside tests)
+    face_service.get_fernet()
+
     init_db_schema()
     conn_info = check_postgres_connection()
     print(f"[Main Startup] Database connection: {conn_info.get('status')} ({conn_info.get('message')})")
@@ -116,11 +136,17 @@ def startup_db_init():
     with session_factory() as db:
         user_count = db.query(User).count()
         if user_count == 0:
-            print("[Main Startup] Database is empty. Executing initial seed...")
-            try:
-                run_postgres_seed(db)
-            except Exception as e:
-                print(f"[Main Startup Warning] Seeding failed: {e}")
+            env = os.getenv("ENVIRONMENT", "").strip().lower()
+            if env == "development":
+                print("[Main Startup] Database is empty and ENVIRONMENT=development. Executing initial seed...")
+                try:
+                    run_postgres_seed(db)
+                except Exception as e:
+                    print(f"[Main Startup Warning] Seeding failed: {e}")
+            else:
+                print(f"[Main Startup] Database is empty but ENVIRONMENT is '{env}'. Auto-seed skipped.")
+
+    asyncio.create_task(auto_end_sessions_background_task())
 
 # ==============================================================================
 # Helper Utilities (Haversine, Dynamic QR, Face Matching, Bunk Calculator)
@@ -359,6 +385,114 @@ def recompute_student_subject_enrollment(db: Session, roll_no: str, subject_code
 
     return enrollment
 
+def finalize_session_absentees(db: Session, session: LectureSession, now: datetime, absent_reason: str) -> tuple[int, bool]:
+    """
+    Finds enrolled students for session's subject who have not marked attendance,
+    and inserts ABSENT AttendanceRecord for them.
+    Returns (absentees_created, has_enrollments).
+    """
+    subject = None
+    if session.subject_id:
+        subject = db.query(Subject).filter(Subject.id == session.subject_id).first()
+    if not subject:
+        code_part = session.subject_name.split("-")[0].strip() if "-" in session.subject_name else session.subject_name.split(" ")[0].strip()
+        name_part = session.subject_name.split("-")[-1].strip() if "-" in session.subject_name else session.subject_name.strip()
+        subject = db.query(Subject).filter(
+            (Subject.code == session.subject_name) |
+            (Subject.name == session.subject_name) |
+            (Subject.code == code_part) |
+            (Subject.name == name_part)
+        ).first()
+
+    enrollments = []
+    subject_code = subject.code if subject else (session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name)
+
+    if subject:
+        enrollments = db.query(StudentSubjectEnrollment).filter(
+            (StudentSubjectEnrollment.subject_code == subject.code) |
+            (StudentSubjectEnrollment.subject_name == subject.name)
+        ).all()
+    else:
+        enrollments = db.query(StudentSubjectEnrollment).filter(
+            (StudentSubjectEnrollment.subject_code == session.subject_name) |
+            (StudentSubjectEnrollment.subject_code == subject_code) |
+            (StudentSubjectEnrollment.subject_name == session.subject_name)
+        ).all()
+
+    if not enrollments:
+        return 0, False
+
+    candidate_students = [(enr.roll_no, enr.student_name) for enr in enrollments]
+    existing_records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+    already_marked_rolls = {r.roll_no for r in existing_records}
+
+    absentees_created = 0
+    affected_rolls = set()
+
+    for roll_no, student_name in candidate_students:
+        if roll_no not in already_marked_rolls:
+            absent_record = AttendanceRecord(
+                session_id=session.session_id,
+                roll_no=roll_no,
+                student_name=student_name,
+                used_device_id=f"ABSENT_{roll_no}",
+                distance_meters=0.0,
+                face_match_score=0.0,
+                face_status="ABSENT",
+                is_exception_mode=False,
+                is_manual_override=False,
+                status="ABSENT",
+                reason=absent_reason,
+                marked_at=now
+            )
+            db.add(absent_record)
+            absentees_created += 1
+            already_marked_rolls.add(roll_no)
+            affected_rolls.add(roll_no)
+
+    db.flush()
+
+    for roll_no in affected_rolls:
+        student_user = db.query(User).filter(User.roll_no == roll_no).first()
+        if student_user:
+            recompute_student_stats(db, student_user.id)
+            recompute_student_subject_enrollment(db, roll_no, subject_code)
+
+    return absentees_created, True
+
+def auto_close_expired_sessions(db: Session, now: Optional[datetime] = None) -> List[str]:
+    """
+    Finds all ACTIVE lecture sessions started more than SESSION_MAX_MINUTES ago,
+    marks them ENDED, and generates ABSENT records for students who did not mark attendance.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=SESSION_MAX_MINUTES)
+
+    expired_sessions = db.query(LectureSession).filter(
+        LectureSession.status == "ACTIVE",
+        LectureSession.started_at <= cutoff
+    ).all()
+
+    closed_session_ids = []
+    for session in expired_sessions:
+        session.status = "ENDED"
+        session.ended_at = now
+        finalize_session_absentees(
+            db,
+            session,
+            now,
+            absent_reason=f"Marked absent automatically: Session exceeded max duration of {SESSION_MAX_MINUTES} minutes."
+        )
+        closed_session_ids.append(session.session_id)
+
+    if closed_session_ids:
+        db.commit()
+
+    return closed_session_ids
+
 def evaluate_student_risk(stats: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to run ML risk prediction for a student stats dict."""
     current_att = stats.get("current_attendance_pct", 100.0)
@@ -413,13 +547,13 @@ def evaluate_student_risk(stats: Dict[str, Any]) -> Dict[str, Any]:
 class LoginRequest(BaseModel):
     roll_no: str = Field(..., description="Student Roll No (STU01), Faculty ID (FAC01), or Admin ID (ADM01)")
     password: str = Field(..., description="Password (stu123, fac123, admin123)")
-    device_id: str = Field("DEFAULT-DEV-ID", description="Unique hardware/browser device fingerprint")
-    is_exception_mode: bool = Field(False, description="Whether logging in from an alternate/temporary device")
+    device_id: Optional[str] = Field("DEFAULT-DEV-ID", description="Unique hardware/browser device fingerprint")
 
 class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
     class_lat: float = Field(..., example=19.0760)
     class_lng: float = Field(..., example=72.8777)
+    subject_id: Optional[str] = None
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
@@ -428,7 +562,14 @@ class MarkAttendanceRequest(BaseModel):
     user_lat: float = Field(..., example=19.07602)
     user_lng: float = Field(..., example=72.87768)
     live_selfie_base64: str = Field(..., description="Base64 encoded live camera capture")
-    is_exception_mode: bool = Field(False, description="Flag for temporary phone/exception attendance")
+
+class StudentExceptionRequest(BaseModel):
+    session_id: str = Field(..., example="CS301-SEC-A")
+    device_id: Optional[str] = Field("UNREGISTERED-DEV", description="Device ID used when requesting exception")
+    reason: Optional[str] = Field("I don't have my registered device", description="Reason for exception request")
+    user_lat: Optional[float] = None
+    user_lng: Optional[float] = None
+    live_selfie_base64: Optional[str] = None
 
 class FacultyApproveRequest(BaseModel):
     session_id: str
@@ -455,6 +596,8 @@ class CreateUserRequest(BaseModel):
 class EnrollFaceRequest(BaseModel):
     live_selfie_base64: str = Field(..., description="Base64 encoded reference face capture")
     consent_given: bool = Field(True, description="Explicit student consent for biometric template storage")
+    consent_text_version: Optional[str] = Field("v1.0", description="Version of consent notice acknowledged")
+
 
 class CreateSubjectRequest(BaseModel):
     code: str = Field(..., example="CS305", description="Unique subject code")
@@ -504,6 +647,7 @@ def record_audit_log(
 # ==============================================================================
 
 @app.get("/")
+@app.get("/api/health")
 def root():
     conn_info = check_postgres_connection()
     return {
@@ -577,7 +721,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             }
         }
 
-    # 3. Student Login (Enforce single-phone hardware lock)
+    # 3. Student Login
     bound_device = user.bound_device_id or user.registered_device_id
 
     if not bound_device:
@@ -587,13 +731,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
         bound_device = req.device_id
         binding_status = "DEVICE_BOUND_SUCCESSFULLY"
     elif bound_device != req.device_id:
-        if not req.is_exception_mode:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account bound to another device. Please use your registered phone or request Faculty Exception Mode."
-            )
-        else:
-            binding_status = "LOGGED_IN_UNDER_EXCEPTION_MODE"
+        binding_status = "UNREGISTERED_DEVICE"
     else:
         binding_status = "DEVICE_VERIFIED"
 
@@ -604,7 +742,6 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
         "access_token": token,
         "token_type": "bearer",
         "binding_status": binding_status,
-        "is_exception_mode": req.is_exception_mode,
         "user": {
             "id": str(user.id),
             "roll_no": user.roll_no,
@@ -614,7 +751,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             "department": user.department or "CSE",
             "semester": user.semester or 6,
             "bound_device_id": bound_device,
-            "has_registered_face": bool(user.registered_face_base64)
+            "has_registered_face": bool(user.face_enrollment is not None)
         }
     }
 
@@ -634,9 +771,31 @@ def start_session(
     secret_seed = secrets.token_hex(32)
     now = datetime.now(timezone.utc)
 
+    # Resolve Subject and subject_id
+    subject = None
+    if getattr(req, "subject_id", None):
+        try:
+            subj_uuid = uuid.UUID(req.subject_id)
+            subject = db.query(Subject).filter(Subject.id == subj_uuid).first()
+        except Exception:
+            pass
+
+    if not subject:
+        code_part = req.subject_name.split("-")[0].strip() if "-" in req.subject_name else req.subject_name.split(" ")[0].strip()
+        name_part = req.subject_name.split("-")[-1].strip() if "-" in req.subject_name else req.subject_name.strip()
+        subject = db.query(Subject).filter(
+            (Subject.code == req.subject_name) |
+            (Subject.name == req.subject_name) |
+            (Subject.code == code_part) |
+            (Subject.name == name_part)
+        ).first()
+
+    subject_id = subject.id if subject else None
+
     session = LectureSession(
         session_id=session_id,
         session_code=session_code,
+        subject_id=subject_id,
         subject_name=req.subject_name,
         faculty_id=faculty_id,
         class_lat=req.class_lat,
@@ -656,6 +815,7 @@ def start_session(
         "session": {
             "session_id": session_id,
             "session_code": session_code,
+            "subject_id": str(subject_id) if subject_id else None,
             "subject_name": req.subject_name,
             "faculty_id": faculty_id,
             "class_lat": req.class_lat,
@@ -749,71 +909,24 @@ def end_session(
     session.status = "ENDED"
     session.ended_at = now
 
-    # Phase 3 Requirement: Auto-create ABSENT attendance records for enrolled students
-    # who did not mark attendance during this lecture session.
-    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
-
-    enrollments = db.query(StudentSubjectEnrollment).filter(
-        (StudentSubjectEnrollment.subject_code == session.subject_name) |
-        (StudentSubjectEnrollment.subject_code == subject_code_prefix) |
-        (StudentSubjectEnrollment.subject_name == session.subject_name)
-    ).all()
-
-    if enrollments:
-        candidate_students = [(enr.roll_no, enr.student_name) for enr in enrollments]
-    else:
-        # Fallback: When no explicit StudentSubjectEnrollment exists for this subject,
-        # default to all active students in the database so no absentees are silently dropped.
-        active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
-        candidate_students = [(s.roll_no, s.name) for s in active_students]
-
-    # Find who already has an AttendanceRecord in this session
-    existing_records = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == session.session_id
-    ).all()
-    already_marked_rolls = {r.roll_no for r in existing_records}
-
-    absentees_created = 0
-    affected_rolls = set()
-
-    for roll_no, student_name in candidate_students:
-        if roll_no not in already_marked_rolls:
-            absent_record = AttendanceRecord(
-                session_id=session.session_id,
-                roll_no=roll_no,
-                student_name=student_name,
-                used_device_id=f"ABSENT_{roll_no}",
-                distance_meters=0.0,
-                face_match_score=0.0,
-                face_status="ABSENT",
-                is_exception_mode=False,
-                is_manual_override=False,
-                status="ABSENT",
-                reason="Marked absent automatically upon lecture session end.",
-                marked_at=now
-            )
-            db.add(absent_record)
-            absentees_created += 1
-            already_marked_rolls.add(roll_no)
-            affected_rolls.add(roll_no)
-
-    db.flush()
-
-    # Recompute stats for all affected students
-    for roll_no in affected_rolls:
-        student_user = db.query(User).filter(User.roll_no == roll_no).first()
-        if student_user:
-            recompute_student_stats(db, student_user.id)
-            recompute_student_subject_enrollment(db, roll_no, subject_code_prefix)
-
+    absentees_created, has_enrollments = finalize_session_absentees(
+        db,
+        session,
+        now,
+        absent_reason="Marked absent automatically upon lecture session end."
+    )
     db.commit()
 
-    return {
+    res_data = {
         "success": True,
         "message": f"Lecture session '{session.subject_name}' ended successfully. Attendance is now closed.",
         "session": session.to_dict(),
         "absentees_created": absentees_created
     }
+    if not has_enrollments:
+        res_data["warning"] = "Subject has no enrolled students. No absentees created."
+
+    return res_data
 
 # ------------------------------------------------------------------------------
 # 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine with ACID Transactions)
@@ -838,7 +951,7 @@ def mark_attendance(
             user_lng=req.user_lng,
             distance_meters=extra_meta.get("distance_meters") if extra_meta else None,
             face_match_score=extra_meta.get("face_match_score") if extra_meta else None,
-            is_exception_mode=req.is_exception_mode,
+            is_exception_mode=False,
             resolved=False,
             created_at=timestamp_now
         )
@@ -902,12 +1015,11 @@ def mark_attendance(
             reason=f"Proxy Alert: Device '{req.device_id}' was already used by roll number '{device_already_used.roll_no}' in this session. One phone cannot mark attendance for multiple students."
         )
 
-    if not req.is_exception_mode:
-        if bound_device and bound_device != req.device_id:
-            log_fraud_and_fail(
-                gate="GATE_1_DEVICE_LOCK",
-                reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
-            )
+    if bound_device and bound_device != req.device_id:
+        log_fraud_and_fail(
+            gate="GATE_1_DEVICE_LOCK",
+            reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
+        )
 
     # GATE 2: Dynamic QR Window Check (Configurable QR_WINDOW_SECONDS, Accepts Current & Previous Window)
     try:
@@ -958,34 +1070,66 @@ def mark_attendance(
             extra_meta={"distance_meters": round(distance_meters, 1)}
         )
 
-    # GATE 4: AI Face Verification
-    live_img = decode_image_base64_to_cv2(req.live_selfie_base64)
-    if live_img is None:
-        log_fraud_and_fail(gate="GATE_4_FACE_VERIFICATION", reason="Unable to decode live selfie image data.")
+    # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
+    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "FACE_NOT_ENROLLED", "message": "Biometric face template not enrolled. Student must complete face enrollment first."}
+        )
 
-    registered_face_b64 = student.registered_face_base64
-    if not registered_face_b64:
-        student.registered_face_base64 = req.live_selfie_base64
-        face_match_score = 100.0
-        face_status = "FIRST_TIME_AUTO_REGISTERED"
+    # In-memory decode of live selfie bytes (never persisted to disk or DB)
+    try:
+        raw_b64 = req.live_selfie_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        live_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_IMAGE", "message": "Unable to decode live selfie image data."}
+        )
+
+    # Face quality check and feature extraction (returns retryable error, NOT security alert)
+    try:
+        live_embedding = face_service.extract_embedding(live_bytes)
+    except face_service.FaceQualityError as fqe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": fqe.code, "message": fqe.message}
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "EXTRACTION_FAILED", "message": f"Face embedding extraction failure: {str(err)}"}
+        )
+
+    # Decrypt enrolled embedding & compute cosine similarity
+    ref_embedding = face_service.decrypt_embedding(enrollment.embedding)
+    sim = face_service.cosine_similarity(live_embedding, ref_embedding)
+    face_match_score = round(float(sim * 100.0), 1)
+
+    match_thresh = float(os.getenv("FACE_MATCH_THRESHOLD", "0.50"))
+    review_thresh = float(os.getenv("FACE_REVIEW_THRESHOLD", "0.38"))
+
+    # Three outcomes from cosine similarity:
+    # 1. score >= match -> proceed to PRESENT
+    # 2. between review and match -> record as PENDING_APPROVAL (review required)
+    # 3. below review -> reject and write a SecurityAlert
+    if sim >= match_thresh:
+        face_status = "MATCH"
+        attendance_status = "PRESENT"
+    elif sim >= review_thresh:
+        face_status = "REVIEW_REQUIRED"
+        attendance_status = "PENDING_APPROVAL"
     else:
-        ref_img = decode_image_base64_to_cv2(registered_face_b64)
-        if ref_img is None:
-            face_match_score = 90.0
-            face_status = "REFERENCE_FALLBACK"
-        else:
-            face_match_score = compute_face_similarity_score(live_img, ref_img)
-            if face_match_score < 55.0:
-                log_fraud_and_fail(
-                    gate="GATE_4_FACE_VERIFICATION",
-                    reason=f"Face mismatch: Live selfie similarity was {face_match_score}%, which is below the 55% verification threshold.",
-                    extra_meta={"face_match_score": face_match_score}
-                )
-            face_status = "VERIFIED"
+        log_fraud_and_fail(
+            gate="GATE_4_FACE_VERIFICATION",
+            reason=f"Face mismatch: Live selfie similarity was {face_match_score}%, which is below the review threshold.",
+            extra_meta={"face_match_score": face_match_score}
+        )
 
     # GATE 5: Decision & Attendance Logging (Atomic Transaction)
-    attendance_status = "PENDING_APPROVAL" if req.is_exception_mode else "PRESENT"
-
     attendance_record = AttendanceRecord(
         session_id=session.session_id,
         roll_no=roll_no,
@@ -996,34 +1140,115 @@ def mark_attendance(
         distance_meters=round(distance_meters, 1),
         face_match_score=face_match_score,
         face_status=face_status,
-        is_exception_mode=req.is_exception_mode,
-        live_selfie_base64=req.live_selfie_base64,
+        liveness_status="NOT_CHECKED",
+        is_exception_mode=False,
         status=attendance_status,
+        reason="Biometric similarity in review band (requires faculty review)" if attendance_status == "PENDING_APPROVAL" else None,
         marked_at=timestamp_now
     )
-    db.add(attendance_record)
+    try:
+        db.add(attendance_record)
+        db.flush()
 
-    db.flush()
+        # Phase 3: Single Source of Truth - Recompute stats directly from attendance records
+        stats = recompute_student_stats(db, student.id)
+        subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+        recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
 
-    # Phase 3: Single Source of Truth - Recompute stats directly from attendance records
-    stats = recompute_student_stats(db, student.id)
-    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
-    recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
+        student.updated_at = timestamp_now
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "failed_gate": "DUPLICATE_SUBMISSION",
+                "reason": "Attendance has already been recorded for this student or device in this lecture session."
+            }
+        )
 
-    student.updated_at = timestamp_now
-    db.commit()
-
+    msg = "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded as PENDING_APPROVAL (review required)."
     return {
         "success": True,
         "status": attendance_status,
-        "message": "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded under Exception Mode. Awaiting Faculty Approval.",
+        "message": msg,
         "details": {
             "roll_no": roll_no,
             "session_id": session.session_id,
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
-            "is_exception_mode": req.is_exception_mode,
+            "face_status": face_status,
+            "liveness_status": "NOT_CHECKED",
             "marked_at": timestamp_now.isoformat()
+        }
+    }
+
+# ------------------------------------------------------------------------------
+# 3a. POST /api/attendance/request-exception (Student Request When Device is Absent)
+# ------------------------------------------------------------------------------
+@app.post("/api/attendance/request-exception")
+def request_device_exception(
+    req: StudentExceptionRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    timestamp_now = datetime.now(timezone.utc)
+    roll_no = current_user.roll_no
+
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if session.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lecture session is not active. Cannot submit exception request."
+        )
+
+    existing = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id,
+        AttendanceRecord.roll_no == roll_no
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attendance or exception request has already been recorded for this student in this session."
+        )
+
+    used_device = req.device_id or f"UNREGISTERED_{roll_no}"
+
+    # Stored as PENDING_APPROVAL - only faculty can turn this into PRESENT via /api/faculty/approve
+    record = AttendanceRecord(
+        session_id=session.session_id,
+        roll_no=roll_no,
+        student_name=current_user.name,
+        used_device_id=used_device,
+        user_lat=req.user_lat or 0.0,
+        user_lng=req.user_lng or 0.0,
+        distance_meters=0.0,
+        face_match_score=0.0,
+        face_status="PENDING_APPROVAL",
+        liveness_status="NOT_CHECKED",
+        is_exception_mode=True,
+        status="PENDING_APPROVAL",
+        reason=req.reason or "I don't have my registered device",
+        marked_at=timestamp_now
+    )
+    db.add(record)
+    db.commit()
+
+    return {
+        "success": True,
+        "status": "PENDING_APPROVAL",
+        "message": "Exception request submitted: 'I don't have my registered device'. Awaiting faculty approval.",
+        "record": {
+            "session_id": session.session_id,
+            "roll_no": roll_no,
+            "status": "PENDING_APPROVAL",
+            "reason": record.reason
         }
     }
 
@@ -1042,22 +1267,64 @@ def enroll_face(
             detail="Biometric consent is mandatory to store face reference templates."
         )
 
-    student = current_user
-    roll_no = current_user.roll_no
+    # Re-enrollment forbidden without prior admin reset (HTTP 409 Conflict)
+    existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
+    if existing_enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Face template already enrolled for this student. Re-enrollment requires an administrator face reset."
+        )
 
-    cv2_img = decode_image_base64_to_cv2(req.live_selfie_base64)
-    if cv2_img is None:
-        raise HTTPException(status_code=400, detail="Unable to decode face image payload.")
+    # In-memory decode of base64 image bytes (never persisted to disk or DB)
+    try:
+        raw_b64 = req.live_selfie_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        image_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_IMAGE", "message": "Unable to decode face image payload."}
+        )
 
-    student.registered_face_base64 = req.live_selfie_base64
-    student.updated_at = datetime.now(timezone.utc)
+    # Extract normalized float32 facial embedding vector
+    try:
+        embedding = face_service.extract_embedding(image_bytes)
+    except face_service.FaceQualityError as fqe:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": fqe.code, "message": fqe.message}
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "EXTRACTION_FAILED", "message": f"Face embedding extraction failure: {str(err)}"}
+        )
+
+    # Encrypt embedding at rest using Fernet
+    encrypted_emb = face_service.encrypt_embedding(embedding)
+    now = datetime.now(timezone.utc)
+    retention_expires = now + timedelta(days=365)
+
+    enrollment = FaceEnrollment(
+        user_id=current_user.id,
+        embedding=encrypted_emb,
+        model_name="buffalo_sc",
+        model_version="insightface-2.1",
+        consent_given_at=now,
+        consent_text_version=req.consent_text_version or "v1.0",
+        created_at=now,
+        retention_expires_at=retention_expires
+    )
+    db.add(enrollment)
+    current_user.updated_at = now
     db.commit()
 
     return {
         "success": True,
-        "roll_no": roll_no,
-        "message": f"Biometric face reference successfully enrolled for student {student.name} with explicit consent.",
-        "enrolled_at": datetime.now(timezone.utc).isoformat()
+        "roll_no": current_user.roll_no,
+        "message": f"Biometric face reference successfully enrolled for student {current_user.name} with explicit consent.",
+        "enrolled_at": now.isoformat()
     }
 
 # ------------------------------------------------------------------------------
@@ -1162,6 +1429,158 @@ def faculty_manual_attendance(
             "updated_streak": stats.current_streak,
             "marked_at": timestamp_now.isoformat()
         }
+    }
+
+# ------------------------------------------------------------------------------
+# 4b. POST /api/faculty/approve (Approve PENDING_APPROVAL Exception Requests)
+# ------------------------------------------------------------------------------
+@app.post("/api/faculty/approve")
+def faculty_approve_attendance(
+    req: FacultyApproveRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only approve exception attendance for sessions you started."
+        )
+
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id,
+        AttendanceRecord.roll_no == req.roll_no
+    ).first()
+
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Attendance record for student '{req.roll_no}' in session '{req.session_id}' not found."
+        )
+
+    # Phase 4b: only allow records currently in PENDING_APPROVAL (400 otherwise)
+    if record.status != "PENDING_APPROVAL":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Record is currently '{record.status}'. Only records in 'PENDING_APPROVAL' can be approved or rejected."
+        )
+
+    action_upper = req.action.upper()
+    if action_upper not in ["APPROVE", "REJECT"]:
+        raise HTTPException(status_code=400, detail="Action must be 'APPROVE' or 'REJECT'")
+
+    new_status = "PRESENT" if action_upper == "APPROVE" else "ABSENT"
+    old_status = record.status
+    timestamp_now = datetime.now(timezone.utc)
+
+    record.status = new_status
+    record.is_manual_override = True
+    record.manual_by = current_user.roll_no
+    record.reason = req.remarks or f"Faculty {action_upper} exception request"
+    record.reviewed_at = timestamp_now
+
+    student = db.query(User).filter(User.roll_no == req.roll_no).first()
+    if student:
+        stats = recompute_student_stats(db, student.id)
+        session_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+        recompute_student_subject_enrollment(db, student.roll_no, session_code_prefix)
+    else:
+        stats = None
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action=f"ATTENDANCE_EXCEPTION_{action_upper}",
+        target_type="ATTENDANCE_RECORD",
+        target_id=f"{session.session_id}:{req.roll_no}",
+        old_value=old_status,
+        new_value=new_status,
+        reason=req.remarks or f"Faculty {action_upper} exception request"
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "status": new_status,
+        "message": f"Student '{req.roll_no}' exception request {action_upper}ED. Status is now {new_status}.",
+        "details": {
+            "session_id": session.session_id,
+            "roll_no": req.roll_no,
+            "status": new_status,
+            "action": action_upper,
+            "updated_pct": stats.current_attendance_pct if stats else None
+        }
+    }
+
+# ------------------------------------------------------------------------------
+# 4c. GET /api/faculty/session/{session_id}/roster (Enrolled Students & Live Status)
+# ------------------------------------------------------------------------------
+@app.get("/api/faculty/session/{session_id}/roster")
+def get_faculty_session_roster(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only view roster for sessions you started."
+        )
+
+    # Match subject enrollments
+    subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+    enrollments = db.query(StudentSubjectEnrollment).filter(
+        (StudentSubjectEnrollment.subject_code == session.subject_name) |
+        (StudentSubjectEnrollment.subject_code == subject_code_prefix) |
+        (StudentSubjectEnrollment.subject_name == session.subject_name)
+    ).all()
+
+    if enrollments:
+        students_list = [(e.roll_no, e.student_name, getattr(e, "department", "CSE") or "CSE") for e in enrollments]
+    else:
+        active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
+        students_list = [(s.roll_no, s.name, s.department or "CSE") for s in active_students]
+
+    # Map current session records
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+    records_by_roll = {r.roll_no: r for r in records}
+
+    roster = []
+    for roll_no, name, dept in students_list:
+        rec = records_by_roll.get(roll_no)
+        st = rec.status if rec else "UNMARKED"
+        roster.append({
+            "roll_no": roll_no,
+            "name": name,
+            "department": dept,
+            "status": st,
+            "reason": rec.reason if rec else None,
+            "marked_at": rec.marked_at.isoformat() if rec and rec.marked_at else None,
+            "is_exception_mode": rec.is_exception_mode if rec else False
+        })
+
+    return {
+        "success": True,
+        "session_id": session.session_id,
+        "subject_name": session.subject_name,
+        "total_enrolled": len(roster),
+        "roster": roster
     }
 
 # ------------------------------------------------------------------------------
@@ -1329,7 +1748,9 @@ def get_faculty_live_session(
                 "device_id": r.used_device_id,
                 "distance_meters": r.distance_meters,
                 "face_match_score": r.face_match_score,
-                "live_selfie_base64": r.live_selfie_base64
+                "face_status": r.face_status,
+                "liveness_status": r.liveness_status,
+                "reason": r.reason
             })
 
     alerts = db.query(SecurityAlert).filter(
@@ -1622,8 +2043,10 @@ def admin_reset_face(
     if not student:
         raise HTTPException(status_code=404, detail=f"Student with roll number '{roll_no}' not found.")
 
-    had_face = bool(student.registered_face_base64)
-    student.registered_face_base64 = None
+    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
+    had_face = enrollment is not None
+    if enrollment:
+        db.delete(enrollment)
     student.updated_at = datetime.now(timezone.utc)
 
     reason = req.reason if req and req.reason else "Biometric reference template reset by administrator"
