@@ -183,6 +183,14 @@ export const api = {
     return safeParse(res, 'Failed to fetch admin overview');
   },
 
+  async getAdminUsers(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/api/admin/users${query ? '?' + query : ''}`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch users');
+  },
+
   async adminCreateUser(userData) {
     const res = await fetch(`${API_BASE}/api/admin/users`, {
       method: 'POST',
@@ -190,6 +198,14 @@ export const api = {
       body: JSON.stringify(userData)
     });
     return safeParse(res, 'Failed to create user');
+  },
+
+  async adminDeleteUser(rollOrId) {
+    const res = await fetch(`${API_BASE}/api/admin/users/${rollOrId}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to delete user');
   },
 
   async adminResetDevice(rollNo, reason = 'Hardware device lock reset by administrator') {

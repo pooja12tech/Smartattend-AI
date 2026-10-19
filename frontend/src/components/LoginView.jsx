@@ -4,8 +4,8 @@ import { api, getDeviceId, setCustomDeviceId } from '../api';
 
 export default function LoginView({ onLoginSuccess }) {
   const [roleTab, setRoleTab] = useState('student'); // 'student' | 'faculty' | 'admin'
-  const [identifier, setIdentifier] = useState('STU01');
-  const [password, setPassword] = useState('stu123');
+  const [identifier, setIdentifier] = useState('student');
+  const [password, setPassword] = useState('studentpassword');
   const [deviceId, setDeviceIdState] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -18,14 +18,14 @@ export default function LoginView({ onLoginSuccess }) {
     setRoleTab(newRole);
     setError(null);
     if (newRole === 'student') {
-      setIdentifier('STU01');
-      setPassword('stu123');
+      setIdentifier('student');
+      setPassword('studentpassword');
     } else if (newRole === 'faculty') {
-      setIdentifier('FAC01');
-      setPassword('fac123');
+      setIdentifier('faculty');
+      setPassword('facultypassword');
     } else if (newRole === 'admin') {
-      setIdentifier('ADM01');
-      setPassword('admin123');
+      setIdentifier('admin');
+      setPassword('adminpassword');
     }
   };
 
@@ -215,44 +215,38 @@ export default function LoginView({ onLoginSuccess }) {
           <div className="mt-6 pt-5 border-t border-slate-800/80">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-2.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>1-Click Quick Fill Demo Credentials:</span>
+              <span>1-Click Quick Fill Credentials:</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-3 gap-2 text-xs">
               <button
                 type="button"
-                onClick={() => handleQuickFill('STU01', 'stu123', 'student')}
-                className="p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 text-left transition text-slate-300"
+                onClick={() => handleQuickFill('student', 'studentpassword', 'student')}
+                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-brand-500/50 text-left transition text-slate-300"
               >
-                <div className="font-semibold text-indigo-300">STU01 (Aarav)</div>
-                <div className="text-[10px] text-emerald-400">Safe ~85.5% Att.</div>
+                <div className="font-bold text-brand-300">👨‍🎓 Student</div>
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5">student</div>
+                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">studentpassword</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleQuickFill('STU02', 'stu123', 'student')}
-                className="p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/50 text-left transition text-slate-300"
+                onClick={() => handleQuickFill('faculty', 'facultypassword', 'faculty')}
+                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left transition text-slate-300"
               >
-                <div className="font-semibold text-amber-300">STU02 (Priya)</div>
-                <div className="text-[10px] text-rose-400">ML Risk 99.8% (76.2%)</div>
+                <div className="font-bold text-emerald-300">👨‍🏫 Teacher</div>
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5">faculty</div>
+                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">facultypassword</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleQuickFill('FAC01', 'fac123', 'faculty')}
-                className="p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left transition text-slate-300"
+                onClick={() => handleQuickFill('admin', 'adminpassword', 'admin')}
+                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/50 text-left transition text-slate-300"
               >
-                <div className="font-semibold text-emerald-300">FAC01 (Prof. Turing)</div>
-                <div className="text-[10px] text-slate-400">Teacher Portal</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('ADM01', 'admin123', 'admin')}
-                className="p-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/50 text-left transition text-slate-300"
-              >
-                <div className="font-semibold text-purple-300">ADM01 (Admin)</div>
-                <div className="text-[10px] text-slate-400">System Oversight</div>
+                <div className="font-bold text-purple-300">👨‍💼 Admin</div>
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5">admin</div>
+                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">adminpassword</div>
               </button>
             </div>
           </div>

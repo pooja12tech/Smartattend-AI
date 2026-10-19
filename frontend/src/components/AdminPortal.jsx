@@ -2,25 +2,28 @@ import React, { useState, useEffect } from 'react';
 import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
-  BookOpen, History, Camera, Lock, Unlock, FileText, Check
+  BookOpen, History, Camera, Lock, Unlock, FileText, Check, Trash2, GraduationCap, Building2
 } from 'lucide-react';
 import { api } from '../api';
 
 export default function AdminPortal({ user }) {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'devices', 'subjects', 'audit'
+  // Navigation tabs: 'overview' | 'teachers' | 'students' | 'subjects' | 'audit'
+  const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionSuccess, setActionSuccess] = useState(null);
 
+  // Real Database Users
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('ALL');
+  const [selectedSemFilter, setSelectedSemFilter] = useState('ALL');
+
   // Device & Face Reset State
   const [resettingRoll, setResettingRoll] = useState(null);
   const [resettingFaceRoll, setResettingFaceRoll] = useState(null);
-  const [studentList, setStudentList] = useState([
-    { roll_no: 'STU01', name: 'Aarav Sharma', email: 'aarav@smartattend.edu', bound_device_id: 'DEV-AARAV-PHONE-01', has_face: true },
-    { roll_no: 'STU02', name: 'Priya Patel', email: 'priya@smartattend.edu', bound_device_id: 'DEV-PRIYA-PHONE-02', has_face: true },
-    { roll_no: 'STU03', name: 'Rohan Verma', email: 'rohan@smartattend.edu', bound_device_id: 'DEV-ROHAN-PHONE-03', has_face: true }
-  ]);
+  const [deletingUserRoll, setDeletingUserRoll] = useState(null);
 
   // Subjects State
   const [subjectsList, setSubjectsList] = useState([]);
@@ -28,7 +31,7 @@ export default function AdminPortal({ user }) {
   const [subCode, setSubCode] = useState('');
   const [subName, setSubName] = useState('');
   const [subCredits, setSubCredits] = useState(4);
-  const [subFaculty, setSubFaculty] = useState('Prof. Alan Turing');
+  const [subFaculty, setSubFaculty] = useState('faculty');
   const [creatingSubject, setCreatingSubject] = useState(false);
 
   // Audit Logs State
@@ -37,13 +40,14 @@ export default function AdminPortal({ user }) {
 
   // Add User Modal State
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newRole, setNewRole] = useState('student');
+  const [newRole, setNewRole] = useState('student'); // 'student' | 'faculty' | 'admin'
   const [newRoll, setNewRoll] = useState('');
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('stu123');
+  const [newPassword, setNewPassword] = useState('studentpassword');
   const [newDept, setNewDept] = useState('Computer Science & Engineering');
-  const [newInitAtt, setNewInitAtt] = useState(82.0);
+  const [newSemester, setNewSemester] = useState(6);
+  const [newInitAtt, setNewInitAtt] = useState(85.0);
   const [creatingUser, setCreatingUser] = useState(false);
 
   const fetchOverview = async () => {
@@ -54,6 +58,18 @@ export default function AdminPortal({ user }) {
       console.error('Failed to load admin overview:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const data = await api.getAdminUsers();
+      setUsersList(data.users || []);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+    } finally {
+      setLoadingUsers(false);
     }
   };
 
@@ -80,6 +96,7 @@ export default function AdminPortal({ user }) {
 
   useEffect(() => {
     fetchOverview();
+    fetchUsers();
     fetchSubjects();
     fetchAuditLogs();
   }, []);
@@ -92,38 +109,60 @@ export default function AdminPortal({ user }) {
     setResettingRoll(rollNo);
     try {
       await api.adminResetDevice(rollNo, reason);
-      setStudentList(prev => prev.map(s => s.roll_no === rollNo ? { ...s, bound_device_id: 'UNBOUND' } : s));
       setActionSuccess(`Hardware device lock reset for student ${rollNo}. Event logged in Audit Trail.`);
       setTimeout(() => setActionSuccess(null), 4000);
+      fetchUsers();
       fetchOverview();
       fetchAuditLogs();
     } catch (err) {
-      alert('Failed to reset device: ' + err.message);
+      alert('Failed to reset device lock: ' + err.message);
     } finally {
       setResettingRoll(null);
     }
   };
 
-  // 1-Click Biometric Face Template Reset with Mandatory Reason
+  // 1-Click Face Reference Template Reset
   const handleResetFace = async (rollNo) => {
-    const reason = window.prompt(`Enter mandatory reason for resetting biometric face template for ${rollNo}:`, 'Student requested biometric re-enrollment / updated appearance');
+    const reason = window.prompt(`Enter mandatory reason for resetting facial reference template for ${rollNo}:`, 'Student facial appearance changed / lighting recalibration request');
     if (!reason) return;
 
     setResettingFaceRoll(rollNo);
     try {
       await api.adminResetFace(rollNo, reason);
-      setStudentList(prev => prev.map(s => s.roll_no === rollNo ? { ...s, has_face: false } : s));
-      setActionSuccess(`Biometric template reset for student ${rollNo}. Student can now re-enroll with consent.`);
+      setActionSuccess(`Biometric template reset for student ${rollNo}. Student must re-enroll face template.`);
       setTimeout(() => setActionSuccess(null), 4000);
+      fetchUsers();
+      fetchOverview();
       fetchAuditLogs();
     } catch (err) {
-      alert('Failed to reset face: ' + err.message);
+      alert('Failed to reset face template: ' + err.message);
     } finally {
       setResettingFaceRoll(null);
     }
   };
 
-  // Create Subject Handler
+  // Delete User Account
+  const handleDeleteUser = async (rollOrId, name, role) => {
+    if (!window.confirm(`Are you sure you want to permanently delete ${role} account "${name}" (${rollOrId})?`)) {
+      return;
+    }
+
+    setDeletingUserRoll(rollOrId);
+    try {
+      await api.adminDeleteUser(rollOrId);
+      setActionSuccess(`${role.toUpperCase()} account "${name}" (${rollOrId}) deleted successfully.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+      fetchUsers();
+      fetchOverview();
+      fetchAuditLogs();
+    } catch (err) {
+      alert('Failed to delete user: ' + err.message);
+    } finally {
+      setDeletingUserRoll(null);
+    }
+  };
+
+  // Create Subject
   const handleCreateSubject = async (e) => {
     e.preventDefault();
     setCreatingSubject(true);
@@ -131,10 +170,10 @@ export default function AdminPortal({ user }) {
       await api.adminCreateSubject({
         code: subCode.trim().toUpperCase(),
         name: subName.trim(),
-        department: 'Computer Science & Engineering',
+        department: newDept,
         semester: 6,
         credits: parseInt(subCredits) || 4,
-        faculty_id: 'FAC01',
+        faculty_id: subFaculty,
         faculty_name: subFaculty,
         min_attendance_pct: 75.0
       });
@@ -152,7 +191,23 @@ export default function AdminPortal({ user }) {
     }
   };
 
-  // Add user handler
+  // Open Add Modal for specific role
+  const openAddModalForRole = (role) => {
+    setNewRole(role);
+    if (role === 'student') {
+      setNewPassword('studentpassword');
+      setNewRoll('');
+    } else if (role === 'faculty') {
+      setNewPassword('facultypassword');
+      setNewRoll('');
+    } else {
+      setNewPassword('adminpassword');
+      setNewRoll('');
+    }
+    setShowAddModal(true);
+  };
+
+  // Add User Handler (Student or Teacher)
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setCreatingUser(true);
@@ -164,25 +219,18 @@ export default function AdminPortal({ user }) {
         email: newEmail.trim(),
         password: newPassword.trim(),
         department: newDept,
-        semester: 6,
-        initial_attendance_pct: parseFloat(newInitAtt) || 80.0
+        semester: parseInt(newSemester) || 6,
+        initial_attendance_pct: parseFloat(newInitAtt) || 85.0
       });
 
-      if (newRole === 'student') {
-        setStudentList(prev => [...prev, {
-          roll_no: newRoll,
-          name: newName,
-          email: newEmail,
-          bound_device_id: 'UNBOUND',
-          has_face: false
-        }]);
-      }
-
       setShowAddModal(false);
-      setActionSuccess(`New ${newRole} account created for ${newName} (${newRoll}).`);
+      setActionSuccess(`New ${newRole.toUpperCase()} account created for ${newName} (${newRoll}).`);
       setTimeout(() => setActionSuccess(null), 4000);
-      fetchOverview();
-      fetchAuditLogs();
+
+      // Re-fetch database lists immediately so newly added user appears right away!
+      await fetchUsers();
+      await fetchOverview();
+      await fetchAuditLogs();
 
       // Reset form
       setNewRoll('');
@@ -221,59 +269,81 @@ export default function AdminPortal({ user }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 gap-3">
         <RefreshCw className="w-8 h-8 animate-spin text-purple-500" />
-        <p className="text-sm font-medium">Loading SmartAttend Admin Console...</p>
+        <p className="text-sm font-medium">Loading SmartAttend Administration Console...</p>
       </div>
     );
   }
 
   const counts = overview?.counts || {};
   const defaulters = overview?.high_risk_defaulters || [];
+  const deptBreakdown = overview?.department_breakdown || {};
+  const classBreakdown = overview?.class_breakdown || {};
+
+  // Filtered lists
+  const studentsList = usersList.filter(u => u.role === 'student');
+  const facultyList = usersList.filter(u => u.role === 'faculty');
+
+  const filteredStudents = studentsList.filter(stu => {
+    const matchesSearch = stu.name.toLowerCase().includes(searchQuery.toLowerCase()) || stu.roll_no.toLowerCase().includes(searchQuery.toLowerCase()) || stu.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDept = selectedDeptFilter === 'ALL' || stu.department === selectedDeptFilter;
+    const matchesSem = selectedSemFilter === 'ALL' || String(stu.semester) === String(selectedSemFilter);
+    return matchesSearch && matchesDept && matchesSem;
+  });
+
+  const filteredFaculty = facultyList.filter(fac => {
+    const matchesSearch = fac.name.toLowerCase().includes(searchQuery.toLowerCase()) || fac.roll_no.toLowerCase().includes(searchQuery.toLowerCase()) || fac.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDept = selectedDeptFilter === 'ALL' || fac.department === selectedDeptFilter;
+    return matchesSearch && matchesDept;
+  });
+
+  // Extract unique departments and semesters for filter dropdowns
+  const allDepartments = Array.from(new Set(usersList.map(u => u.department || 'Computer Science & Engineering')));
+  const allSemesters = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
-      {/* Top Banner */}
-      <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Header bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              ADMINISTRATOR CONSOLE
+          <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
+            <span className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-400 flex items-center justify-center text-sm font-bold shadow-lg shadow-purple-500/10">
+              AD
             </span>
-            <span className="text-xs text-slate-400">Institutional Governance & Anti-Proxy Security</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">SmartAttend System & Retention Management</h1>
-          <p className="text-xs text-slate-400">
-            Monitor college-wide attendance health, manage course curriculum, and review tamper-proof audit trails.
+            <span>Administrator Control Center</span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Institutional oversight, class & department distributions, teacher roster, and student biometric locks.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-500/25 flex items-center gap-2 transition active:scale-95"
+            onClick={() => openAddModalForRole('student')}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
           >
-            <UserPlus className="w-4 h-4" /> Add User
+            <UserPlus className="w-3.5 h-3.5" /> + Add Student
           </button>
+
           <button
-            type="button"
-            onClick={() => setShowAddSubjectModal(true)}
-            className="px-4 py-2.5 rounded-xl font-bold text-xs text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 flex items-center gap-2 transition active:scale-95"
+            onClick={() => openAddModalForRole('faculty')}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 transition active:scale-95"
           >
-            <BookOpen className="w-4 h-4" /> Add Subject
+            <UserPlus className="w-3.5 h-3.5" /> + Add Teacher
           </button>
+
           <button
-            type="button"
-            onClick={handleExportDefaultersCSV}
-            className="px-4 py-2.5 rounded-xl font-bold text-xs text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-700 flex items-center gap-2 transition active:scale-95"
+            onClick={() => { fetchOverview(); fetchUsers(); fetchAuditLogs(); }}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            title="Refresh All"
           >
-            <Download className="w-4 h-4 text-purple-400" /> Export CSV
+            <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {actionSuccess && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-bounce">
+        <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{actionSuccess}</span>
         </div>
@@ -283,155 +353,346 @@ export default function AdminPortal({ user }) {
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${activeTab === 'overview' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'overview' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <TrendingUp className="w-4 h-4" />
-          <span>Overview & Defaulters</span>
+          <span>Overview & Breakdown</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('devices')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${activeTab === 'devices' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          onClick={() => { setActiveTab('teachers'); fetchUsers(); }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'teachers' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
-          <Smartphone className="w-4 h-4" />
-          <span>Device & Face Binding</span>
+          <GraduationCap className="w-4 h-4" />
+          <span>Teachers Directory ({facultyList.length})</span>
+        </button>
+
+        <button
+          onClick={() => { setActiveTab('students'); fetchUsers(); }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'students' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Students & Biometrics ({studentsList.length})</span>
         </button>
 
         <button
           onClick={() => { setActiveTab('subjects'); fetchSubjects(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${activeTab === 'subjects' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'subjects' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Curriculum & Subjects</span>
+          <span>Curriculum & Subjects ({subjectsList.length})</span>
         </button>
 
         <button
           onClick={() => { setActiveTab('audit'); fetchAuditLogs(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${activeTab === 'audit' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'audit' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <History className="w-4 h-4" />
           <span>Audit Trail Logs</span>
         </button>
       </div>
 
-      {/* TAB 1: OVERVIEW & DEFAULTERS */}
+      {/* TAB 1: OVERVIEW & BREAKDOWN */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Institution Overview KPI Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Enrolled Students</span>
+                <span>Total Students</span>
                 <Users className="w-4 h-4 text-indigo-400" />
               </div>
-              <p className="text-3xl font-black text-white mt-2">{counts.students || 3}</p>
+              <p className="text-3xl font-black text-white mt-2">{studentsList.length || counts.students || 0}</p>
+              <p className="text-[10px] text-slate-400 mt-1">Enrolled across departments</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Active Faculty</span>
-                <Users className="w-4 h-4 text-purple-400" />
+                <span>Active Teachers</span>
+                <GraduationCap className="w-4 h-4 text-emerald-400" />
               </div>
-              <p className="text-3xl font-black text-white mt-2">{counts.faculty || 1}</p>
+              <p className="text-3xl font-black text-white mt-2">{facultyList.length || counts.faculty || 0}</p>
+              <p className="text-[10px] text-slate-400 mt-1">Teaching faculty members</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
                 <span>System Average Attendance</span>
-                <TrendingUp className="w-4 h-4 text-teal-400" />
+                <Award className="w-4 h-4 text-amber-400" />
               </div>
-              <p className="text-3xl font-black text-teal-300 mt-2">
-                {overview?.system_average_attendance_pct || 75.5}%
-              </p>
+              <p className="text-3xl font-black text-white mt-2">{overview.system_average_attendance_pct || 80.0}%</p>
+              <p className="text-[10px] text-emerald-400 mt-1">Safe campus threshold: 75%</p>
             </div>
 
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Blocked Proxy Attempts</span>
-                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <span>Active Subjects</span>
+                <BookOpen className="w-4 h-4 text-purple-400" />
               </div>
-              <p className="text-3xl font-black text-rose-400 mt-2">{counts.total_alerts || 4}</p>
+              <p className="text-3xl font-black text-white mt-2">{subjectsList.length || 3}</p>
+              <p className="text-[10px] text-slate-400 mt-1">Semester curriculum courses</p>
             </div>
           </div>
 
-          {/* AI Defaulter Watchlist Table (Random Forest High Risk Radar) */}
+          {/* Department-wise & Class-wise Breakdown Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Department-wise Distribution */}
+            <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Department-Wise Distribution</h3>
+              </div>
+              <p className="text-xs text-slate-400">Total students and faculty mapped per academic department.</p>
+
+              <div className="space-y-3">
+                {Object.keys(deptBreakdown).length > 0 ? (
+                  Object.entries(deptBreakdown).map(([dept, data]) => (
+                    <div key={dept} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-white">{dept}</h4>
+                        <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                          <span className="flex items-center gap-1 text-indigo-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> {data.students} Students
+                          </span>
+                          <span className="flex items-center gap-1 text-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {data.faculty} Faculty
+                          </span>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono text-xs font-bold">
+                        {data.students + data.faculty} total
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500">No department data available.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Class / Semester-wise Distribution */}
+            <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-brand-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Class / Semester-Wise Distribution</h3>
+              </div>
+              <p className="text-xs text-slate-400">Student enrollment spread across academic semesters.</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                {Object.keys(classBreakdown).length > 0 ? (
+                  Object.entries(classBreakdown).map(([sem, count]) => (
+                    <div key={sem} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center space-y-1">
+                      <span className="text-[11px] uppercase font-bold text-slate-400">{sem}</span>
+                      <p className="text-2xl font-black text-brand-300">{count}</p>
+                      <span className="text-[10px] text-slate-500">Enrolled Students</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500 col-span-2">No class distribution data available.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Defaulters Section */}
           <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-rose-400" />
-                  Machine Learning Defaulter Watchlist (Random Forest Radar)
+                  AI Predictive Defaulters & High Risk Students
                 </h3>
-                <p className="text-[11px] text-slate-400">
-                  Students identified by AI as high risk of dropping below 75% attendance before semester end.
-                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Students forecasted by the ML model to fall below the 75% attendance threshold.</p>
               </div>
-              <button
-                onClick={handleExportDefaultersCSV}
-                className="text-xs text-purple-400 hover:text-purple-300 font-semibold underline flex items-center gap-1"
-              >
-                <Download className="w-3.5 h-3.5" /> Download Report
-              </button>
+
+              {defaulters.length > 0 && (
+                <button
+                  onClick={handleExportDefaultersCSV}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-purple-400" /> Export CSV
+                </button>
+              )}
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                    <th className="py-2.5 px-3">Roll No</th>
-                    <th className="py-2.5 px-3">Student Name</th>
-                    <th className="py-2.5 px-3">Dept</th>
-                    <th className="py-2.5 px-3">Attendance %</th>
-                    <th className="py-2.5 px-3">AI Defaulter Risk %</th>
-                    <th className="py-2.5 px-3">Risk Category</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {defaulters.map((d) => (
-                    <tr key={d.roll_no} className="hover:bg-slate-900/40">
-                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{d.roll_no}</td>
-                      <td className="py-3 px-3 font-semibold text-white">{d.name}</td>
-                      <td className="py-3 px-3 text-slate-400">{d.department}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{d.attendance_pct}%</td>
-                      <td className="py-3 px-3 font-mono font-black text-rose-400">{d.risk_pct}%</td>
-                      <td className="py-3 px-3">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                          {d.risk_level}
-                        </span>
-                      </td>
+            {defaulters.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                      <th className="py-2.5 px-3">Roll No</th>
+                      <th className="py-2.5 px-3">Student Name</th>
+                      <th className="py-2.5 px-3">Department</th>
+                      <th className="py-2.5 px-3">Current Att.</th>
+                      <th className="py-2.5 px-3">ML Defaulter Risk</th>
+                      <th className="py-2.5 px-3">Risk Level</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {defaulters.map((d) => (
+                      <tr key={d.roll_no} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-3 font-bold text-slate-200">{d.roll_no}</td>
+                        <td className="py-3 px-3 font-sans font-semibold text-white">{d.name}</td>
+                        <td className="py-3 px-3 font-sans text-slate-400">{d.department}</td>
+                        <td className="py-3 px-3 font-bold text-slate-300">{d.attendance_pct}%</td>
+                        <td className="py-3 px-3 text-rose-400 font-bold">{d.risk_pct}%</td>
+                        <td className="py-3 px-3 font-sans">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            d.risk_level === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}>
+                            {d.risk_level}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 py-3">No students currently flagged as high-risk defaulters.</p>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 2: DEVICE & FACE BINDING */}
-      {activeTab === 'devices' && (
+      {/* TAB 2: TEACHERS DIRECTORY */}
+      {activeTab === 'teachers' && (
         <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-indigo-400" />
-                Student Hardware Device Binding & Biometric Lock Manager
+                <GraduationCap className="w-4 h-4 text-emerald-400" />
+                Teaching Faculty Roster & Management
               </h3>
-              <p className="text-[11px] text-slate-400">
-                1-phone-per-student rule enforcement. Reset phone bindings or biometric references with mandatory audit logging.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Manage registered professors, faculty identifiers, and academic departments.
               </p>
             </div>
 
-            <div className="relative">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search teacher by name or ID..."
+                  className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <button
+                onClick={() => openAddModalForRole('faculty')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Teacher
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                  <th className="py-2.5 px-3">Faculty ID</th>
+                  <th className="py-2.5 px-3">Teacher Name</th>
+                  <th className="py-2.5 px-3">Email Address</th>
+                  <th className="py-2.5 px-3">Department</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredFaculty.length > 0 ? (
+                  filteredFaculty.map((fac) => (
+                    <tr key={fac.id || fac.roll_no} className="hover:bg-slate-900/40">
+                      <td className="py-3 px-3 font-mono font-bold text-emerald-300">{fac.roll_no}</td>
+                      <td className="py-3 px-3 font-semibold text-white">{fac.name}</td>
+                      <td className="py-3 px-3 text-slate-300">{fac.email}</td>
+                      <td className="py-3 px-3 text-slate-400">{fac.department}</td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(fac.roll_no, fac.name, 'faculty')}
+                          disabled={deletingUserRoll === fac.roll_no}
+                          className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition flex items-center gap-1 ml-auto disabled:opacity-40"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" className="py-6 text-center text-slate-500">
+                      No faculty members found. Click "+ Add Teacher" to add.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: STUDENTS DIRECTORY & BIOMETRICS */}
+      {activeTab === 'students' && (
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-400" />
+                Student Roster, Hardware Locks & Biometric Status
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Class-wise and department-wise roster. Reset hardware device binding or face templates with audit logging.
+              </p>
+            </div>
+
+            <button
+              onClick={() => openAddModalForRole('student')}
+              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 self-start sm:self-auto transition"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Student
+            </button>
+          </div>
+
+          {/* Filters Bar: Search + Department Filter + Semester Filter */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search student or device..."
-                className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                placeholder="Search student by name, roll no, email..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
               />
             </div>
+
+            {/* Department Filter */}
+            <select
+              value={selectedDeptFilter}
+              onChange={(e) => setSelectedDeptFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+            >
+              <option value="ALL">All Departments</option>
+              {allDepartments.map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+
+            {/* Semester / Class Filter */}
+            <select
+              value={selectedSemFilter}
+              onChange={(e) => setSelectedSemFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+            >
+              <option value="ALL">All Semesters (Classes)</option>
+              {allSemesters.map(sem => (
+                <option key={sem} value={sem}>Semester {sem}</option>
+              ))}
+            </select>
           </div>
 
           <div className="overflow-x-auto">
@@ -440,74 +701,102 @@ export default function AdminPortal({ user }) {
                 <tr className="border-b border-slate-800 text-slate-400 font-semibold">
                   <th className="py-2.5 px-3">Roll No</th>
                   <th className="py-2.5 px-3">Student Name</th>
-                  <th className="py-2.5 px-3">Bound Hardware Device ID</th>
-                  <th className="py-2.5 px-3">Biometric Face</th>
-                  <th className="py-2.5 px-3 text-right">Administrative Actions</th>
+                  <th className="py-2.5 px-3">Class (Sem)</th>
+                  <th className="py-2.5 px-3">Department</th>
+                  <th className="py-2.5 px-3">Att. %</th>
+                  <th className="py-2.5 px-3">Bound Hardware Device</th>
+                  <th className="py-2.5 px-3">Face Auth</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {studentList.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.roll_no.toLowerCase().includes(searchQuery.toLowerCase())).map((stu) => (
-                  <tr key={stu.roll_no} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-3 font-mono font-bold text-slate-200">{stu.roll_no}</td>
-                    <td className="py-3 px-3 font-semibold text-white">{stu.name}</td>
-                    <td className="py-3 px-3 font-mono">
-                      {stu.bound_device_id === 'UNBOUND' ? (
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">UNBOUND</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold">{stu.bound_device_id}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3">
-                      {stu.has_face !== false ? (
-                        <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">ENROLLED</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">PENDING</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-right space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => handleResetDevice(stu.roll_no)}
-                        disabled={resettingRoll === stu.roll_no || stu.bound_device_id === 'UNBOUND'}
-                        className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition active:scale-95 disabled:opacity-40"
-                      >
-                        {resettingRoll === stu.roll_no ? 'Resetting...' : 'Reset Device'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleResetFace(stu.roll_no)}
-                        disabled={resettingFaceRoll === stu.roll_no}
-                        className="px-2.5 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-[11px] font-bold transition active:scale-95 disabled:opacity-40"
-                      >
-                        {resettingFaceRoll === stu.roll_no ? 'Resetting...' : 'Reset Face'}
-                      </button>
+                {filteredStudents.length > 0 ? (
+                  filteredStudents.map((stu) => (
+                    <tr key={stu.id || stu.roll_no} className="hover:bg-slate-900/40">
+                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{stu.roll_no}</td>
+                      <td className="py-3 px-3 font-semibold text-white">{stu.name}</td>
+                      <td className="py-3 px-3 font-mono text-slate-300">Sem {stu.semester || 6}</td>
+                      <td className="py-3 px-3 text-slate-400 max-w-[150px] truncate">{stu.department}</td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{stu.current_attendance_pct}%</td>
+                      <td className="py-3 px-3 font-mono">
+                        {stu.bound_device_id === 'UNBOUND' ? (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">UNBOUND</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold truncate max-w-[120px] inline-block">{stu.bound_device_id}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        {stu.has_registered_face ? (
+                          <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">ENROLLED</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">NOT ENROLLED</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleResetDevice(stu.roll_no)}
+                          disabled={resettingRoll === stu.roll_no || stu.bound_device_id === 'UNBOUND'}
+                          className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
+                          title="Reset bound device"
+                        >
+                          {resettingRoll === stu.roll_no ? 'Resetting...' : 'Reset Device'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleResetFace(stu.roll_no)}
+                          disabled={resettingFaceRoll === stu.roll_no || !stu.has_registered_face}
+                          className="px-2 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
+                          title="Reset face template"
+                        >
+                          {resettingFaceRoll === stu.roll_no ? 'Resetting...' : 'Reset Face'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(stu.roll_no, stu.name, 'student')}
+                          disabled={deletingUserRoll === stu.roll_no}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 text-[10px] font-bold transition"
+                          title="Delete student"
+                        >
+                          <Trash2 className="w-3 h-3 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="8" className="py-6 text-center text-slate-500">
+                      No students found matching filters.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* TAB 3: CURRICULUM & SUBJECTS */}
+      {/* TAB 4: CURRICULUM & SUBJECTS */}
       {activeTab === 'subjects' && (
         <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-purple-400" />
-                Institutional Curriculum & Course Catalog
+                Academic Curriculum & Course Modules
               </h3>
-              <p className="text-[11px] text-slate-400">
-                Manage academic subjects, credit points, assigned professors, and minimum attendance thresholds.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Register semester courses, assign teaching faculty, and set minimum attendance thresholds.
               </p>
             </div>
+
             <button
               onClick={() => setShowAddSubjectModal(true)}
-              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-lg shadow-purple-600/25"
+              className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1 transition"
             >
-              <Plus className="w-4 h-4" /> Add Subject
+              <Plus className="w-3.5 h-3.5" /> Add Subject
             </button>
           </div>
 
@@ -516,22 +805,24 @@ export default function AdminPortal({ user }) {
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-semibold">
                   <th className="py-2.5 px-3">Subject Code</th>
-                  <th className="py-2.5 px-3">Course Title</th>
+                  <th className="py-2.5 px-3">Course Name</th>
                   <th className="py-2.5 px-3">Department</th>
-                  <th className="py-2.5 px-3">Assigned Faculty</th>
+                  <th className="py-2.5 px-3">Semester</th>
                   <th className="py-2.5 px-3">Credits</th>
-                  <th className="py-2.5 px-3">Min. Attendance</th>
+                  <th className="py-2.5 px-3">Assigned Faculty</th>
+                  <th className="py-2.5 px-3">Lectures Held</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {subjectsList.map((sub) => (
-                  <tr key={sub.code} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-3 font-mono font-bold text-purple-400">{sub.code}</td>
-                    <td className="py-3 px-3 font-bold text-white">{sub.name}</td>
-                    <td className="py-3 px-3 text-slate-400">{sub.department}</td>
-                    <td className="py-3 px-3 text-slate-300 font-medium">{sub.faculty_name || 'Prof. Alan Turing'}</td>
-                    <td className="py-3 px-3 font-mono text-slate-300">{sub.credits}</td>
-                    <td className="py-3 px-3 font-mono font-bold text-emerald-400">{sub.min_attendance_pct}%</td>
+              <tbody className="divide-y divide-slate-800/60 font-mono">
+                {subjectsList.map((subj) => (
+                  <tr key={subj.code} className="hover:bg-slate-900/40">
+                    <td className="py-3 px-3 font-bold text-purple-400">{subj.code}</td>
+                    <td className="py-3 px-3 font-sans font-semibold text-white">{subj.name}</td>
+                    <td className="py-3 px-3 font-sans text-slate-400">{subj.department}</td>
+                    <td className="py-3 px-3 text-slate-300">Sem {subj.semester || 6}</td>
+                    <td className="py-3 px-3 text-slate-300">{subj.credits}</td>
+                    <td className="py-3 px-3 font-sans text-emerald-300">{subj.faculty_name || subj.faculty_id}</td>
+                    <td className="py-3 px-3 text-slate-400">{subj.total_conducted || 0}</td>
                   </tr>
                 ))}
               </tbody>
@@ -540,26 +831,27 @@ export default function AdminPortal({ user }) {
         </div>
       )}
 
-      {/* TAB 4: IMMUTABLE AUDIT TRAIL */}
+      {/* TAB 5: AUDIT TRAIL LOGS */}
       {activeTab === 'audit' && (
         <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <History className="w-4 h-4 text-purple-400" />
-                Immutable System Audit Trail
+                Immutable System Audit Trail (ACID Audit Log)
               </h3>
-              <p className="text-[11px] text-slate-400">
-                Chronological forensic log recording actor ID, target, old/new state, and mandatory justification reasons.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Cryptographically tracked administrative events, device lock resets, and account provisions.
               </p>
             </div>
+
             <button
               onClick={fetchAuditLogs}
               disabled={loadingAudit}
-              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingAudit ? 'animate-spin text-purple-400' : ''}`} />
-              <span>Refresh Log</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingAudit ? 'animate-spin' : ''}`} />
+              <span>Refresh Trail</span>
             </button>
           </div>
 
@@ -571,34 +863,42 @@ export default function AdminPortal({ user }) {
                   <th className="py-2.5 px-3">Actor</th>
                   <th className="py-2.5 px-3">Action</th>
                   <th className="py-2.5 px-3">Target</th>
-                  <th className="py-2.5 px-3">Mandatory Reason / Justification</th>
+                  <th className="py-2.5 px-3">Reason / Context</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-3 text-slate-400 whitespace-nowrap">
-                      {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() + ' ' + new Date(log.timestamp).toLocaleDateString() : '-'}
+                {auditLogs.length > 0 ? (
+                  auditLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-900/40">
+                      <td className="py-2.5 px-3 text-slate-400 font-sans text-[10px]">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">{log.actor_name || log.actor_id} ({log.actor_role})</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-200">{log.target_type}: {log.target_id}</td>
+                      <td className="py-2.5 px-3 font-sans text-slate-400">{log.reason || 'N/A'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" className="py-6 text-center text-slate-500">
+                      No audit events recorded yet.
                     </td>
-                    <td className="py-3 px-3 text-slate-300 font-bold">{log.actor_id} ({log.actor_role})</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-indigo-300">{log.target_id}</td>
-                    <td className="py-3 px-3 font-sans text-slate-300 font-medium">{log.reason}</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Modal: Create User */}
+      {/* Modal: Add User (Student or Teacher) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-md rounded-2xl p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95">
             <button
               onClick={() => setShowAddModal(false)}
@@ -607,29 +907,36 @@ export default function AdminPortal({ user }) {
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-lg font-bold text-white mb-1">Create New Account</h3>
-            <p className="text-xs text-slate-400 mb-4">Provision a new student, faculty, or administrator user.</p>
+            <h3 className="text-lg font-bold text-white mb-1">
+              Add New {newRole === 'student' ? 'Student' : newRole === 'faculty' ? 'Teacher / Faculty' : 'Administrator'}
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Provision a verified account directly into the institutional database.
+            </p>
 
-            <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Role</label>
+                <label className="block text-slate-300 font-medium mb-1">Account Role</label>
                 <select
                   value={newRole}
                   onChange={(e) => {
-                    setNewRole(e.target.value);
-                    setNewPassword(e.target.value === 'faculty' ? 'fac123' : e.target.value === 'admin' ? 'admin123' : 'stu123');
+                    const role = e.target.value;
+                    setNewRole(role);
+                    if (role === 'student') setNewPassword('studentpassword');
+                    else if (role === 'faculty') setNewPassword('facultypassword');
+                    else setNewPassword('adminpassword');
                   }}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
                 >
-                  <option value="student">Student</option>
-                  <option value="faculty">Faculty</option>
-                  <option value="admin">Admin</option>
+                  <option value="student">👨‍🎓 Student</option>
+                  <option value="faculty">👨‍🏫 Teacher / Faculty</option>
+                  <option value="admin">👨‍💼 Administrator</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-slate-300 font-medium mb-1">
-                  {newRole === 'student' ? 'Roll Number' : newRole === 'faculty' ? 'Faculty ID' : 'Admin ID'}
+                  {newRole === 'student' ? 'Student Roll Number / Username' : newRole === 'faculty' ? 'Faculty ID / Username' : 'Admin ID'}
                 </label>
                 <input
                   type="text"
@@ -637,7 +944,7 @@ export default function AdminPortal({ user }) {
                   value={newRoll}
                   onChange={(e) => setNewRoll(e.target.value)}
                   placeholder={newRole === 'student' ? 'e.g. STU05' : 'e.g. FAC02'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
                 />
               </div>
 
@@ -648,7 +955,7 @@ export default function AdminPortal({ user }) {
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Siddharth Joshi"
+                  placeholder={newRole === 'student' ? 'e.g. Siddharth Joshi' : 'e.g. Prof. Priya Nair'}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
                 />
               </div>
@@ -660,7 +967,7 @@ export default function AdminPortal({ user }) {
                   required
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="e.g. siddharth@smartattend.edu"
+                  placeholder={newRole === 'student' ? 'e.g. siddharth@smartattend.edu' : 'e.g. priya@smartattend.edu'}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
                 />
               </div>
@@ -668,25 +975,54 @@ export default function AdminPortal({ user }) {
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Password</label>
                 <input
-                  type="password"
+                  type="text"
                   required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
                 />
               </div>
 
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Academic Department</label>
+                <select
+                  value={newDept}
+                  onChange={(e) => setNewDept(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                >
+                  <option value="Computer Science & Engineering">Computer Science & Engineering</option>
+                  <option value="Information Technology">Information Technology</option>
+                  <option value="Electronics & Communication">Electronics & Communication</option>
+                  <option value="Mechanical Engineering">Mechanical Engineering</option>
+                  <option value="Administration">Administration</option>
+                </select>
+              </div>
+
               {newRole === 'student' && (
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Initial Attendance %</label>
-                  <input
-                    type="number"
-                    min="20"
-                    max="100"
-                    value={newInitAtt}
-                    onChange={(e) => setNewInitAtt(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-medium mb-1">Semester (Class)</label>
+                    <select
+                      value={newSemester}
+                      onChange={(e) => setNewSemester(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                    >
+                      {allSemesters.map(sem => (
+                        <option key={sem} value={sem}>Semester {sem}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-medium mb-1">Initial Att. %</label>
+                    <input
+                      type="number"
+                      min="20"
+                      max="100"
+                      value={newInitAtt}
+                      onChange={(e) => setNewInitAtt(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -694,14 +1030,14 @@ export default function AdminPortal({ user }) {
                 <button
                   type="submit"
                   disabled={creatingUser}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition"
                 >
-                  {creatingUser ? 'Creating...' : 'Create Account'}
+                  {creatingUser ? 'Provisioning Account...' : `Create ${newRole.toUpperCase()}`}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition"
                 >
                   Cancel
                 </button>
@@ -763,11 +1099,12 @@ export default function AdminPortal({ user }) {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Assigned Faculty</label>
+                  <label className="block text-slate-300 font-medium mb-1">Assigned Faculty ID</label>
                   <input
                     type="text"
                     value={subFaculty}
                     onChange={(e) => setSubFaculty(e.target.value)}
+                    placeholder="e.g. faculty"
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
                   />
                 </div>

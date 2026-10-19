@@ -667,8 +667,24 @@ def root():
 @app.post("/api/login")
 @limiter.limit("5/minute")
 def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db)):
+    req_identifier = str(req.roll_no).strip()
+    # Support aliases for clean login: 'admin' / 'ADM01', 'faculty' / 'FAC01', 'student' / 'STU01'
+    aliases = {
+        "admin": ["admin", "adm01", "admin@smartattend.edu"],
+        "adm01": ["admin", "adm01", "admin@smartattend.edu"],
+        "faculty": ["faculty", "fac01", "faculty@smartattend.edu"],
+        "fac01": ["faculty", "fac01", "faculty@smartattend.edu"],
+        "student": ["student", "stu01", "stu001", "student@smartattend.edu"],
+        "stu01": ["student", "stu01", "stu001", "student@smartattend.edu"],
+        "stu001": ["student", "stu01", "stu001", "student@smartattend.edu"]
+    }
+    possible_ids = aliases.get(req_identifier.lower(), [req_identifier])
+
     user = db.query(User).filter(
-        (User.roll_no == req.roll_no) | (User.email == req.roll_no)
+        (User.roll_no.in_(possible_ids)) |
+        (User.email.in_(possible_ids)) |
+        (User.roll_no.ilike(req_identifier)) |
+        (User.email.ilike(req_identifier))
     ).first()
 
     # Generic 401 error message for unknown user or wrong password (no 404 user enumeration)
@@ -1915,6 +1931,25 @@ def admin_overview(
     alerts = db.query(SecurityAlert).order_by(SecurityAlert.created_at.desc()).limit(30).all()
     formatted_alerts = [a.to_dict() for a in alerts]
 
+    # Department breakdown (students & faculty)
+    dept_breakdown = {}
+    for u in students:
+        d = u.department or "Computer Science & Engineering"
+        if d not in dept_breakdown:
+            dept_breakdown[d] = {"students": 0, "faculty": 0}
+        dept_breakdown[d]["students"] += 1
+    for f in faculty_list:
+        d = f.department or "Computer Science & Engineering"
+        if d not in dept_breakdown:
+            dept_breakdown[d] = {"students": 0, "faculty": 0}
+        dept_breakdown[d]["faculty"] += 1
+
+    # Class / Semester breakdown
+    class_breakdown = {}
+    for s in students:
+        sem_label = f"Semester {s.semester}" if s.semester else "Semester 6"
+        class_breakdown[sem_label] = class_breakdown.get(sem_label, 0) + 1
+
     return {
         "counts": {
             "students": total_students,
@@ -1925,10 +1960,50 @@ def admin_overview(
             "total_alerts": len(formatted_alerts)
         },
         "system_average_attendance_pct": sys_avg_attendance,
+        "department_breakdown": dept_breakdown,
+        "class_breakdown": class_breakdown,
         "high_risk_defaulters": high_risk_defaulters,
         "sessions": formatted_sessions,
         "security_alerts": formatted_alerts
     }
+
+@app.get("/api/admin/users")
+def get_admin_users(
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    semester: Optional[int] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    query = db.query(User)
+    if role:
+        query = query.filter(User.role == role.lower())
+    if department:
+        query = query.filter(User.department == department)
+    if semester:
+        query = query.filter(User.semester == semester)
+
+    users = query.order_by(User.created_at.desc()).all()
+    user_list = []
+    for u in users:
+        face_enrolled = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == u.id).first() is not None
+        stats_obj = db.query(StudentStats).filter(StudentStats.user_id == u.id).first() if u.role == "student" else None
+        user_list.append({
+            "id": str(u.id),
+            "roll_no": u.roll_no,
+            "faculty_id": u.roll_no if u.role == "faculty" else None,
+            "admin_id": u.roll_no if u.role == "admin" else None,
+            "name": u.name,
+            "email": u.email,
+            "role": u.role,
+            "department": u.department or "Computer Science & Engineering",
+            "semester": u.semester or 6,
+            "bound_device_id": u.bound_device_id or u.registered_device_id or "UNBOUND",
+            "has_registered_face": face_enrolled,
+            "current_attendance_pct": stats_obj.current_attendance_pct if stats_obj else 0.0,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        })
+    return {"users": user_list, "total": len(user_list)}
 
 @app.post("/api/admin/users")
 def admin_create_user(
@@ -2011,6 +2086,44 @@ def admin_create_user(
             "email": req.email
         }
     }
+
+@app.delete("/api/admin/users/{roll_or_id}")
+def admin_delete_user(
+    roll_or_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    user = db.query(User).filter(
+        (User.roll_no == roll_or_id) | (User.email == roll_or_id)
+    ).first()
+    if not user:
+        try:
+            uid = uuid.UUID(roll_or_id)
+            user = db.query(User).filter(User.id == uid).first()
+        except Exception:
+            pass
+
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{roll_or_id}' not found.")
+
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own active administrator account.")
+
+    deleted_name = user.name
+    deleted_role = user.role
+    db.delete(user)
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role="admin",
+        action="USER_DELETED",
+        target_type="USER",
+        target_id=roll_or_id,
+        reason=f"Administrator removed {deleted_role} account for {deleted_name}"
+    )
+    db.commit()
+    return {"success": True, "message": f"{deleted_role.capitalize()} {deleted_name} ({roll_or_id}) successfully removed."}
 
 @app.post("/api/admin/reset-device/{roll_no}")
 def admin_reset_device(
