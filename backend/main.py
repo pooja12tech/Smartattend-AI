@@ -82,12 +82,13 @@ async def extract_rate_limit_roll_no_middleware(request: Request, call_next):
 
 # Secure CORS configuration
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
-allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+allowed_origins = [o.strip().strip("'\"").rstrip("/") for o in allowed_origins_raw.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins if "*" not in allowed_origins else ["*"],
-    allow_credentials=True if "*" not in allowed_origins else False,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
