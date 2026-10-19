@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Play, Users, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle,
-  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square
+  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square, MapPin
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -20,14 +20,36 @@ export default function FacultyPortal({ user }) {
   // Live class roster loaded from GET /api/faculty/session/{id}/roster
   const [roster, setRoster] = useState([]);
 
-  // Start lecture session
+  // Start lecture session with dynamic teacher GPS anchoring (100m radius)
   const handleStartSession = async () => {
     setStarting(true);
+    let teacherLat = 19.0760;
+    let teacherLng = 72.8777;
+
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 4500,
+            maximumAge: 5000
+          });
+        });
+        if (pos?.coords) {
+          teacherLat = pos.coords.latitude;
+          teacherLng = pos.coords.longitude;
+        }
+      } catch (geoErr) {
+        console.warn('Teacher geolocation not accessible, using default:', geoErr);
+      }
+    }
+
     try {
       const res = await api.startSession({
         subject_name: subject,
-        class_lat: 19.0760,
-        class_lng: 72.8777
+        class_lat: teacherLat,
+        class_lng: teacherLng,
+        geofence_radius_meters: 100
       });
       setActiveSession(res.session);
     } catch (err) {
@@ -208,10 +230,14 @@ export default function FacultyPortal({ user }) {
               Start Lecture Session
             </button>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
                 ACTIVE: {activeSession.session_code || activeSession.session_id.substring(0, 8)}
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-indigo-300">
+                <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Geofence: 100m (Teacher Live GPS)</span>
               </div>
               <button
                 onClick={handleEndSession}

@@ -1335,7 +1335,7 @@ export default function StudentPortal({ user }) {
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
                     <span className="flex items-center gap-2.5 text-slate-200">
                       {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 3 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 3: GPS Geofence Check (&le; 60m Classroom)
+                      Gate 3: GPS Geofence Check (&le; 100m Classroom Hall)
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate3}

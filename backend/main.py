@@ -555,6 +555,7 @@ class SessionStartRequest(BaseModel):
     class_lat: float = Field(..., example=19.0760)
     class_lng: float = Field(..., example=72.8777)
     subject_id: Optional[str] = None
+    geofence_radius_meters: Optional[int] = 100
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
@@ -802,7 +803,7 @@ def start_session(
         class_lat=req.class_lat,
         class_lng=req.class_lng,
         secret_seed=secret_seed,
-        geofence_radius_meters=60,
+        geofence_radius_meters=req.geofence_radius_meters or 100,
         status="ACTIVE",
         started_at=now,
         created_at=now
@@ -822,7 +823,7 @@ def start_session(
             "class_lat": req.class_lat,
             "class_lng": req.class_lng,
             "status": "ACTIVE",
-            "geofence_radius_meters": 60,
+            "geofence_radius_meters": req.geofence_radius_meters or 100,
             "started_at": now.isoformat()
         }
     }
@@ -1057,12 +1058,12 @@ def mark_attendance(
             reason="Invalid QR signature. Token does not match this lecture session's cryptographic secret."
         )
 
-    # GATE 3: GPS Geofence (Haversine Distance <= 60 Meters)
+    # GATE 3: GPS Geofence (Haversine Distance <= 100 Meters)
     class_lat = session.class_lat or 19.0760
     class_lng = session.class_lng or 72.8777
 
     distance_meters = haversine_distance_meters(class_lat, class_lng, req.user_lat, req.user_lng)
-    max_radius = session.geofence_radius_meters or 60
+    max_radius = session.geofence_radius_meters or 100
 
     if distance_meters > max_radius:
         log_fraud_and_fail(

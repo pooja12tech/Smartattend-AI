@@ -94,11 +94,11 @@ export const api = {
     return safeParse(res, 'Face enrollment failed');
   },
 
-  async startSession({ subject_name, class_lat, class_lng }) {
+  async startSession({ subject_name, class_lat, class_lng, geofence_radius_meters = 100 }) {
     const res = await fetch(`${API_BASE}/api/sessions/start`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ subject_name, class_lat, class_lng })
+      body: JSON.stringify({ subject_name, class_lat, class_lng, geofence_radius_meters })
     });
     return safeParse(res, 'Failed to start session');
   },
