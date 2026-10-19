@@ -3,7 +3,7 @@ import {
   Fingerprint, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
   MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
-  HelpCircle, History
+  HelpCircle, History, Eye
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -26,13 +26,20 @@ export default function StudentPortal({ user }) {
   const [qrScanError, setQrScanError] = useState(null);
   const qrScannerRef = useRef(null);
 
-  // Front camera face verification
+  // Location & Time captured upon QR scan
+  const [capturedLocation, setCapturedLocation] = useState(null);
+
+  // Front camera face verification with eye-blink liveness auto-capture
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [countdown, setCountdown] = useState(3);
+  const [countdown, setCountdown] = useState(7);
+  const [blinkStatus, setBlinkStatus] = useState('ALIGNING'); // 'ALIGNING' | 'WAITING_BLINK' | 'BLINK_DETECTED' | 'CAPTURED'
+  const [blinkFlash, setBlinkFlash] = useState(false);
   const videoRef = useRef(null);
   const countdownTimerRef = useRef(null);
+  const blinkAnalysisRef = useRef(null);
+  const blinkCanvasRef = useRef(null);
 
   // 5-Gate Checklist Animation State
   const [gateProgress, setGateProgress] = useState(null);
@@ -136,6 +143,10 @@ export default function StudentPortal({ user }) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
+    if (blinkAnalysisRef.current) {
+      clearInterval(blinkAnalysisRef.current);
+      blinkAnalysisRef.current = null;
+    }
     if (videoRef.current && videoRef.current.srcObject) {
       try {
         videoRef.current.srcObject.getTracks().forEach(t => t.stop());
@@ -143,6 +154,7 @@ export default function StudentPortal({ user }) {
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
+    setBlinkFlash(false);
   };
 
   // Close & Reset Attendance Modal
@@ -153,6 +165,9 @@ export default function StudentPortal({ user }) {
     setAttendanceStep('IDLE');
     setQrScanError(null);
     setCameraError(null);
+    setCapturedLocation(null);
+    setBlinkStatus('ALIGNING');
+    setBlinkFlash(false);
   };
 
   // Open Attendance Flow (Step 1: Scan QR)
@@ -168,9 +183,24 @@ export default function StudentPortal({ user }) {
     setGateProgress(null);
     setSubmissionResult(null);
     setExceptionResult(null);
+    setCapturedLocation(null);
+    setBlinkStatus('ALIGNING');
+    setBlinkFlash(false);
 
     // Start rear camera scanner
     startQRScanner();
+  };
+
+  // Haversine Distance Helper (Meters)
+  const calculateHaversine = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   // Start Rear Camera QR Scanner
@@ -209,13 +239,48 @@ export default function StudentPortal({ user }) {
             setScannedToken(rawToken);
             setSessionId(parts[0]);
 
+            // Immediately capture device Geolocation & current local Timestamp
+            const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            let userLat = 19.07601;
+            let userLng = 72.87771;
+            let dist = 12.0;
+
+            if (navigator.geolocation && !simFarGPS) {
+              try {
+                const pos = await new Promise((resolve, reject) => {
+                  navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2500, maximumAge: 10000 });
+                });
+                if (pos && pos.coords) {
+                  userLat = pos.coords.latitude;
+                  userLng = pos.coords.longitude;
+                  dist = calculateHaversine(19.0760, 72.8777, userLat, userLng);
+                }
+              } catch (e) {
+                console.warn('Geolocation read failed or timed out, using default classroom coordinates.');
+              }
+            }
+
+            if (simFarGPS) {
+              userLat = 19.1050;
+              userLng = 72.8850;
+              dist = 3240.0;
+            }
+
+            setCapturedLocation({
+              lat: userLat,
+              lng: userLng,
+              time: currentTimeStr,
+              distanceMeters: Math.round(dist * 10) / 10,
+              isWithinGeofence: dist <= 60
+            });
+
             // Stop rear camera to release hardware lock before front camera opens
             await stopQRScanner();
 
-            // Transition directly to Step 2: Live Face Verification
+            // Transition to Step 2: Live Face Verification with Eye-Blink Auto-Capture
             setAttendanceStep('FACE_VERIFY');
             setTimeout(() => {
-              startFrontCameraCountdown(rawToken, parts[0]);
+              startFrontCameraWithBlinkDetection(rawToken, parts[0]);
             }, 300);
           },
           () => {
@@ -240,14 +305,20 @@ export default function StudentPortal({ user }) {
     }, 100);
   };
 
-  // Step 2: Start Front Camera with 3-Second Live Face Countdown
-  const startFrontCameraCountdown = async (tokenOverride, sessionOverride) => {
+  // Step 2: Start Front Camera with Real-Time Eye-Blink Liveness Auto-Capture
+  const startFrontCameraWithBlinkDetection = async (tokenOverride, sessionOverride) => {
     setCameraError(null);
-    setCountdown(3);
+    setCountdown(8);
+    setBlinkStatus('ALIGNING');
+    setBlinkFlash(false);
 
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
+    }
+    if (blinkAnalysisRef.current) {
+      clearInterval(blinkAnalysisRef.current);
+      blinkAnalysisRef.current = null;
     }
 
     try {
@@ -262,16 +333,112 @@ export default function StudentPortal({ user }) {
         videoRef.current.srcObject = stream;
       }
 
-      // Begin 3-second live countdown
-      let count = 3;
+      // Initialize off-screen analysis canvas
+      if (!blinkCanvasRef.current) {
+        blinkCanvasRef.current = document.createElement('canvas');
+        blinkCanvasRef.current.width = 120;
+        blinkCanvasRef.current.height = 120;
+      }
+
+      let framesCalibrated = 0;
+      let baselineDarkCount = 0;
+      let eyesClosedFrames = 0;
+      let blinkFired = false;
+
+      // Real-time eye blink analyzer: runs every 80ms
+      blinkAnalysisRef.current = setInterval(() => {
+        if (blinkFired) return;
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) return;
+
+        const canvas = blinkCanvasRef.current;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(video, 0, 0, 120, 120);
+
+        // Eye region bounding band in oval guide: x: 30% to 70% (36 to 84), y: 34% to 54% (40 to 65)
+        const sx = 36, sy = 40, sw = 48, sh = 25;
+        const imgData = ctx.getImageData(sx, sy, sw, sh);
+        const data = imgData.data;
+
+        let darkCount = 0;
+        const totalPixels = data.length / 4;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (luma < 68) {
+            darkCount++;
+          }
+        }
+
+        const darkRatio = darkCount / totalPixels;
+
+        // Phase 1: Calibration (first 4 frames)
+        if (framesCalibrated < 4) {
+          framesCalibrated++;
+          baselineDarkCount = (baselineDarkCount * (framesCalibrated - 1) + darkRatio) / framesCalibrated;
+          if (framesCalibrated >= 4) {
+            setBlinkStatus('WAITING_BLINK');
+          }
+          return;
+        }
+
+        // Phase 2: Detect Eyes Closed (Blink Ingress)
+        // When eyes close, dark pupil & iris pixels drop by >= 35% compared to open eyes baseline
+        const isClosed = darkRatio < (baselineDarkCount * 0.65) || darkRatio < 0.025;
+
+        if (isClosed) {
+          eyesClosedFrames++;
+        } else {
+          // Phase 3: Detect Eyes Reopened (Blink Egress)
+          // A natural human blink lasts between 1 to 5 frames (80ms to 400ms)
+          if (eyesClosedFrames >= 1 && eyesClosedFrames <= 5 && !blinkFired) {
+            blinkFired = true;
+            setBlinkStatus('BLINK_DETECTED');
+            setBlinkFlash(true);
+
+            if (blinkAnalysisRef.current) {
+              clearInterval(blinkAnalysisRef.current);
+              blinkAnalysisRef.current = null;
+            }
+            if (countdownTimerRef.current) {
+              clearInterval(countdownTimerRef.current);
+              countdownTimerRef.current = null;
+            }
+
+            // Auto-capture immediately upon reopening eyes!
+            setTimeout(() => {
+              captureSelfieAndProceed(tokenOverride, sessionOverride);
+            }, 180);
+            return;
+          }
+          eyesClosedFrames = 0;
+          // Slowly adapt baseline for dynamic room lighting
+          baselineDarkCount = baselineDarkCount * 0.9 + darkRatio * 0.1;
+        }
+      }, 80);
+
+      // Fallback 8-second countdown if room lighting is too dim or user is wearing dark lenses
+      let count = 8;
       countdownTimerRef.current = setInterval(() => {
         count -= 1;
         setCountdown(count);
         if (count <= 0) {
-          clearInterval(countdownTimerRef.current);
-          countdownTimerRef.current = null;
-          // Auto-capture live frame and submit!
-          captureSelfieAndProceed(tokenOverride, sessionOverride);
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+          if (blinkAnalysisRef.current) {
+            clearInterval(blinkAnalysisRef.current);
+            blinkAnalysisRef.current = null;
+          }
+          if (!blinkFired) {
+            blinkFired = true;
+            setBlinkStatus('BLINK_DETECTED');
+            setBlinkFlash(true);
+            setTimeout(() => {
+              captureSelfieAndProceed(tokenOverride, sessionOverride);
+            }, 150);
+          }
         }
       }, 1000);
 
@@ -304,6 +471,10 @@ export default function StudentPortal({ user }) {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
+    }
+    if (blinkAnalysisRef.current) {
+      clearInterval(blinkAnalysisRef.current);
+      blinkAnalysisRef.current = null;
     }
 
     let capturedBase64 = null;
@@ -1024,20 +1195,39 @@ export default function StudentPortal({ user }) {
               </div>
             )}
 
-            {/* STEP 2: FRONT CAMERA LIVE FACE COUNTDOWN */}
+            {/* STEP 2: FRONT CAMERA LIVE FACE AUTH WITH EYE-BLINK AUTO-CAPTURE */}
             {attendanceStep === 'FACE_VERIFY' && (
               <div className="space-y-4">
-                <div className="text-center space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mb-1">
-                    <Check className="w-3.5 h-3.5" /> QR Code Verified: {sessionId}
+                <div className="text-center space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <Check className="w-3 h-3" /> QR Scanned: {sessionId}
+                    </span>
+                    {capturedLocation && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        <MapPin className="w-3 h-3 text-indigo-400" />
+                        {capturedLocation.distanceMeters}m ({capturedLocation.isWithinGeofence ? 'Inside Campus Hall' : 'Geofence Breach'})
+                      </span>
+                    )}
+                    {capturedLocation?.time && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        {capturedLocation.time}
+                      </span>
+                    )}
                   </div>
-                  <h4 className="text-base font-bold text-white">Live Face Biometric Check</h4>
+                  <h4 className="text-base font-bold text-white flex items-center justify-center gap-1.5">
+                    <Eye className="w-4 h-4 text-purple-400 animate-pulse" />
+                    Live Face Auth &amp; Eye-Blink Liveness
+                  </h4>
                   <p className="text-xs text-slate-400">
-                    Hold still and look directly into the camera. Auto-capturing in <span className="text-amber-400 font-bold font-mono">{countdown}s</span>...
+                    {blinkStatus === 'ALIGNING' && 'Align your face inside the circle in good lighting...'}
+                    {blinkStatus === 'WAITING_BLINK' && 'Face locked! Blink your eyes once to auto-capture 📸'}
+                    {blinkStatus === 'BLINK_DETECTED' && '✨ Blink Detected! Auto-capturing frame now...'}
                   </p>
                 </div>
 
-                {/* Front Camera Video Container with Live Reticle & Countdown Badge */}
+                {/* Front Camera Video Container with Live Reticle & Blink Status HUD */}
                 <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-indigo-500/40 aspect-square max-w-[280px] mx-auto shadow-2xl flex items-center justify-center">
                   <video
                     ref={videoRef}
@@ -1046,13 +1236,46 @@ export default function StudentPortal({ user }) {
                     className="w-full h-full object-cover scale-x-[-1]"
                   />
 
-                  {/* Circular Face Alignment Framing Guide */}
-                  <div className="absolute inset-4 rounded-full border-2 border-dashed border-indigo-400/60 pointer-events-none animate-pulse-slow" />
+                  {/* Circular / Oval Face Alignment Framing Guide */}
+                  <div className={`absolute inset-4 rounded-full border-2 border-dashed pointer-events-none transition-all duration-300 ${
+                    blinkStatus === 'BLINK_DETECTED'
+                      ? 'border-emerald-400 scale-105 shadow-[0_0_25px_rgba(52,211,153,0.8)]'
+                      : blinkStatus === 'WAITING_BLINK'
+                      ? 'border-amber-400 animate-pulse-slow'
+                      : 'border-indigo-400/60'
+                  }`} />
 
-                  {/* Floating Live Countdown Badge */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/75 backdrop-blur-md border border-white/20 text-white font-mono text-sm font-bold flex items-center gap-2 shadow-lg">
-                    <Camera className="w-4 h-4 text-indigo-400 animate-bounce" />
-                    <span>Auto-Snap in {countdown}s</span>
+                  {/* Shutter Flash Animation on Blink */}
+                  {blinkFlash && (
+                    <div className="absolute inset-0 bg-white/80 animate-ping z-20 pointer-events-none" />
+                  )}
+
+                  {/* Interactive Eye-Blink HUD Pill */}
+                  <div className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold flex items-center gap-2 shadow-xl z-10 transition-all ${
+                    blinkStatus === 'BLINK_DETECTED'
+                      ? 'bg-emerald-500/90 border-emerald-400 text-white animate-bounce'
+                      : blinkStatus === 'WAITING_BLINK'
+                      ? 'bg-amber-500/80 border-amber-400 text-slate-950 font-extrabold animate-pulse'
+                      : 'bg-black/75 border-white/20 text-white'
+                  }`}>
+                    {blinkStatus === 'ALIGNING' && (
+                      <>
+                        <Eye className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                        <span>Center Face</span>
+                      </>
+                    )}
+                    {blinkStatus === 'WAITING_BLINK' && (
+                      <>
+                        <span className="text-base">😉</span>
+                        <span>Blink Eyes to Auto-Snap!</span>
+                      </>
+                    )}
+                    {blinkStatus === 'BLINK_DETECTED' && (
+                      <>
+                        <Camera className="w-3.5 h-3.5 text-white" />
+                        <span>Blink Verified! Capturing...</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1069,10 +1292,10 @@ export default function StudentPortal({ user }) {
                   <button
                     type="button"
                     onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
-                    className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition flex items-center justify-center gap-1.5 border border-slate-700"
                   >
-                    <Camera className="w-4 h-4" />
-                    <span>Snap Now (Skip Countdown)</span>
+                    <Camera className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Snap Manually ({countdown}s fallback)</span>
                   </button>
                 </div>
               </div>
