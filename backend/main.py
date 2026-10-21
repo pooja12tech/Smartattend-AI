@@ -722,19 +722,14 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             }
         }
 
-    # 3. Student Login
-    bound_device = user.bound_device_id or user.registered_device_id
-
-    if not bound_device:
+    # 3. Student Login (Device Binding Disabled for Testing Phase)
+    # Any device is permitted to log in; no device mismatch warnings or blocks.
+    bound_device = req.device_id
+    binding_status = "DEVICE_VERIFIED"
+    if user.bound_device_id != req.device_id:
         user.bound_device_id = req.device_id
         user.registered_device_id = req.device_id
         db.commit()
-        bound_device = req.device_id
-        binding_status = "DEVICE_BOUND_SUCCESSFULLY"
-    elif bound_device != req.device_id:
-        binding_status = "UNREGISTERED_DEVICE"
-    else:
-        binding_status = "DEVICE_VERIFIED"
 
     return {
         "success": True,
@@ -1003,24 +998,10 @@ def mark_attendance(
             }
         )
 
-    # GATE 1: Device Lock (Hardware Fingerprint Verification & Anti-Proxy 1-Phone Rule)
-    bound_device = student.bound_device_id or student.registered_device_id
-
-    device_already_used = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == session.session_id,
-        AttendanceRecord.used_device_id == req.device_id
-    ).first()
-    if device_already_used:
-        log_fraud_and_fail(
-            gate="GATE_1_DEVICE_LOCK",
-            reason=f"Proxy Alert: Device '{req.device_id}' was already used by roll number '{device_already_used.roll_no}' in this session. One phone cannot mark attendance for multiple students."
-        )
-
-    if bound_device and bound_device != req.device_id:
-        log_fraud_and_fail(
-            gate="GATE_1_DEVICE_LOCK",
-            reason=f"Device Mismatch: Student '{roll_no}' is bound to device '{bound_device}', but request originated from '{req.device_id}'."
-        )
+    # GATE 1: Device Lock & 1-Phone Rule (Bypassed for Testing Phase)
+    # [TESTING MODE]: Both "1-device-per-registration" and "device-bound" restrictions are disabled.
+    # Students can use any device, and multiple students can test on the same device in a session.
+    # We still record used_device_id for auditing/telemetry purposes without failing the gate.
 
     # GATE 2: Dynamic QR Window Check (Configurable QR_WINDOW_SECONDS, Accepts Current & Previous Window)
     try:
@@ -1165,7 +1146,7 @@ def mark_attendance(
             detail={
                 "success": False,
                 "failed_gate": "DUPLICATE_SUBMISSION",
-                "reason": "Attendance has already been recorded for this student or device in this lecture session."
+                "reason": "Attendance has already been recorded for this student in this lecture session."
             }
         )
 

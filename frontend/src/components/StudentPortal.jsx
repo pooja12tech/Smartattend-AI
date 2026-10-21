@@ -563,22 +563,10 @@ export default function StudentPortal({ user }) {
       live_selfie_base64: selfieToSend
     };
 
-    // Gate 1: Hardware Device Lock
+    // Gate 1: Hardware Device Lock (Bypassed during Testing Phase)
     gates.gate1 = 'RUNNING';
     setGateProgress({ ...gates, activeGate: 1 });
-    await new Promise(r => setTimeout(r, 350));
-
-    if (simWrongDevice) {
-      gates.gate1 = 'FAILED';
-      gates.error = 'Gate 1 Failed: Hardware Device Lock mismatch (Untrusted phone)';
-      setGateProgress({ ...gates, activeGate: 1 });
-      setSubmittingAttendance(false);
-      setAttendanceStep('RESULT');
-      try { await api.markAttendance(payload); } catch (e) {
-        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_1_DEVICE_LOCK' });
-      }
-      return;
-    }
+    await new Promise(r => setTimeout(r, 200));
     gates.gate1 = 'PASSED';
 
     // Gate 2: Dynamic QR
@@ -883,12 +871,12 @@ export default function StudentPortal({ user }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">Hardware Device Lock</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Bound
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Device Lock</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                  Testing Mode (Unbound)
                 </span>
               </div>
-              <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId}</p>
+              <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId} &bull; Any device allowed</p>
             </div>
           </div>
 
@@ -1314,11 +1302,11 @@ export default function StudentPortal({ user }) {
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
                     <span className="flex items-center gap-2.5 text-slate-200">
-                      {gateProgress.gate1 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate1 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />}
-                      Gate 1: Hardware Device Lock & 1-Phone Rule
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Gate 1: Hardware Device Lock (Testing Mode - Any Device)
                     </span>
-                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate1 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate1 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
-                      {gateProgress.gate1}
+                    <span className="font-mono text-[10px] font-bold text-emerald-400">
+                      PASSED (TESTING)
                     </span>
                   </div>
 
@@ -1489,14 +1477,14 @@ export default function StudentPortal({ user }) {
                         <span className="text-[11px]">Simulate 3.2km Away GPS</span>
                       </label>
 
-                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">
+                      <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 opacity-50 cursor-not-allowed">
                         <input
                           type="checkbox"
-                          checked={simWrongDevice}
-                          onChange={(e) => setSimWrongDevice(e.target.checked)}
-                          className="rounded text-rose-500"
+                          disabled
+                          checked={false}
+                          className="rounded text-slate-600"
                         />
-                        <span className="text-[11px]">Simulate Proxy Phone</span>
+                        <span className="text-[11px] text-slate-400">Proxy Phone Lock (Disabled for testing)</span>
                       </label>
 
                       <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer">

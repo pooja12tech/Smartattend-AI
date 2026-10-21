@@ -172,8 +172,8 @@ class AttendanceRecord(Base):
     __table_args__ = (
         # Prevent same student attending twice in the same session
         UniqueConstraint("session_id", "roll_no", name="uq_session_student"),
-        # Prevent same phone/device marking attendance for multiple students (Anti-Proxy Gate 1)
-        UniqueConstraint("session_id", "used_device_id", name="uq_session_device"),
+        # Anti-Proxy 1-Phone constraint disabled for testing phase:
+        # UniqueConstraint("session_id", "used_device_id", name="uq_session_device"),
         Index("idx_attendance_roll_marked", "roll_no", "marked_at"),
     )
 

@@ -169,26 +169,32 @@ export default function LoginView({ onLoginSuccess }) {
               </div>
             </div>
 
-            {/* Student Hardware Device Binding Info */}
+            {/* Student Hardware Device Info (Testing Mode: Unbound) */}
             {roleTab === 'student' && (
               <div className="pt-1">
                 <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                   <div className="flex items-center justify-between text-slate-400 mb-1">
                     <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-300">
-                      <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> Hardware Device Binding
+                      <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> Device Info
                     </span>
-                    <button
-                      type="button"
-                      onClick={regenerateDeviceId}
-                      title="Simulate switching to a different phone"
-                      className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
-                    >
-                      <RefreshCw className="w-2.5 h-2.5" /> New Device
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                        Testing Mode (Unbound)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={regenerateDeviceId}
+                        title="Simulate switching to a different phone"
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" /> New Device
+                      </button>
+                    </div>
                   </div>
                   <div className="font-mono text-[11px] text-indigo-300 bg-slate-950/80 px-2 py-1 rounded border border-slate-800/80 truncate">
                     {deviceId}
                   </div>
+                  <p className="text-[10px] text-slate-500 mt-1">1-Device lock & device binding disabled during testing phase.</p>
                 </div>
               </div>
             )}

@@ -80,15 +80,16 @@ def run_tests():
     assert res.json()["detail"] == "Invalid credentials. Please verify your username and password."
     print("[PASS] 2b. Invalid Password Blocked with Generic Message (HTTP 401):", res.json()["detail"])
 
-    # 2c. Student Device Mismatch Block Test
+    # 2c. Student Device Login Test (Testing Phase: Any device permitted)
     res = client.post("/api/login", json={
         "roll_no": "STU01",
         "password": "stu123",
         "device_id": "DEV-UNKNOWN-PHONE-99",
         "is_exception_mode": False
     })
-    assert res.status_code == 403, f"Device mismatch should have returned 403, got: {res.status_code}"
-    print("[PASS] 2c. Device Mismatch Correctly Blocked (HTTP 403):", res.json()["detail"])
+    assert res.status_code == 200, f"Expected 200, got: {res.status_code}"
+    assert res.json()["binding_status"] == "DEVICE_VERIFIED"
+    print("[PASS] 2c. Any Device Permitted for Testing Phase (HTTP 200):", res.json()["binding_status"])
 
     # 2d. Student Exception Mode Login Test
     res = client.post("/api/login", json={
@@ -176,23 +177,20 @@ def run_tests():
     assert detail["failed_gate"] == "GATE_2_DYNAMIC_QR"
     print("[PASS] 4b. Gate 2 (Expired QR Token) Blocked:", detail["reason"])
 
-    # Gate 1: Device Mismatch Test
-    fresh_qr = client.get(f"/api/sessions/{session_id}/qr", headers=faculty_headers).json()["qr_token"]
-    res = client.post("/api/attendance/mark", json={
-        "session_id": session_id,
-        "qr_token": fresh_qr,
-        "device_id": "DEV-STRANGER-PHONE-99",
-        "user_lat": 19.07601,
-        "user_lng": 72.87771,
-        "live_selfie_base64": test_face_b64,
-        "is_exception_mode": False
-    }, headers=student_headers)
-    assert res.status_code == 400
-    detail = res.json()["detail"]
-    assert detail["failed_gate"] == "GATE_1_DEVICE_LOCK"
-    print("[PASS] 4c. Gate 1 (Device Mismatch) Blocked:", detail["reason"])
+    # Gate 1: Device Mismatch Test (Relaxed in testing phase)
+    # Different device allowed
+    # (Gate 1 passed, proceed to valid attendance)
+    # Login STU02 to get token for STU02
+    res_stu2 = client.post("/api/login", json={
+        "roll_no": "STU02",
+        "password": "stu123",
+        "device_id": "DEV-AARAV-PHONE-01",
+        "is_exception_mode": True
+    })
+    stu2_token = res_stu2.json()["access_token"]
+    stu2_headers = {"Authorization": f"Bearer {stu2_token}"}
 
-    # Successful Attendance Submission
+    # Successful Attendance Submission for STU01
     fresh_qr = client.get(f"/api/sessions/{session_id}/qr", headers=faculty_headers).json()["qr_token"]
     res = client.post("/api/attendance/mark", json={
         "session_id": session_id,
@@ -204,19 +202,9 @@ def run_tests():
         "is_exception_mode": False
     }, headers=student_headers)
     assert res.status_code == 200, f"Valid attendance failed: {res.text}"
-    print("[PASS] 4d. All 5 Gates Passed! Status:", res.json()["status"])
+    print("[PASS] 4c. Attendance for STU01 Passed! Status:", res.json()["status"])
 
-    # Login STU02 to get token for STU02
-    res_stu2 = client.post("/api/login", json={
-        "roll_no": "STU02",
-        "password": "stu123",
-        "device_id": "DEV-AARAV-PHONE-01",
-        "is_exception_mode": True
-    })
-    stu2_token = res_stu2.json()["access_token"]
-    stu2_headers = {"Authorization": f"Bearer {stu2_token}"}
-
-    # Anti-Proxy: Duplicate Device in Same Session
+    # Duplicate Device in Same Session (Relaxed in testing phase: STU02 also marks attendance on same device)
     fresh_qr = client.get(f"/api/sessions/{session_id}/qr", headers=faculty_headers).json()["qr_token"]
     res = client.post("/api/attendance/mark", json={
         "session_id": session_id,
@@ -227,10 +215,8 @@ def run_tests():
         "live_selfie_base64": test_face_b64,
         "is_exception_mode": True
     }, headers=stu2_headers)
-    assert res.status_code == 400
-    detail = res.json()["detail"]
-    assert detail["failed_gate"] == "GATE_1_DEVICE_LOCK"
-    print("[PASS] 4e. Gate 1 Anti-Proxy (Duplicate Device) Caught:", detail["reason"])
+    assert res.status_code == 200, f"Multiple attendees on same device should be allowed in testing phase: {res.text}"
+    print("[PASS] 4d. Same Device Allowed for Multiple Students in Testing Phase! Status:", res.json()["status"])
 
     # 5. Teacher Manual Attendance Override Test (Faculty auth required)
     res = client.post("/api/faculty/manual-attendance", json={
