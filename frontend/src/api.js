@@ -226,6 +226,15 @@ export const api = {
     return safeParse(res, 'Failed to reset biometric template');
   },
 
+  async adminEnrollFace(rollNo, photoBase64, notes = 'Official face reference captured at registrar desk') {
+    const res = await fetch(`${API_BASE}/api/admin/enroll-face/${rollNo}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ photo_base64: photoBase64, notes })
+    });
+    return safeParse(res, 'Failed to enroll student biometric face');
+  },
+
   async getAuditLogs(params = {}) {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE}/api/admin/audit-logs${query ? '?' + query : ''}`, {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
@@ -49,6 +49,17 @@ export default function AdminPortal({ user }) {
   const [newSemester, setNewSemester] = useState(6);
   const [newInitAtt, setNewInitAtt] = useState(85.0);
   const [creatingUser, setCreatingUser] = useState(false);
+  const [newStudentPhoto, setNewStudentPhoto] = useState(null);
+
+  // Admin Camera Capture & Biometric Enrollment Modal State
+  const [showFaceCaptureModal, setShowFaceCaptureModal] = useState(false);
+  const [targetStudentForFace, setTargetStudentForFace] = useState(null);
+  const [adminCameraActive, setAdminCameraActive] = useState(false);
+  const [capturedFacePhoto, setCapturedFacePhoto] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
+  const [enrollingFaceLoading, setEnrollingFaceLoading] = useState(false);
+  const adminVideoRef = useRef(null);
+  const adminCanvasRef = useRef(null);
 
   const fetchOverview = async () => {
     try {
@@ -141,6 +152,99 @@ export default function AdminPortal({ user }) {
     }
   };
 
+  // --- Admin Camera & Biometric Enrollment Controls ---
+  const startAdminCamera = async () => {
+    setCameraError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access requires HTTPS or localhost context.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      if (adminVideoRef.current) {
+        adminVideoRef.current.srcObject = stream;
+        adminVideoRef.current.play();
+      }
+      setAdminCameraActive(true);
+    } catch (err) {
+      console.error('Admin camera access error:', err);
+      setCameraError(err.message || 'Unable to access camera. Check device/browser permissions.');
+    }
+  };
+
+  const stopAdminCamera = () => {
+    if (adminVideoRef.current && adminVideoRef.current.srcObject) {
+      adminVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      adminVideoRef.current.srcObject = null;
+    }
+    setAdminCameraActive(false);
+  };
+
+  const captureAdminPhoto = () => {
+    if (!adminVideoRef.current) return;
+    const video = adminVideoRef.current;
+    const canvas = adminCanvasRef.current || document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    setCapturedFacePhoto(dataUrl);
+    stopAdminCamera();
+  };
+
+  const handleAdminFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCapturedFacePhoto(reader.result);
+      stopAdminCamera();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openFaceCaptureModal = (student) => {
+    setTargetStudentForFace(student);
+    setCapturedFacePhoto(null);
+    setCameraError(null);
+    setShowFaceCaptureModal(true);
+    setTimeout(() => {
+      startAdminCamera();
+    }, 200);
+  };
+
+  const closeFaceCaptureModal = () => {
+    stopAdminCamera();
+    setShowFaceCaptureModal(false);
+    setTargetStudentForFace(null);
+    setCapturedFacePhoto(null);
+    setCameraError(null);
+  };
+
+  const handleSaveEnrolledFace = async () => {
+    if (!targetStudentForFace || !capturedFacePhoto) return;
+    setEnrollingFaceLoading(true);
+    setCameraError(null);
+    try {
+      const res = await api.adminEnrollFace(
+        targetStudentForFace.roll_no,
+        capturedFacePhoto,
+        `Official admission face verified by Admin (${user?.name || 'Administrator'})`
+      );
+      setActionSuccess(res.message || `Official photo registered for ${targetStudentForFace.name}`);
+      setTimeout(() => setActionSuccess(null), 5000);
+      closeFaceCaptureModal();
+      await fetchUsers();
+      await fetchOverview();
+    } catch (err) {
+      setCameraError(err.message || 'Failed to extract face template. Please ensure front-facing pose and good lighting.');
+    } finally {
+      setEnrollingFaceLoading(false);
+    }
+  };
+
   // Delete User Account
   const handleDeleteUser = async (rollOrId, name, role) => {
     if (!window.confirm(`Are you sure you want to permanently delete ${role} account "${name}" (${rollOrId})?`)) {
@@ -220,10 +324,12 @@ export default function AdminPortal({ user }) {
         password: newPassword.trim(),
         department: newDept,
         semester: parseInt(newSemester) || 6,
-        initial_attendance_pct: parseFloat(newInitAtt) || 85.0
+        initial_attendance_pct: parseFloat(newInitAtt) || 85.0,
+        photo_base64: newStudentPhoto || null
       });
 
       setShowAddModal(false);
+      setNewStudentPhoto(null);
       setActionSuccess(`New ${newRole.toUpperCase()} account created for ${newName} (${newRoll}).`);
       setTimeout(() => setActionSuccess(null), 4000);
 
@@ -726,11 +832,22 @@ export default function AdminPortal({ user }) {
                         )}
                       </td>
                       <td className="py-3 px-3">
-                        {stu.has_registered_face ? (
-                          <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">ENROLLED</span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">NOT ENROLLED</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {stu.has_registered_face ? (
+                            <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">ENROLLED</span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">NOT ENROLLED</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openFaceCaptureModal(stu)}
+                            className="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition active:scale-95"
+                            title="Capture verified student photo using camera"
+                          >
+                            <Camera className="w-3 h-3 text-indigo-400" />
+                            <span>{stu.has_registered_face ? 'Retake' : 'Capture'}</span>
+                          </button>
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
                         <button
@@ -999,31 +1116,88 @@ export default function AdminPortal({ user }) {
               </div>
 
               {newRole === 'student' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-300 font-medium mb-1">Semester (Class)</label>
-                    <select
-                      value={newSemester}
-                      onChange={(e) => setNewSemester(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                    >
-                      {allSemesters.map(sem => (
-                        <option key={sem} value={sem}>Semester {sem}</option>
-                      ))}
-                    </select>
+                <>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-slate-300 font-medium text-[11px] flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Verified Admission Photo (Optional at creation)</span>
+                      </label>
+                      {newStudentPhoto && (
+                        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Photo Attached
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {newStudentPhoto ? (
+                        <div className="relative shrink-0">
+                          <img src={newStudentPhoto} alt="New Student" className="w-14 h-14 rounded-xl object-cover border border-purple-500/40" />
+                          <button
+                            type="button"
+                            onClick={() => setNewStudentPhoto(null)}
+                            className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5"
+                            title="Remove photo"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 shrink-0">
+                          <Camera className="w-5 h-5" />
+                          <span className="text-[8px] mt-0.5">No Photo</span>
+                        </div>
+                      )}
+                      <div className="space-y-1 flex-1">
+                        <label className="px-3 py-1.5 rounded-lg bg-indigo-600/25 hover:bg-indigo-600/35 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold flex items-center gap-1.5 w-fit cursor-pointer transition">
+                          <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Upload Photo / Capture</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="user"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = () => setNewStudentPhoto(reader.result);
+                              reader.readAsDataURL(file);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                        <p className="text-[10px] text-slate-400 leading-tight">Can also be captured with office webcam after creation via table.</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-slate-300 font-medium mb-1">Initial Att. %</label>
-                    <input
-                      type="number"
-                      min="20"
-                      max="100"
-                      value={newInitAtt}
-                      onChange={(e) => setNewInitAtt(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                    />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Semester (Class)</label>
+                      <select
+                        value={newSemester}
+                        onChange={(e) => setNewSemester(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                      >
+                        {allSemesters.map(sem => (
+                          <option key={sem} value={sem}>Semester {sem}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Initial Att. %</label>
+                      <input
+                        type="number"
+                        min="20"
+                        max="100"
+                        value={newInitAtt}
+                        onChange={(e) => setNewInitAtt(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                      />
+                    </div>
                   </div>
-                </div>
+                </>
               )}
 
               <div className="pt-2 flex gap-2">
@@ -1127,6 +1301,141 @@ export default function AdminPortal({ user }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Admin Camera Capture & Face Verification */}
+      {showFaceCaptureModal && targetStudentForFace && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="glass-panel w-full max-w-lg rounded-2xl p-6 border border-slate-700 shadow-2xl relative space-y-4">
+            <button
+              onClick={closeFaceCaptureModal}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header */}
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Enroll Verified Student Photo</h3>
+                  <p className="text-xs text-slate-400">
+                    Capture official admission photo for <strong className="text-white">{targetStudentForFace.name}</strong> ({targetStudentForFace.roll_no})
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Camera View or Captured Preview */}
+            <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center min-h-[280px]">
+              {adminCameraActive ? (
+                <div className="relative w-full h-[280px] bg-black">
+                  <video
+                    ref={adminVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+                  {/* Oval Face Guide */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className="w-48 h-60 rounded-full border-2 border-dashed border-purple-400/70 shadow-2xl flex items-center justify-center">
+                      <span className="text-[10px] text-purple-200/90 font-semibold bg-black/50 px-2 py-0.5 rounded-full mt-40">
+                        Align Face Here
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : capturedFacePhoto ? (
+                <div className="p-4 flex flex-col items-center gap-3">
+                  <div className="relative">
+                    <img
+                      src={capturedFacePhoto}
+                      alt="Captured Student Face"
+                      className="w-48 h-48 rounded-2xl object-cover border-2 border-purple-500 shadow-xl"
+                    />
+                    <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1 rounded-full border-2 border-slate-950">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <span className="text-xs text-emerald-400 font-semibold">Photo Ready for AI Biometric Enrollment</span>
+                </div>
+              ) : (
+                <div className="p-8 text-center space-y-3">
+                  <Camera className="w-12 h-12 text-slate-600 mx-auto" />
+                  <p className="text-xs text-slate-400">Camera preview inactive</p>
+                  <button
+                    type="button"
+                    onClick={startAdminCamera}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs"
+                  >
+                    Start Camera
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Error Message */}
+            {cameraError && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{cameraError}</span>
+              </div>
+            )}
+
+            {/* Controls */}
+            <div className="space-y-2 pt-1">
+              <div className="flex gap-2">
+                {adminCameraActive ? (
+                  <button
+                    type="button"
+                    onClick={captureAdminPhoto}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 transition active:scale-95"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Capture Frame</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startAdminCamera}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{capturedFacePhoto ? 'Retake Photo' : 'Open Camera'}</span>
+                  </button>
+                )}
+
+                <label className="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition">
+                  <Download className="w-3.5 h-3.5 rotate-180 text-slate-400" />
+                  <span>Upload File</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAdminFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {capturedFacePhoto && (
+                <button
+                  type="button"
+                  onClick={handleSaveEnrolledFace}
+                  disabled={enrollingFaceLoading}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-95 disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{enrollingFaceLoading ? 'Extracting & Encrypting Template...' : 'Save & Verify Official Biometrics'}</span>
+                </button>
+              )}
+            </div>
+
+            <canvas ref={adminCanvasRef} className="hidden" />
           </div>
         </div>
       )}
