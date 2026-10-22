@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
@@ -60,6 +60,7 @@ export default function AdminPortal({ user }) {
   const [enrollingFaceLoading, setEnrollingFaceLoading] = useState(false);
   const adminVideoRef = useRef(null);
   const adminCanvasRef = useRef(null);
+  const adminStreamRef = useRef(null);
 
   const fetchOverview = async () => {
     try {
@@ -153,43 +154,83 @@ export default function AdminPortal({ user }) {
   };
 
   // --- Admin Camera & Biometric Enrollment Controls ---
+  const attachStreamToVideo = useCallback((videoEl) => {
+    adminVideoRef.current = videoEl;
+    if (videoEl && adminStreamRef.current) {
+      if (videoEl.srcObject !== adminStreamRef.current) {
+        videoEl.srcObject = adminStreamRef.current;
+      }
+      videoEl.muted = true;
+      videoEl.setAttribute('playsinline', 'true');
+      videoEl.play().catch(e => console.warn('Video play catch:', e));
+    }
+  }, []);
+
   const startAdminCamera = async () => {
     setCameraError(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera access requires HTTPS or localhost context.');
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-      });
-      if (adminVideoRef.current) {
-        adminVideoRef.current.srcObject = stream;
-        adminVideoRef.current.play();
+      if (adminStreamRef.current) {
+        adminStreamRef.current.getTracks().forEach(t => t.stop());
+        adminStreamRef.current = null;
       }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+      adminStreamRef.current = stream;
       setAdminCameraActive(true);
+
+      const video = adminVideoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.muted = true;
+        video.setAttribute('playsinline', 'true');
+        try {
+          await video.play();
+        } catch (err) {
+          console.warn('Auto-play error:', err);
+        }
+      }
     } catch (err) {
       console.error('Admin camera access error:', err);
       setCameraError(err.message || 'Unable to access camera. Check device/browser permissions.');
+      setAdminCameraActive(false);
     }
   };
 
   const stopAdminCamera = () => {
-    if (adminVideoRef.current && adminVideoRef.current.srcObject) {
-      adminVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
+    if (adminStreamRef.current) {
+      adminStreamRef.current.getTracks().forEach(t => t.stop());
+      adminStreamRef.current = null;
+    }
+    if (adminVideoRef.current) {
       adminVideoRef.current.srcObject = null;
     }
     setAdminCameraActive(false);
   };
 
   const captureAdminPhoto = () => {
-    if (!adminVideoRef.current) return;
     const video = adminVideoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setCameraError('Camera stream is not ready yet. Please wait a moment and try again.');
+      return;
+    }
     const canvas = adminCanvasRef.current || document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
+    // Mirror horizontally to match mirrored user preview
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     setCapturedFacePhoto(dataUrl);
     stopAdminCamera();
   };
@@ -210,9 +251,6 @@ export default function AdminPortal({ user }) {
     setCapturedFacePhoto(null);
     setCameraError(null);
     setShowFaceCaptureModal(true);
-    setTimeout(() => {
-      startAdminCamera();
-    }, 200);
   };
 
   const closeFaceCaptureModal = () => {
@@ -222,6 +260,24 @@ export default function AdminPortal({ user }) {
     setCapturedFacePhoto(null);
     setCameraError(null);
   };
+
+  // Auto-start camera when modal is opened, stop when closed
+  useEffect(() => {
+    if (showFaceCaptureModal && !capturedFacePhoto) {
+      startAdminCamera();
+    } else if (!showFaceCaptureModal) {
+      stopAdminCamera();
+    }
+  }, [showFaceCaptureModal]);
+
+  // Clean up media tracks on unmount
+  useEffect(() => {
+    return () => {
+      if (adminStreamRef.current) {
+        adminStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   const handleSaveEnrolledFace = async () => {
     if (!targetStudentForFace || !capturedFacePhoto) return;
@@ -1332,49 +1388,59 @@ export default function AdminPortal({ user }) {
             </div>
 
             {/* Camera View or Captured Preview */}
-            <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center min-h-[280px]">
-              {adminCameraActive ? (
-                <div className="relative w-full h-[280px] bg-black">
-                  <video
-                    ref={adminVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover scale-x-[-1]"
-                  />
-                  {/* Oval Face Guide */}
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className="w-48 h-60 rounded-full border-2 border-dashed border-purple-400/70 shadow-2xl flex items-center justify-center">
-                      <span className="text-[10px] text-purple-200/90 font-semibold bg-black/50 px-2 py-0.5 rounded-full mt-40">
-                        Align Face Here
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : capturedFacePhoto ? (
+            <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center min-h-[300px]">
+              {capturedFacePhoto ? (
                 <div className="p-4 flex flex-col items-center gap-3">
                   <div className="relative">
                     <img
                       src={capturedFacePhoto}
                       alt="Captured Student Face"
-                      className="w-48 h-48 rounded-2xl object-cover border-2 border-purple-500 shadow-xl"
+                      className="w-52 h-52 rounded-2xl object-cover border-2 border-purple-500 shadow-xl"
                     />
-                    <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1 rounded-full border-2 border-slate-950">
+                    <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-slate-950 shadow-lg">
                       <CheckCircle2 className="w-4 h-4" />
                     </div>
                   </div>
                   <span className="text-xs text-emerald-400 font-semibold">Photo Ready for AI Biometric Enrollment</span>
                 </div>
               ) : (
-                <div className="p-8 text-center space-y-3">
-                  <Camera className="w-12 h-12 text-slate-600 mx-auto" />
-                  <p className="text-xs text-slate-400">Camera preview inactive</p>
-                  <button
-                    type="button"
-                    onClick={startAdminCamera}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs"
-                  >
-                    Start Camera
-                  </button>
+                <div className="relative w-full h-[300px] bg-black flex items-center justify-center">
+                  <video
+                    ref={attachStreamToVideo}
+                    autoPlay
+                    playsInline
+                    muted
+                    onLoadedMetadata={(e) => {
+                      e.currentTarget.play().catch(err => console.warn('Play error:', err));
+                    }}
+                    className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${adminCameraActive ? 'opacity-100' : 'opacity-0'}`}
+                  />
+
+                  {/* Oval Face Guide */}
+                  {adminCameraActive && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      <div className="w-48 h-60 rounded-full border-2 border-dashed border-purple-400/80 shadow-2xl flex items-center justify-center">
+                        <span className="text-[10px] text-purple-200/90 font-semibold bg-black/60 px-2.5 py-0.5 rounded-full mt-40">
+                          Align Face Here
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inactive state fallback */}
+                  {!adminCameraActive && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-950">
+                      <Camera className="w-12 h-12 text-slate-600 mx-auto" />
+                      <p className="text-xs text-slate-400">Camera preview inactive</p>
+                      <button
+                        type="button"
+                        onClick={startAdminCamera}
+                        className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition"
+                      >
+                        Start Camera
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
