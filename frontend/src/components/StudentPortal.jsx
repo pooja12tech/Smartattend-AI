@@ -36,6 +36,7 @@ export default function StudentPortal({ user }) {
   const [countdown, setCountdown] = useState(7);
   const [blinkStatus, setBlinkStatus] = useState('ALIGNING'); // 'ALIGNING' | 'WAITING_BLINK' | 'BLINK_DETECTED' | 'CAPTURED'
   const [blinkFlash, setBlinkFlash] = useState(false);
+  const [eyeClosingFeedback, setEyeClosingFeedback] = useState(false);
   const videoRef = useRef(null);
   const countdownTimerRef = useRef(null);
   const blinkAnalysisRef = useRef(null);
@@ -155,6 +156,7 @@ export default function StudentPortal({ user }) {
     }
     setCameraActive(false);
     setBlinkFlash(false);
+    setEyeClosingFeedback(false);
   };
 
   // Close & Reset Attendance Modal
@@ -168,6 +170,7 @@ export default function StudentPortal({ user }) {
     setCapturedLocation(null);
     setBlinkStatus('ALIGNING');
     setBlinkFlash(false);
+    setEyeClosingFeedback(false);
   };
 
   // Open Attendance Flow (Step 1: Scan QR)
@@ -425,65 +428,105 @@ export default function StudentPortal({ user }) {
         videoRef.current.srcObject = stream;
       }
 
-      // Initialize off-screen analysis canvas
+      // Initialize off-screen analysis canvas (160x160 for high precision & fast processing)
       if (!blinkCanvasRef.current) {
         blinkCanvasRef.current = document.createElement('canvas');
-        blinkCanvasRef.current.width = 120;
-        blinkCanvasRef.current.height = 120;
+        blinkCanvasRef.current.width = 160;
+        blinkCanvasRef.current.height = 160;
       }
 
       let framesCalibrated = 0;
-      let baselineDarkCount = 0;
-      let eyesClosedFrames = 0;
+      let baselineScore = 0;
+      let eyesClosedCounter = 0;
       let blinkFired = false;
+      let minClosedRatio = 1.0;
 
-      // Real-time eye blink analyzer: runs every 80ms
+      // Helper function to evaluate contrast (standard deviation) and vertical edge gradients in an eye patch
+      const computeEyePatchMetrics = (ctx, x, y, w, h) => {
+        const imgData = ctx.getImageData(x, y, w, h);
+        const data = imgData.data;
+        const count = w * h;
+        const lumas = new Float32Array(count);
+        let sum = 0;
+        let sumSq = 0;
+
+        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+          const l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          lumas[p] = l;
+          sum += l;
+          sumSq += l * l;
+        }
+
+        const mean = sum / count;
+        const variance = Math.max(0, (sumSq / count) - (mean * mean));
+        const stdDev = Math.sqrt(variance);
+
+        let vGrad = 0;
+        for (let row = 1; row < h - 1; row++) {
+          const rOffset = row * w;
+          const up = (row - 1) * w;
+          const down = (row + 1) * w;
+          for (let col = 0; col < w; col++) {
+            vGrad += Math.abs(lumas[down + col] - lumas[up + col]);
+          }
+        }
+        const gradScore = vGrad / (w * Math.max(1, h - 2));
+
+        return stdDev + (gradScore * 1.5);
+      };
+
+      // Real-time eye blink analyzer: runs every 50ms (~20 FPS)
       blinkAnalysisRef.current = setInterval(() => {
         if (blinkFired) return;
         const video = videoRef.current;
         if (!video || video.readyState < 2) return;
 
+        const W = 160;
+        const H = 160;
         const canvas = blinkCanvasRef.current;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(video, 0, 0, 120, 120);
 
-        // Eye region bounding band in oval guide: x: 30% to 70% (36 to 84), y: 34% to 54% (40 to 65)
-        const sx = 36, sy = 40, sw = 48, sh = 25;
-        const imgData = ctx.getImageData(sx, sy, sw, sh);
-        const data = imgData.data;
+        // Centered square crop matching the camera's circular framing guide exactly
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        const minDim = Math.min(vw, vh);
+        const vx = (vw - minDim) / 2;
+        const vy = (vh - minDim) / 2;
+        ctx.drawImage(video, vx, vy, minDim, minDim, 0, 0, W, H);
 
-        let darkCount = 0;
-        const totalPixels = data.length / 4;
+        // Analyze Left Eye (x: 36..72, y: 50..82) and Right Eye (x: 88..124, y: 50..82)
+        const leftScore = computeEyePatchMetrics(ctx, 36, 50, 36, 32);
+        const rightScore = computeEyePatchMetrics(ctx, 88, 50, 36, 32);
+        const combinedScore = (leftScore + rightScore) / 2;
+        const minScore = Math.min(leftScore, rightScore);
 
-        for (let i = 0; i < data.length; i += 4) {
-          const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          if (luma < 68) {
-            darkCount++;
-          }
-        }
-
-        const darkRatio = darkCount / totalPixels;
-
-        // Phase 1: Calibration (first 4 frames)
-        if (framesCalibrated < 4) {
+        // Phase 1: Rapid calibration (first 6 frames, ~300ms)
+        if (framesCalibrated < 6) {
           framesCalibrated++;
-          baselineDarkCount = (baselineDarkCount * (framesCalibrated - 1) + darkRatio) / framesCalibrated;
-          if (framesCalibrated >= 4) {
+          baselineScore = (baselineScore * (framesCalibrated - 1) + combinedScore) / framesCalibrated;
+          if (framesCalibrated >= 6) {
             setBlinkStatus('WAITING_BLINK');
           }
           return;
         }
 
-        // Phase 2: Detect Eyes Closed (Blink Ingress)
-        // When eyes close, dark pupil & iris pixels drop by >= 35% compared to open eyes baseline
-        const isClosed = darkRatio < (baselineDarkCount * 0.65) || darkRatio < 0.025;
+        // Phase 2: Detect Eyes Closing / Closed
+        // When eyes close, contrast and vertical edge gradients drop significantly (>= 22% drop)
+        const isClosed = (combinedScore < (baselineScore * 0.78)) || (minScore < (baselineScore * 0.70));
 
         if (isClosed) {
-          eyesClosedFrames++;
+          eyesClosedCounter++;
+          const ratio = combinedScore / (baselineScore || 1);
+          if (ratio < minClosedRatio) {
+            minClosedRatio = ratio;
+          }
+          setEyeClosingFeedback(true);
         } else {
+          setEyeClosingFeedback(false);
+
           // Phase 3: Detect Eyes Reopened (Blink Egress)
-          // A natural human blink lasts between 1 to 5 frames (80ms to 400ms)
-          if (eyesClosedFrames >= 1 && eyesClosedFrames <= 5 && !blinkFired) {
+          // A natural human blink lasts between 1 and 9 frames (50ms to 450ms)
+          if (eyesClosedCounter >= 1 && eyesClosedCounter <= 9 && minClosedRatio <= 0.82 && !blinkFired) {
             blinkFired = true;
             setBlinkStatus('BLINK_DETECTED');
             setBlinkFlash(true);
@@ -500,16 +543,18 @@ export default function StudentPortal({ user }) {
             // Auto-capture immediately upon reopening eyes!
             setTimeout(() => {
               captureSelfieAndProceed(tokenOverride, sessionOverride);
-            }, 180);
+            }, 130);
             return;
           }
-          eyesClosedFrames = 0;
-          // Slowly adapt baseline for dynamic room lighting
-          baselineDarkCount = baselineDarkCount * 0.9 + darkRatio * 0.1;
-        }
-      }, 80);
 
-      // Fallback 8-second countdown if room lighting is too dim or user is wearing dark lenses
+          eyesClosedCounter = 0;
+          minClosedRatio = 1.0;
+          // Smoothly adapt baseline to ambient lighting drift
+          baselineScore = baselineScore * 0.95 + combinedScore * 0.05;
+        }
+      }, 50);
+
+      // Fallback 8-second countdown if user is wearing dark lenses or in extreme lighting
       let count = 8;
       countdownTimerRef.current = setInterval(() => {
         count -= 1;
@@ -529,7 +574,7 @@ export default function StudentPortal({ user }) {
             setBlinkFlash(true);
             setTimeout(() => {
               captureSelfieAndProceed(tokenOverride, sessionOverride);
-            }, 150);
+            }, 130);
           }
         }
       }, 1000);
@@ -1452,10 +1497,17 @@ export default function StudentPortal({ user }) {
                       </>
                     )}
                     {blinkStatus === 'WAITING_BLINK' && (
-                      <>
-                        <span className="text-base">😉</span>
-                        <span>Blink Eyes to Auto-Snap!</span>
-                      </>
+                      eyeClosingFeedback ? (
+                        <>
+                          <span className="text-base animate-bounce">👀</span>
+                          <span className="text-emerald-300 font-extrabold animate-pulse">Blink detected! Open to snap...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-base">😉</span>
+                          <span>Blink Eyes to Auto-Snap!</span>
+                        </>
+                      )
                     )}
                     {blinkStatus === 'BLINK_DETECTED' && (
                       <>
@@ -1479,10 +1531,10 @@ export default function StudentPortal({ user }) {
                   <button
                     type="button"
                     onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition flex items-center justify-center gap-1.5 border border-slate-700"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 hover:from-slate-700 hover:to-slate-600 text-white text-xs font-semibold transition flex items-center justify-center gap-2 border border-slate-600 shadow-md active:scale-95"
                   >
-                    <Camera className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Snap Manually ({countdown}s fallback)</span>
+                    <Camera className="w-4 h-4 text-brand-400" />
+                    <span>Snap Photo Manually ({countdown}s auto-fallback)</span>
                   </button>
                 </div>
               </div>
