@@ -94,11 +94,11 @@ export const api = {
     return safeParse(res, 'Face enrollment failed');
   },
 
-  async startSession({ subject_name, class_lat, class_lng }) {
+  async startSession({ subject_name, class_lat, class_lng, geofence_radius_meters = 100 }) {
     const res = await fetch(`${API_BASE}/api/sessions/start`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ subject_name, class_lat, class_lng })
+      body: JSON.stringify({ subject_name, class_lat, class_lng, geofence_radius_meters })
     });
     return safeParse(res, 'Failed to start session');
   },
@@ -183,6 +183,14 @@ export const api = {
     return safeParse(res, 'Failed to fetch admin overview');
   },
 
+  async getAdminUsers(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const res = await fetch(`${API_BASE}/api/admin/users${query ? '?' + query : ''}`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch users');
+  },
+
   async adminCreateUser(userData) {
     const res = await fetch(`${API_BASE}/api/admin/users`, {
       method: 'POST',
@@ -190,6 +198,14 @@ export const api = {
       body: JSON.stringify(userData)
     });
     return safeParse(res, 'Failed to create user');
+  },
+
+  async adminDeleteUser(rollOrId) {
+    const res = await fetch(`${API_BASE}/api/admin/users/${rollOrId}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to delete user');
   },
 
   async adminResetDevice(rollNo, reason = 'Hardware device lock reset by administrator') {
@@ -208,6 +224,15 @@ export const api = {
       body: JSON.stringify({ reason })
     });
     return safeParse(res, 'Failed to reset biometric template');
+  },
+
+  async adminEnrollFace(rollNo, photoBase64, notes = 'Official face reference captured at registrar desk') {
+    const res = await fetch(`${API_BASE}/api/admin/enroll-face/${rollNo}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ photo_base64: photoBase64, notes })
+    });
+    return safeParse(res, 'Failed to enroll student biometric face');
   },
 
   async getAuditLogs(params = {}) {

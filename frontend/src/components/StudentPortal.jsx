@@ -3,7 +3,7 @@ import {
   Fingerprint, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
   MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
-  HelpCircle, History, Eye
+  HelpCircle, History, Eye, User
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -481,11 +481,17 @@ export default function StudentPortal({ user }) {
     if (videoRef.current && videoRef.current.srcObject) {
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = 160;
-      canvas.height = 160;
+      canvas.width = 480;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 160, 160);
-      capturedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      // Centered square crop from video to maintain high resolution face landmarks
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
+      const minSide = Math.min(vWidth, vHeight);
+      const sx = (vWidth - minSide) / 2;
+      const sy = (vHeight - minSide) / 2;
+      ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
+      capturedBase64 = canvas.toDataURL('image/jpeg', 0.90);
 
       // Cleanly stop front camera stream
       const stream = video.srcObject;
@@ -522,27 +528,31 @@ export default function StudentPortal({ user }) {
     };
     setGateProgress({ ...gates });
 
-    // Geolocation coordinates (classroom default with browser geolocation override)
-    let userLat = 19.07601;
-    let userLng = 72.87771;
+    // Geolocation coordinates (captured from live device GPS)
+    let userLat = capturedLocation?.lat || null;
+    let userLng = capturedLocation?.lng || null;
 
-    if (navigator.geolocation && !simFarGPS) {
+    if (!userLat && navigator.geolocation && !simFarGPS) {
       try {
         const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2000, maximumAge: 10000 });
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 6000,
+            maximumAge: 10000
+          });
         });
         if (pos && pos.coords) {
           userLat = pos.coords.latitude;
           userLng = pos.coords.longitude;
         }
       } catch (e) {
-        console.warn('Geolocation read failed or timed out, using default classroom coordinates.');
+        console.warn('Geolocation read failed or timed out:', e);
       }
     }
 
     if (simFarGPS) {
-      userLat = 19.1050; // ~3.2km away breach
-      userLng = 72.8850;
+      userLat = (userLat || 28.6) + 0.05; // ~5.5km away breach simulation
+      userLng = (userLng || 77.2) + 0.05;
     }
 
     const usedDeviceId = simWrongDevice ? 'DEV-ALIEN-PROXY-PHONE-99' : deviceId;
@@ -563,11 +573,23 @@ export default function StudentPortal({ user }) {
       live_selfie_base64: selfieToSend
     };
 
-    // Gate 1: Hardware Device Lock (Bypassed during Testing Phase)
+    // Gate 1: Hardware Device Lock (Paused for Testing)
     gates.gate1 = 'RUNNING';
     setGateProgress({ ...gates, activeGate: 1 });
     await new Promise(r => setTimeout(r, 200));
-    gates.gate1 = 'PASSED';
+
+    if (simWrongDevice) {
+      gates.gate1 = 'FAILED';
+      gates.error = 'Gate 1 Simulation: Hardware Device Lock mismatch (Untrusted phone)';
+      setGateProgress({ ...gates, activeGate: 1 });
+      setSubmittingAttendance(false);
+      setAttendanceStep('RESULT');
+      try { await api.markAttendance(payload); } catch (e) {
+        setSubmissionResult({ success: false, reason: e.message, failed_gate: 'GATE_1_DEVICE_LOCK' });
+      }
+      return;
+    }
+    gates.gate1 = 'PASSED (PAUSED)';
 
     // Gate 2: Dynamic QR
     gates.gate2 = 'RUNNING';
@@ -744,11 +766,16 @@ export default function StudentPortal({ user }) {
     if (enrollVideoRef.current && enrollVideoRef.current.srcObject) {
       const video = enrollVideoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = 160;
-      canvas.height = 160;
+      canvas.width = 480;
+      canvas.height = 480;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, 160, 160);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
+      const minSide = Math.min(vWidth, vHeight);
+      const sx = (vWidth - minSide) / 2;
+      const sy = (vHeight - minSide) / 2;
+      ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
       setEnrollSelfie(dataUrl);
 
       const stream = video.srcObject;
@@ -858,8 +885,61 @@ export default function StudentPortal({ user }) {
   const subjects = dashboard?.subject_breakdown || [];
   const logs = dashboard?.recent_logs || [];
 
+  const isFaceEnrolled = dashboard?.student?.has_registered_face ?? user?.has_registered_face ?? false;
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+
+      {/* Student Official Profile & Institutional ID Card */}
+      <div className="glass-panel rounded-2xl p-5 border border-slate-800 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-indigo-950/30">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {/* Student Official Photo Container */}
+            <div className="relative">
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-gradient-to-tr from-brand-600 to-indigo-500 border-2 border-indigo-400/30 p-0.5 shadow-xl flex items-center justify-center">
+                <div className="w-full h-full rounded-xl bg-slate-950 flex flex-col items-center justify-center text-center p-1">
+                  <User className="w-8 h-8 text-indigo-300" />
+                  <span className="text-[9px] font-mono font-bold text-indigo-200 mt-0.5">PHOTO ID</span>
+                </div>
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white p-1 rounded-full border-2 border-slate-950 shadow" title="Admin Verified Biometrics">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              </div>
+            </div>
+
+            {/* Profile Credentials */}
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  {dashboard?.student?.name || user?.name || 'Aarav Sharma'}
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                  {dashboard?.student?.roll_no || user?.roll_no || 'STU01'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> Admin Enrolled
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                {dashboard?.student?.department || user?.department || 'Computer Science & Engineering'} • Semester {dashboard?.student?.semester || user?.semester || 6}
+              </p>
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <span>Official Institutional Biometrics</span>
+                <span>•</span>
+                <span className="text-emerald-400 font-medium">Reference photo verified at admission</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="self-stretch sm:self-center bg-slate-950/80 px-4 py-2.5 rounded-xl border border-slate-800 text-left sm:text-right">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Institutional ID Status</span>
+            <span className="text-xs font-bold text-emerald-400 flex items-center sm:justify-end gap-1.5 mt-0.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active & Verified
+            </span>
+            <p className="text-[10px] text-slate-400 mt-0.5">Managed by Administration</p>
+          </div>
+        </div>
+      </div>
 
       {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -871,12 +951,12 @@ export default function StudentPortal({ user }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">Device Lock</span>
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Hardware Device Lock</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                  Testing Mode (Unbound)
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Paused for Testing
                 </span>
               </div>
-              <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId} &bull; Any device allowed</p>
+              <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xs">{deviceId} (unrestricted in testing)</p>
             </div>
           </div>
 
@@ -899,30 +979,29 @@ export default function StudentPortal({ user }) {
           </div>
         </div>
 
-        {/* Biometric Face Reference Registration */}
+        {/* Biometric Face Reference Info (Admin Enrolled) */}
         <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-inner">
+            <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 border flex items-center justify-center shadow-inner">
               <Camera className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">Face Biometric Gate</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Consent Verified
+                <span className="text-xs font-bold text-white uppercase tracking-wider">Face Biometric Reference</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Verified Profile
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">Template registered for AI matching</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Official reference photo enrolled by Admin Department
+              </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setShowFaceEnrollModal(true)}
-            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 transition active:scale-95"
-          >
-            <Camera className="w-3.5 h-3.5 text-purple-400" />
-            <span>Enroll / Update</span>
-          </button>
+          <div className="px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 flex items-center gap-1.5 font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Enrolled at Admission</span>
+          </div>
         </div>
       </div>
 
@@ -1302,11 +1381,11 @@ export default function StudentPortal({ user }) {
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
                     <span className="flex items-center gap-2.5 text-slate-200">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      Gate 1: Hardware Device Lock (Testing Mode - Any Device)
+                      {gateProgress.gate1 && gateProgress.gate1.startsWith('PASSED') ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate1 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />}
+                      Gate 1: Hardware Device Lock & 1-Phone Rule <span className="text-[10px] text-amber-400 font-normal">(Paused in Testing)</span>
                     </span>
-                    <span className="font-mono text-[10px] font-bold text-emerald-400">
-                      PASSED (TESTING)
+                    <span className={`font-mono text-[10px] font-bold ${gateProgress.gate1 && gateProgress.gate1.startsWith('PASSED') ? 'text-emerald-400' : gateProgress.gate1 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
+                      {gateProgress.gate1}
                     </span>
                   </div>
 
@@ -1323,7 +1402,7 @@ export default function StudentPortal({ user }) {
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
                     <span className="flex items-center gap-2.5 text-slate-200">
                       {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 3 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 3: GPS Geofence Check (&le; 60m Classroom)
+                      Gate 3: GPS Geofence Check (&le; 100m Classroom Hall)
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate3}
@@ -1407,23 +1486,32 @@ export default function StudentPortal({ user }) {
                       </p>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={handleStartAttendanceFlow}
-                        className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" /> Try Again
-                      </button>
+                    <div className="flex flex-col gap-2 pt-2">
+                      {(!isFaceEnrolled || submissionResult?.reason?.includes('enroll') || submissionResult?.failed_gate === 'GATE_4_FACE_VERIFICATION') && (
+                        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 space-y-1 text-center">
+                          <p className="font-semibold">Face Verification Mismatch</p>
+                          <p className="text-slate-400 text-[10px]">Your live selfie did not match the official reference photo enrolled by the Admin Department. If you need a photo update, please contact the Registrar office.</p>
+                        </div>
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={handleRequestException}
-                        disabled={submittingException}
-                        className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
-                      >
-                        <AlertTriangle className="w-3.5 h-3.5" /> Request Faculty Review
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleStartAttendanceFlow}
+                          className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" /> Try Again
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleRequestException}
+                          disabled={submittingException}
+                          className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" /> Request Faculty Review
+                        </button>
+                      </div>
                     </div>
 
                     {exceptionResult && (

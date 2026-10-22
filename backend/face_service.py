@@ -20,38 +20,31 @@ class FaceQualityError(Exception):
 _face_app = None
 _fernet_cipher = None
 
+import base64
+import hashlib
+
 def get_fernet() -> Fernet:
     """
     Returns Fernet cipher for encrypting face embeddings at rest.
-    Guarantees reliable operation across local development, testing, and cloud deployments (e.g. Render):
-    1. If FACE_EMBED_KEY is set and valid, uses it directly.
-    2. If FACE_EMBED_KEY is a custom passphrase (32+ chars), deterministically derives a valid 32-byte Fernet key.
-    3. If FACE_EMBED_KEY is missing, derives a stable key from JWT_SECRET if available.
-    4. If neither is available, generates a valid Fernet key with a non-fatal warning so the server starts cleanly.
+    Falls back to a deterministic key derived from JWT_SECRET if FACE_EMBED_KEY is not explicitly set.
     """
     global _fernet_cipher
     if _fernet_cipher is None:
         key = os.getenv("FACE_EMBED_KEY", "").strip()
-        jwt_secret = os.getenv("JWT_SECRET", "").strip()
-        env = os.getenv("ENVIRONMENT", "").strip().lower()
-
-        if key and len(key) >= 32:
-            try:
-                _fernet_cipher = Fernet(key.encode() if isinstance(key, str) else key)
-            except Exception:
-                # Key was provided but is a raw string/passphrase rather than urlsafe-b64: derive valid 32-byte key
-                derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
-                _fernet_cipher = Fernet(derived)
-        elif jwt_secret and len(jwt_secret) >= 16:
-            # Deterministically derive from JWT_SECRET so restart persistence is maintained without requiring a separate env var
-            derived = base64.urlsafe_b64encode(hashlib.sha256(f"smartattend_face_embed_salt:{jwt_secret}".encode()).digest())
-            _fernet_cipher = Fernet(derived)
-            print("[FaceService] FACE_EMBED_KEY not explicitly set; derived stable Fernet encryption key from JWT_SECRET.")
+        if not key or len(key) < 32:
+            secret = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY") or "smartattend-ai-secure-encryption-seed-2026"
+            derived_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+            _fernet_cipher = Fernet(derived_key)
         else:
-            # Ephemeral fallback for local testing or unconfigured dev environments
-            _fernet_cipher = Fernet(Fernet.generate_key())
-            if env != "testing":
-                print("[FaceService WARNING] Neither FACE_EMBED_KEY nor JWT_SECRET is configured. Generated an ephemeral Fernet key. Set FACE_EMBED_KEY in production to persist encryption keys across restarts.")
+            try:
+                if len(key) == 44 and key.endswith("="):
+                    _fernet_cipher = Fernet(key.encode() if isinstance(key, str) else key)
+                else:
+                    derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
+                    _fernet_cipher = Fernet(derived_key)
+            except Exception:
+                derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
+                _fernet_cipher = Fernet(derived_key)
 
     return _fernet_cipher
 
@@ -96,7 +89,7 @@ def extract_embedding(image_bytes: bytes) -> np.ndarray:
       - 'NO_FACE': Exactly zero faces detected.
       - 'MULTIPLE_FACES': More than one face detected.
       - 'LOW_DETECTION_CONFIDENCE': Face detection score < FACE_MIN_DET_SCORE.
-      - 'FACE_TOO_SMALL': Face bounding box min dimension < 80px.
+      - 'FACE_TOO_SMALL': Face bounding box min dimension < min_dim.
     """
     if not image_bytes:
         raise FaceQualityError("INVALID_IMAGE", "Empty image payload.")
@@ -109,16 +102,28 @@ def extract_embedding(image_bytes: bytes) -> np.ndarray:
     # 1. Blurriness Check (Laplacian Variance)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-    min_blur = float(os.getenv("FACE_MIN_BLUR_SCORE", "40.0"))
+    min_blur = float(os.getenv("FACE_MIN_BLUR_SCORE", "12.0"))
     if blur_score < min_blur:
         raise FaceQualityError(
             "FACE_IMAGE_BLURRY",
-            f"Image is too blurry (sharpness score {blur_score:.1f} < {min_blur:.1f}). Please hold the phone steady."
+            f"Image is too blurry (sharpness score {blur_score:.1f} < {min_blur:.1f}). Please hold the device steady."
         )
 
     # 2. Face Detection & Feature Extraction
     app = get_face_app()
     faces = app.get(img)
+
+    # CLAHE contrast enhancement fallback if no face detected in dim lighting
+    if len(faces) == 0:
+        try:
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            enhanced = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
+            faces = app.get(enhanced)
+        except Exception:
+            pass
 
     if len(faces) == 0:
         raise FaceQualityError("NO_FACE", "No face detected in the image. Please position your face inside the circle.")
@@ -132,7 +137,7 @@ def extract_embedding(image_bytes: bytes) -> np.ndarray:
     face = faces[0]
 
     # 3. Detection Confidence Score Check
-    min_det_score = float(os.getenv("FACE_MIN_DET_SCORE", "0.60"))
+    min_det_score = float(os.getenv("FACE_MIN_DET_SCORE", "0.40"))
     det_score = float(getattr(face, "det_score", 0.0))
     if det_score < min_det_score:
         raise FaceQualityError(
@@ -140,16 +145,16 @@ def extract_embedding(image_bytes: bytes) -> np.ndarray:
             f"Face detection confidence ({det_score:.2f}) is below minimum threshold ({min_det_score:.2f}). Ensure adequate lighting."
         )
 
-    # 4. Face Bounding Box Resolution Check (min 80px)
+    # 4. Face Bounding Box Resolution Check (min 50px)
     bbox = getattr(face, "bbox", None)
     if bbox is not None and len(bbox) >= 4:
         w = float(bbox[2] - bbox[0])
         h = float(bbox[3] - bbox[1])
         min_dim = min(w, h)
-        if min_dim < 80.0:
+        if min_dim < 50.0:
             raise FaceQualityError(
                 "FACE_TOO_SMALL",
-                f"Face image is too small ({int(min_dim)}px < 80px). Please move the camera closer to your face."
+                f"Face image is too small ({int(min_dim)}px < 50px). Please move the camera closer to your face."
             )
 
     # 5. Extract Normalized Float32 Embedding Vector
