@@ -554,17 +554,22 @@ class LoginRequest(BaseModel):
 
 class SessionStartRequest(BaseModel):
     subject_name: str = Field(..., example="CS301 - Operating Systems")
-    class_lat: float = Field(..., example=19.0760)
-    class_lng: float = Field(..., example=72.8777)
+    class_lat: Optional[float] = Field(None, example=19.0760)
+    class_lng: Optional[float] = Field(None, example=72.8777)
     subject_id: Optional[str] = None
-    geofence_radius_meters: Optional[int] = 100
+    geofence_radius_meters: Optional[int] = 150
+
+class SessionLocationUpdateRequest(BaseModel):
+    class_lat: float = Field(..., example=19.0760, description="Faculty live latitude")
+    class_lng: float = Field(..., example=72.8777, description="Faculty live longitude")
+    geofence_radius_meters: Optional[int] = 150
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
     qr_token: str = Field(..., example="CS301-SEC-A.1713400000.a1b2c3d4e5f6")
     device_id: str = Field(..., example="DEV-AARAV-PHONE-01")
-    user_lat: float = Field(..., example=19.07602)
-    user_lng: float = Field(..., example=72.87768)
+    user_lat: Optional[float] = Field(None, example=19.07602)
+    user_lng: Optional[float] = Field(None, example=72.87768)
     live_selfie_base64: str = Field(..., description="Base64 encoded live camera capture")
 
 class StudentExceptionRequest(BaseModel):
@@ -843,7 +848,7 @@ def start_session(
         class_lat=req.class_lat,
         class_lng=req.class_lng,
         secret_seed=secret_seed,
-        geofence_radius_meters=req.geofence_radius_meters or 100,
+        geofence_radius_meters=req.geofence_radius_meters or 150,
         status="ACTIVE",
         started_at=now,
         created_at=now
@@ -863,7 +868,7 @@ def start_session(
             "class_lat": req.class_lat,
             "class_lng": req.class_lng,
             "status": "ACTIVE",
-            "geofence_radius_meters": req.geofence_radius_meters or 100,
+            "geofence_radius_meters": req.geofence_radius_meters or 150,
             "started_at": now.isoformat()
         }
     }
@@ -871,6 +876,8 @@ def start_session(
 @app.get("/api/sessions/{session_id}/qr")
 def get_session_qr(
     session_id: str,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
     current_user: User = Depends(require_faculty_or_admin),
     db: Session = Depends(get_pg_db)
 ):
@@ -897,6 +904,15 @@ def get_session_qr(
             detail=f"Lecture session is currently {session.status}. Attendance is closed."
         )
 
+    # If faculty sends live GPS coordinates during dynamic polling, update session location live
+    if lat is not None and lng is not None:
+        try:
+            session.class_lat = float(lat)
+            session.class_lng = float(lng)
+            db.commit()
+        except Exception as e:
+            print(f"[Dynamic GPS Update Warning]: {e}")
+
     current_time = int(time.time())
     current_window = int(math.floor(current_time / QR_WINDOW_SECONDS))
     remaining_seconds = QR_WINDOW_SECONDS - (current_time % QR_WINDOW_SECONDS)
@@ -914,7 +930,72 @@ def get_session_qr(
         "expires_in_seconds": remaining_seconds,
         "refresh_interval_seconds": QR_WINDOW_SECONDS,
         "class_lat": session.class_lat,
-        "class_lng": session.class_lng
+        "class_lng": session.class_lng,
+        "geofence_radius_meters": session.geofence_radius_meters or 150
+    }
+
+@app.post("/api/sessions/{session_id}/location")
+def update_session_location(
+    session_id: str,
+    req: SessionLocationUpdateRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture session '{session_id}' not found."
+        )
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only update location for sessions you created."
+        )
+
+    session.class_lat = req.class_lat
+    session.class_lng = req.class_lng
+    if req.geofence_radius_meters:
+        session.geofence_radius_meters = req.geofence_radius_meters
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Faculty live location updated successfully to ({req.class_lat:.5f}, {req.class_lng:.5f}) with {session.geofence_radius_meters}m geofence",
+        "class_lat": session.class_lat,
+        "class_lng": session.class_lng,
+        "geofence_radius_meters": session.geofence_radius_meters
+    }
+
+@app.get("/api/sessions/{session_id}/info")
+def get_session_info(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture session '{session_id}' not found."
+        )
+
+    return {
+        "session_id": session.session_id,
+        "session_code": session.session_code,
+        "subject_name": session.subject_name,
+        "faculty_id": session.faculty_id,
+        "status": session.status,
+        "class_lat": session.class_lat,
+        "class_lng": session.class_lng,
+        "geofence_radius_meters": session.geofence_radius_meters or 150
     }
 
 @app.post("/api/sessions/{session_id}/end")
@@ -1100,38 +1181,42 @@ def mark_attendance(
             reason="Invalid QR signature. Token does not match this lecture session's cryptographic secret."
         )
 
-    # GATE 3: GPS Geofence (Haversine Distance <= 100 Meters)
+    # GATE 3: GPS Geofence (Live Faculty GPS vs Student Live GPS, strictly <= 150 Meters)
     class_lat = session.class_lat
     class_lng = session.class_lng
+    max_radius = session.geofence_radius_meters or 150
 
-    # Smart Auto-Anchor:
-    # If the session has no GPS anchor yet, or was created with the Mumbai placeholder coordinates (19.0760),
-    # calibrate the classroom anchor to the real room coordinates from this live attendee!
-    is_placeholder_session_loc = (
-        class_lat is None or 
-        class_lng is None or 
-        (abs(float(class_lat) - 19.0760) < 0.005 and abs(float(class_lng) - 72.8777) < 0.005)
+    if class_lat is None or class_lng is None:
+        log_fraud_and_fail(
+            gate="GATE_3_GPS_GEOFENCE",
+            reason="Faculty live location unavailable: The instructor's live classroom location has not been established yet. Please ask the instructor to enable location on their Faculty Console.",
+            extra_meta={"max_radius_meters": max_radius}
+        )
+
+    if req.user_lat is None or req.user_lng is None:
+        log_fraud_and_fail(
+            gate="GATE_3_GPS_GEOFENCE",
+            reason="Student GPS location missing: Your device did not provide GPS coordinates. Please grant location permissions in your browser and try again.",
+            extra_meta={"max_radius_meters": max_radius}
+        )
+
+    distance_meters = haversine_distance_meters(
+        float(class_lat), float(class_lng), float(req.user_lat), float(req.user_lng)
     )
 
-    if is_placeholder_session_loc and req.user_lat and req.user_lng:
-        session.class_lat = req.user_lat
-        session.class_lng = req.user_lng
-        db.commit()
-        class_lat = req.user_lat
-        class_lng = req.user_lng
-
-    if class_lat is not None and class_lng is not None and req.user_lat and req.user_lng:
-        distance_meters = haversine_distance_meters(float(class_lat), float(class_lng), float(req.user_lat), float(req.user_lng))
-        max_radius = session.geofence_radius_meters or 100
-
-        if distance_meters > max_radius:
-            log_fraud_and_fail(
-                gate="GATE_3_GPS_GEOFENCE",
-                reason=f"Geofence Breach: You are {distance_meters:.1f} meters away from the classroom. You must be inside the lecture hall (within {max_radius} meters).",
-                extra_meta={"distance_meters": round(distance_meters, 1)}
-            )
-    else:
-        distance_meters = 0.0
+    if distance_meters > max_radius:
+        log_fraud_and_fail(
+            gate="GATE_3_GPS_GEOFENCE",
+            reason=f"Geofence Breach: You are {distance_meters:.1f} meters away from the faculty. You must be within {max_radius} meters of the instructor.",
+            extra_meta={
+                "distance_meters": round(distance_meters, 1),
+                "max_radius_meters": max_radius,
+                "class_lat": float(class_lat),
+                "class_lng": float(class_lng),
+                "user_lat": float(req.user_lat),
+                "user_lng": float(req.user_lng)
+            }
+        )
 
     # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
     enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()

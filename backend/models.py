@@ -104,9 +104,9 @@ class LectureSession(Base):
     subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
     faculty_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     room_no: Mapped[str] = mapped_column(String(64), default="LAB-302")
-    class_lat: Mapped[float] = mapped_column(Float, default=19.0760)
-    class_lng: Mapped[float] = mapped_column(Float, default=72.8777)
-    geofence_radius_meters: Mapped[int] = mapped_column(Integer, default=60)
+    class_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    class_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    geofence_radius_meters: Mapped[int] = mapped_column(Integer, default=150)
     secret_seed: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")  # 'ACTIVE', 'ENDED', 'COMPLETED', 'CANCELLED'
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

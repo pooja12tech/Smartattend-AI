@@ -304,7 +304,7 @@ def run_postgres_seed(session: Session = None) -> bool:
                 room_no="HALL-101",
                 class_lat=19.0760,
                 class_lng=72.8777,
-                geofence_radius_meters=100,
+                geofence_radius_meters=150,
                 secret_seed="default_smartattend_seed_2026",
                 status="ACTIVE",
                 started_at=now,
@@ -314,7 +314,7 @@ def run_postgres_seed(session: Session = None) -> bool:
         else:
             sample_session.status = "ACTIVE"
             sample_session.faculty_id = "faculty"
-            sample_session.geofence_radius_meters = 100
+            sample_session.geofence_radius_meters = 150
 
         session.commit()
         print("=" * 65)

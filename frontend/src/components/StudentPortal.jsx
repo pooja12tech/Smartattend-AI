@@ -203,6 +203,62 @@ export default function StudentPortal({ user }) {
     return R * c;
   };
 
+  // Re-request student GPS if permission or acquisition failed
+  const retryCaptureStudentGPS = async () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      });
+      if (pos?.coords) {
+        const uLat = pos.coords.latitude;
+        const uLng = pos.coords.longitude;
+        let fLat = capturedLocation?.facultyLat;
+        let fLng = capturedLocation?.facultyLng;
+        let radius = capturedLocation?.geofenceRadius || 150;
+        if (!fLat || !fLng) {
+          try {
+            const info = await api.getSessionInfo(sessionId);
+            if (info) {
+              fLat = info.class_lat;
+              fLng = info.class_lng;
+              radius = info.geofence_radius_meters || 150;
+            }
+          } catch (e) {}
+        }
+        let d = null;
+        let within = false;
+        if (fLat !== null && fLng !== null && fLat !== undefined && fLng !== undefined) {
+          d = calculateHaversine(fLat, fLng, uLat, uLng);
+          within = d <= radius;
+        } else {
+          d = 0.0;
+          within = true;
+        }
+        setCapturedLocation({
+          lat: uLat,
+          lng: uLng,
+          facultyLat: fLat,
+          facultyLng: fLng,
+          geofenceRadius: radius,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          distanceMeters: d !== null ? Math.round(d * 10) / 10 : null,
+          isWithinGeofence: within,
+          error: null
+        });
+      }
+    } catch (err) {
+      alert('Could not acquire GPS: ' + (err.message || 'Permission denied. Please grant location permissions in browser settings.'));
+    }
+  };
+
   // Start Rear Camera QR Scanner
   const startQRScanner = () => {
     setQrScanError(null);
@@ -241,37 +297,73 @@ export default function StudentPortal({ user }) {
 
             // Immediately capture device Geolocation & current local Timestamp
             const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            let userLat = 19.07601;
-            let userLng = 72.87771;
-            let dist = 12.0;
+
+            // Fetch live session info from backend to get faculty's real GPS anchor and geofence radius
+            let facultyLat = null;
+            let facultyLng = null;
+            let geofenceRadius = 150;
+            try {
+              const sessInfo = await api.getSessionInfo(parts[0]);
+              if (sessInfo) {
+                facultyLat = sessInfo.class_lat;
+                facultyLng = sessInfo.class_lng;
+                geofenceRadius = sessInfo.geofence_radius_meters || 150;
+              }
+            } catch (sessErr) {
+              console.warn('Could not retrieve live session info:', sessErr);
+            }
+
+            let userLat = null;
+            let userLng = null;
+            let dist = null;
+            let isWithin = false;
+            let geoError = null;
 
             if (navigator.geolocation && !simFarGPS) {
               try {
                 const pos = await new Promise((resolve, reject) => {
-                  navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 2500, maximumAge: 10000 });
+                  navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 8000,
+                    maximumAge: 2000
+                  });
                 });
-                if (pos && pos.coords) {
+                if (pos?.coords) {
                   userLat = pos.coords.latitude;
                   userLng = pos.coords.longitude;
-                  dist = calculateHaversine(19.0760, 72.8777, userLat, userLng);
                 }
               } catch (e) {
-                console.warn('Geolocation read failed or timed out, using default classroom coordinates.');
+                console.warn('Student geolocation read failed or timed out:', e);
+                geoError = e.code === 1 ? 'Location permission denied' : 'GPS signal weak/timed out';
               }
+            } else if (!navigator.geolocation) {
+              geoError = 'Geolocation not supported in this browser';
             }
 
             if (simFarGPS) {
-              userLat = 19.1050;
-              userLng = 72.8850;
-              dist = 3240.0;
+              userLat = (facultyLat || 19.0760) + 0.03; // ~3.3km away simulation
+              userLng = (facultyLng || 72.8777) + 0.03;
+              geoError = null;
+            }
+
+            if (userLat !== null && userLng !== null && facultyLat !== null && facultyLng !== null) {
+              dist = calculateHaversine(facultyLat, facultyLng, userLat, userLng);
+              isWithin = dist <= geofenceRadius;
+            } else if (userLat !== null && userLng !== null) {
+              dist = 0.0;
+              isWithin = true;
             }
 
             setCapturedLocation({
               lat: userLat,
               lng: userLng,
+              facultyLat: facultyLat,
+              facultyLng: facultyLng,
+              geofenceRadius: geofenceRadius,
               time: currentTimeStr,
-              distanceMeters: Math.round(dist * 10) / 10,
-              isWithinGeofence: dist <= 60
+              distanceMeters: dist !== null ? Math.round(dist * 10) / 10 : null,
+              isWithinGeofence: isWithin,
+              error: geoError
             });
 
             // Stop rear camera to release hardware lock before front camera opens
@@ -532,13 +624,13 @@ export default function StudentPortal({ user }) {
     let userLat = capturedLocation?.lat || null;
     let userLng = capturedLocation?.lng || null;
 
-    if (!userLat && navigator.geolocation && !simFarGPS) {
+    if ((!userLat || !userLng) && navigator.geolocation && !simFarGPS) {
       try {
         const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
             timeout: 6000,
-            maximumAge: 10000
+            maximumAge: 2000
           });
         });
         if (pos && pos.coords) {
@@ -551,8 +643,8 @@ export default function StudentPortal({ user }) {
     }
 
     if (simFarGPS) {
-      userLat = (userLat || 28.6) + 0.05; // ~5.5km away breach simulation
-      userLng = (userLng || 77.2) + 0.05;
+      userLat = (capturedLocation?.facultyLat || 19.0760) + 0.03; // ~3.3km away breach simulation
+      userLng = (capturedLocation?.facultyLng || 72.8777) + 0.03;
     }
 
     const usedDeviceId = simWrongDevice ? 'DEV-ALIEN-PROXY-PHONE-99' : deviceId;
@@ -609,14 +701,28 @@ export default function StudentPortal({ user }) {
     }
     gates.gate2 = 'PASSED';
 
-    // Gate 3: GPS Geofence
+    // Gate 3: GPS Geofence (<= 150m from faculty)
     gates.gate3 = 'RUNNING';
     setGateProgress({ ...gates, activeGate: 3 });
     await new Promise(r => setTimeout(r, 400));
 
+    if (!userLat || !userLng) {
+      gates.gate3 = 'FAILED';
+      gates.error = 'Gate 3 Failed: Student GPS location missing. Please grant location permissions.';
+      setGateProgress({ ...gates, activeGate: 3 });
+      setSubmittingAttendance(false);
+      setAttendanceStep('RESULT');
+      setSubmissionResult({
+        success: false,
+        reason: 'Student GPS location missing: Your device did not provide GPS coordinates. Please grant location permissions in your browser and try again.',
+        failed_gate: 'GATE_3_GPS_GEOFENCE'
+      });
+      return;
+    }
+
     if (simFarGPS) {
       gates.gate3 = 'FAILED';
-      gates.error = 'Gate 3 Failed: Geofence Breach (Distance > 60m from classroom)';
+      gates.error = 'Gate 3 Failed: Geofence Breach (Distance > 150m from faculty)';
       setGateProgress({ ...gates, activeGate: 3 });
       setSubmittingAttendance(false);
       setAttendanceStep('RESULT');
@@ -1270,11 +1376,25 @@ export default function StudentPortal({ user }) {
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                       <Check className="w-3 h-3" /> QR Scanned: {sessionId}
                     </span>
-                    {capturedLocation && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        <MapPin className="w-3 h-3 text-indigo-400" />
-                        {capturedLocation.distanceMeters}m ({capturedLocation.isWithinGeofence ? 'Inside Campus Hall' : 'Geofence Breach'})
+                    {capturedLocation && !capturedLocation.error ? (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+                        capturedLocation.isWithinGeofence
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      }`}>
+                        <MapPin className="w-3 h-3" />
+                        {capturedLocation.distanceMeters !== null ? `${capturedLocation.distanceMeters}m from Faculty` : 'GPS Acquired'}
+                        {' '}({capturedLocation.isWithinGeofence ? 'Within 150m Limit' : 'Geofence Breach > 150m'})
                       </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={retryCaptureStudentGPS}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition"
+                      >
+                        <AlertTriangle className="w-3 h-3 text-amber-400" />
+                        Location Missing (Click to Retry GPS)
+                      </button>
                     )}
                     {capturedLocation?.time && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700">
@@ -1402,7 +1522,7 @@ export default function StudentPortal({ user }) {
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
                     <span className="flex items-center gap-2.5 text-slate-200">
                       {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 3 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 3: GPS Geofence Check (&le; 100m Classroom Hall)
+                      Gate 3: GPS Geofence Check (&le; 150m from Faculty)
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate3}

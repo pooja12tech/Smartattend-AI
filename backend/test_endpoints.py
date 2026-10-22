@@ -152,10 +152,40 @@ def run_tests():
     qr_token = qr_data["qr_token"]
     print(f"[PASS] 3b. Dynamic QR Token Generated: {qr_token} (Expires in {qr_data['expires_in_seconds']}s)")
 
+    # 3c. Student fetches session public info (live faculty coordinates & geofence radius)
+    res_info = client.get(f"/api/sessions/{session_id}/info", headers=student_headers)
+    assert res_info.status_code == 200
+    assert res_info.json()["geofence_radius_meters"] == 150
+    assert res_info.json()["class_lat"] == 28.5450
+    print(f"[PASS] 3c. Student Retrieved Live Session Info (Faculty GPS: {res_info.json()['class_lat']}, Radius: {res_info.json()['geofence_radius_meters']}m)")
+
+    # 3d. Faculty dynamically syncs live location
+    res_loc = client.post(f"/api/sessions/{session_id}/location", json={
+        "class_lat": 28.5450,
+        "class_lng": 77.1926,
+        "geofence_radius_meters": 150
+    }, headers=faculty_headers)
+    assert res_loc.status_code == 200
+    print("[PASS] 3d. Faculty Updated Live Session Location to (28.5450, 77.1926) with 150m radius")
+
     # 4. Anti-Proxy Gate Testing (Student auth required)
     test_face_b64 = create_sample_face_b64((200, 150, 150))
 
-    # Gate 3: Geofence Breach Test (>60m)
+    # Gate 3: Missing Student GPS Test
+    res_no_gps = client.post("/api/attendance/mark", json={
+        "session_id": session_id,
+        "qr_token": qr_token,
+        "device_id": "DEV-AARAV-PHONE-01",
+        "user_lat": None,
+        "user_lng": None,
+        "live_selfie_base64": test_face_b64,
+        "is_exception_mode": False
+    }, headers=student_headers)
+    assert res_no_gps.status_code == 400
+    assert res_no_gps.json()["detail"]["failed_gate"] == "GATE_3_GPS_GEOFENCE"
+    print("[PASS] 4a-1. Gate 3 (Missing Student GPS Coordinates) Blocked:", res_no_gps.json()["detail"]["reason"])
+
+    # Gate 3: Geofence Breach Test (>150m)
     res = client.post("/api/attendance/mark", json={
         "session_id": session_id,
         "qr_token": qr_token,
@@ -168,7 +198,7 @@ def run_tests():
     assert res.status_code == 400
     detail = res.json()["detail"]
     assert detail["failed_gate"] == "GATE_3_GPS_GEOFENCE"
-    print("[PASS] 4a. Gate 3 (GPS Geofence Breach) Blocked:", detail["reason"])
+    print("[PASS] 4a-2. Gate 3 (GPS Geofence Breach > 150m) Blocked:", detail["reason"])
 
     # Gate 2: Expired QR Token Test
     expired_token = f"{session_id}.{int(time.time() - 25)}.fake_signature"

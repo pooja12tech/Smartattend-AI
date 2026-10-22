@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Play, Users, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle,
@@ -17,30 +17,155 @@ export default function FacultyPortal({ user }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
 
+  // Live faculty GPS state
+  const [facultyGps, setFacultyGps] = useState({
+    lat: null,
+    lng: null,
+    accuracy: null,
+    status: 'INITIALIZING', // 'INITIALIZING' | 'READY' | 'DENIED' | 'UNAVAILABLE'
+    errorMsg: null,
+    lastUpdated: null
+  });
+  const facultyGpsRef = useRef(facultyGps);
+  facultyGpsRef.current = facultyGps;
+
   // Live class roster loaded from GET /api/faculty/session/{id}/roster
   const [roster, setRoster] = useState([]);
 
-  // Start lecture session with dynamic teacher GPS anchoring (100m radius)
+  // Continuous live GPS tracking for faculty
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setFacultyGps(prev => ({
+        ...prev,
+        status: 'UNAVAILABLE',
+        errorMsg: 'Geolocation is not supported in this browser'
+      }));
+      return;
+    }
+
+    const handleSuccess = (pos) => {
+      if (pos?.coords) {
+        setFacultyGps({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy),
+          status: 'READY',
+          errorMsg: null,
+          lastUpdated: new Date().toLocaleTimeString()
+        });
+      }
+    };
+
+    const handleError = (err) => {
+      console.warn('Faculty GPS watch error:', err);
+      let msg = 'Unable to acquire GPS';
+      if (err.code === 1) msg = 'Location access denied in browser. Please allow location access.';
+      else if (err.code === 2) msg = 'GPS position unavailable.';
+      else if (err.code === 3) msg = 'GPS acquisition timed out.';
+      setFacultyGps(prev => ({
+        ...prev,
+        status: err.code === 1 ? 'DENIED' : 'UNAVAILABLE',
+        errorMsg: msg
+      }));
+    };
+
+    const watchId = navigator.geolocation.watchPosition(handleSuccess, handleError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 2000
+    });
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  // Manual GPS Sync / Recalibrate button
+  const handleRecalibrateGps = async () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    setFacultyGps(prev => ({ ...prev, status: 'INITIALIZING' }));
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      });
+      const newLat = pos.coords.latitude;
+      const newLng = pos.coords.longitude;
+      const acc = Math.round(pos.coords.accuracy);
+      const updated = {
+        lat: newLat,
+        lng: newLng,
+        accuracy: acc,
+        status: 'READY',
+        errorMsg: null,
+        lastUpdated: new Date().toLocaleTimeString()
+      };
+      setFacultyGps(updated);
+
+      if (activeSession?.session_id) {
+        await api.updateSessionLocation(activeSession.session_id, {
+          class_lat: newLat,
+          class_lng: newLng,
+          geofence_radius_meters: 150
+        });
+        setManualSuccessMsg(`Faculty GPS synchronized: (${newLat.toFixed(4)}, ${newLng.toFixed(4)}) ±${acc}m (150m geofence active)`);
+        setTimeout(() => setManualSuccessMsg(null), 4000);
+      }
+    } catch (err) {
+      console.warn('Manual GPS recalibration error:', err);
+      setFacultyGps(prev => ({
+        ...prev,
+        status: 'DENIED',
+        errorMsg: err.message || 'GPS failed'
+      }));
+      alert('Could not acquire GPS: ' + (err.message || 'Permission denied. Please grant location access in browser settings.'));
+    }
+  };
+
+  // Start lecture session with dynamic teacher GPS anchoring (150m radius)
   const handleStartSession = async () => {
     setStarting(true);
-    let teacherLat = null;
-    let teacherLng = null;
+    let teacherLat = facultyGpsRef.current.lat;
+    let teacherLng = facultyGpsRef.current.lng;
 
-    if (navigator.geolocation) {
+    // If GPS is not acquired yet, try an immediate fresh high-accuracy grab
+    if ((!teacherLat || !teacherLng) && navigator.geolocation) {
       try {
         const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 5000
+            timeout: 8000,
+            maximumAge: 0
           });
         });
         if (pos?.coords) {
           teacherLat = pos.coords.latitude;
           teacherLng = pos.coords.longitude;
+          setFacultyGps({
+            lat: teacherLat,
+            lng: teacherLng,
+            accuracy: Math.round(pos.coords.accuracy),
+            status: 'READY',
+            errorMsg: null,
+            lastUpdated: new Date().toLocaleTimeString()
+          });
         }
       } catch (geoErr) {
         console.warn('Teacher geolocation not accessible in browser:', geoErr);
+      }
+    }
+
+    if (!teacherLat || !teacherLng) {
+      const proceed = confirm(
+        'Warning: Faculty GPS location has not been captured yet.\n\nStudents must be within 150m of your location. Without faculty GPS, student attendance will be blocked.\n\nDo you want to start the session anyway and click "Sync GPS" once location is acquired?'
+      );
+      if (!proceed) {
+        setStarting(false);
+        return;
       }
     }
 
@@ -49,7 +174,7 @@ export default function FacultyPortal({ user }) {
         subject_name: subject,
         class_lat: teacherLat,
         class_lng: teacherLng,
-        geofence_radius_meters: 100
+        geofence_radius_meters: 150
       });
       setActiveSession(res.session);
     } catch (err) {
@@ -84,7 +209,9 @@ export default function FacultyPortal({ user }) {
     if (activeSession?.session_id) {
       const fetchQR = async () => {
         try {
-          const data = await api.getSessionQR(activeSession.session_id);
+          const lat = facultyGpsRef.current.lat;
+          const lng = facultyGpsRef.current.lng;
+          const data = await api.getSessionQR(activeSession.session_id, lat, lng);
           setQrData(data);
         } catch (err) {
           console.error('Error polling QR:', err);
@@ -196,11 +323,34 @@ export default function FacultyPortal({ user }) {
       {/* Top Banner & Session Starter */}
       <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               FACULTY CONSOLE
             </span>
-            <span className="text-xs text-slate-400">Classroom Lab 302 (GPS: 19.0760, 72.8777)</span>
+            {facultyGps.status === 'READY' ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <MapPin className="w-3 h-3 text-emerald-400" />
+                Live GPS: {facultyGps.lat.toFixed(4)}, {facultyGps.lng.toFixed(4)} (±{facultyGps.accuracy}m) • 150m Geofence
+              </span>
+            ) : facultyGps.status === 'INITIALIZING' ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                Acquiring Faculty GPS...
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                GPS Permission Required (150m Geofence)
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleRecalibrateGps}
+              title="Recalibrate and sync live faculty coordinates with server"
+              className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1 transition"
+            >
+              <RefreshCw className="w-2.5 h-2.5" /> Sync GPS
+            </button>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Live Lecture & Smart Anti-Proxy Center</h1>
           <p className="text-xs text-slate-400">
@@ -237,7 +387,7 @@ export default function FacultyPortal({ user }) {
               </div>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-indigo-300">
                 <MapPin className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Geofence: 100m (Teacher Live GPS)</span>
+                <span>Geofence: 150m (Live Faculty GPS: {facultyGps.lat ? `${facultyGps.lat.toFixed(4)}, ${facultyGps.lng.toFixed(4)}` : 'Syncing...'})</span>
               </div>
               <button
                 onClick={handleEndSession}

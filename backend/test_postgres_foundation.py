@@ -71,7 +71,7 @@ def test_foundation():
             room_no="LAB-302",
             class_lat=19.0760,
             class_lng=72.8777,
-            geofence_radius_meters=60,
+            geofence_radius_meters=150,
             secret_seed="test_secret_seed_2026",
             status="ACTIVE"
         )

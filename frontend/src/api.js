@@ -94,7 +94,7 @@ export const api = {
     return safeParse(res, 'Face enrollment failed');
   },
 
-  async startSession({ subject_name, class_lat, class_lng, geofence_radius_meters = 100 }) {
+  async startSession({ subject_name, class_lat, class_lng, geofence_radius_meters = 150 }) {
     const res = await fetch(`${API_BASE}/api/sessions/start`, {
       method: 'POST',
       headers: getHeaders(),
@@ -103,11 +103,34 @@ export const api = {
     return safeParse(res, 'Failed to start session');
   },
 
-  async getSessionQR(sessionId) {
-    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/qr`, {
+  async getSessionQR(sessionId, lat, lng) {
+    let url = `${API_BASE}/api/sessions/${sessionId}/qr`;
+    const params = new URLSearchParams();
+    if (lat !== undefined && lat !== null) params.append('lat', lat);
+    if (lng !== undefined && lng !== null) params.append('lng', lng);
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+
+    const res = await fetch(url, {
       headers: getHeaders()
     });
     return safeParse(res, 'Failed to fetch QR');
+  },
+
+  async updateSessionLocation(sessionId, { class_lat, class_lng, geofence_radius_meters = 150 }) {
+    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/location`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ class_lat, class_lng, geofence_radius_meters })
+    });
+    return safeParse(res, 'Failed to update session location');
+  },
+
+  async getSessionInfo(sessionId) {
+    const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/info`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch session information');
   },
 
   async endSession(sessionId) {
