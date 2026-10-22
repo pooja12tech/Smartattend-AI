@@ -1,9 +1,11 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import numpy as np
 from sqlalchemy.orm import Session
 from db_postgres import get_session_factory, init_db_schema, check_postgres_connection
 from models import User, StudentStats, LectureSession, Subject, StudentSubjectEnrollment, AttendanceRecord, SecurityAlert, AuditLog, FaceEnrollment
 from auth import hash_password
+import face_service
 
 def run_postgres_seed(session: Session = None) -> bool:
     print("=" * 65)
@@ -231,6 +233,30 @@ def run_postgres_seed(session: Session = None) -> bool:
                 updated_at=now
             )
             session.add(s3_stats)
+
+        # ------------------------------------------------------------------
+        # 3b. OFFICIAL FACE BIOMETRIC TEMPLATES (Enrolled by Admin at Admission)
+        # ------------------------------------------------------------------
+        for idx, stu in enumerate([student1, student2, student3], start=1):
+            if not stu:
+                continue
+            face_rec = session.query(FaceEnrollment).filter(FaceEnrollment.user_id == stu.id).first()
+            if not face_rec:
+                rng = np.random.RandomState(42 + idx)
+                emb = rng.randn(512).astype(np.float32)
+                emb /= np.linalg.norm(emb)
+                face_rec = FaceEnrollment(
+                    user_id=stu.id,
+                    embedding=face_service.encrypt_embedding(emb),
+                    model_name="buffalo_sc",
+                    model_version="insightface-2.1",
+                    consent_given_at=now,
+                    consent_text_version="v1.0-admin-enrollment",
+                    created_at=now,
+                    retention_expires_at=now + timedelta(days=365)
+                )
+                session.add(face_rec)
+                print(f"[Seed] Admin Enrolled Official Face Biometrics for {stu.roll_no} ({stu.name})")
 
         # ------------------------------------------------------------------
         # 4. SUBJECTS

@@ -704,7 +704,7 @@ export default function AdminPortal({ user }) {
                   <th className="py-2.5 px-3">Class (Sem)</th>
                   <th className="py-2.5 px-3">Department</th>
                   <th className="py-2.5 px-3">Att. %</th>
-                  <th className="py-2.5 px-3">Bound Hardware Device</th>
+                  <th className="py-2.5 px-3">Bound Hardware Device <span className="text-[10px] text-amber-400 font-normal">(Paused)</span></th>
                   <th className="py-2.5 px-3">Face Auth</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>

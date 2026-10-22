@@ -1,3 +1,5 @@
+import os
+os.environ["DEVICE_BINDING_ENABLED"] = "true"
 import sys
 import time
 import base64
@@ -5,6 +7,8 @@ import io
 from PIL import Image
 from fastapi.testclient import TestClient
 
+import main
+main.DEVICE_BINDING_ENABLED = True
 from main import app
 from seed_postgres import run_postgres_seed
 from db_postgres import init_db_schema
