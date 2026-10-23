@@ -2,11 +2,17 @@
   "name": "smartattend-ai",
   "version": "1.0.0",
   "scripts": {
+    "dev": "concurrently -k -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "powershell -ExecutionPolicy Bypass -Command \".\\backend\\venv\\Scripts\\python.exe -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test:backend": "powershell -ExecutionPolicy Bypass -Command \".\\backend\\venv\\Scripts\\python.exe backend\\test_endpoints.py\"",
     "build": "npm --prefix frontend run build"
   },
   "dependencies": {
     "@neon/config": "^1.9.2",
     "@neon/env": "^1.6.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
   }
 }
-

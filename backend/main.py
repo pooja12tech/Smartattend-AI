@@ -89,7 +89,7 @@ allowed_origins = [o.strip().strip("'\"").rstrip("/") for o in allowed_origins_r
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins if "*" not in allowed_origins else ["*"],
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|.*\.vercel\.app)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -571,6 +571,11 @@ class MarkAttendanceRequest(BaseModel):
     user_lat: Optional[float] = Field(None, example=19.07602)
     user_lng: Optional[float] = Field(None, example=72.87768)
     live_selfie_base64: str = Field(..., description="Base64 encoded live camera capture")
+    ultrasonic_verified: Optional[bool] = Field(False, description="Whether ultrasonic inaudible classroom chirp was verified by microphone")
+
+class PanoramicAttendanceRequest(BaseModel):
+    image_base64: str = Field(..., description="Base64 encoded wide panoramic classroom photo")
+    auto_mark: bool = Field(True, description="Automatically mark matched students as PRESENT")
 
 class StudentExceptionRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
@@ -1294,6 +1299,7 @@ def mark_attendance(
         is_exception_mode=False,
         status=attendance_status,
         reason="Biometric similarity in review band (requires faculty review)" if attendance_status == "PENDING_APPROVAL" else None,
+        remarks="Ultrasonic In-Room Acoustic Beacon Confirmed" if getattr(req, "ultrasonic_verified", False) else None,
         marked_at=timestamp_now
     )
     try:
@@ -1732,6 +1738,9 @@ def get_faculty_session_roster(
             "department": dept,
             "status": st,
             "reason": rec.reason if rec else None,
+            "remarks": rec.remarks if rec else None,
+            "face_status": rec.face_status if rec else None,
+            "ultrasonic_verified": bool(rec and rec.remarks and "Ultrasonic" in rec.remarks),
             "marked_at": rec.marked_at.isoformat() if rec and rec.marked_at else None,
             "distance_meters": rec.distance_meters if rec else None,
             "user_lat": rec.user_lat if rec else None,
@@ -1746,6 +1755,217 @@ def get_faculty_session_roster(
         "total_enrolled": len(roster),
         "roster": roster
     }
+
+# ------------------------------------------------------------------------------
+# 4d. POST /api/faculty/session/{session_id}/panoramic-attendance (Classroom Snapshot AI)
+# ------------------------------------------------------------------------------
+@app.post("/api/faculty/session/{session_id}/panoramic-attendance")
+def faculty_panoramic_attendance(
+    session_id: str,
+    req: PanoramicAttendanceRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You can only run panoramic AI for sessions you started."
+        )
+
+    # 1. Fetch all active students with enrolled baseline face templates
+    active_students = db.query(User).filter(User.role == "student", User.is_active == True).all()
+    enrolled_payloads = []
+    for s in active_students:
+        fe = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == s.id).first()
+        if fe and fe.embedding:
+            try:
+                decrypted = face_service.decrypt_embedding(fe.embedding)
+                enrolled_payloads.append({
+                    "student_id": str(s.id),
+                    "roll_no": s.roll_no,
+                    "name": s.name,
+                    "embedding": decrypted
+                })
+            except Exception as e:
+                print(f"[Panoramic AI Warning] Error decrypting baseline for {s.roll_no}: {e}")
+
+    if not enrolled_payloads:
+        raise HTTPException(
+            status_code=400,
+            detail="No enrolled students with registered biometric face references found in the system."
+        )
+
+    # 2. Decode panoramic image
+    raw_b64 = req.image_base64
+    if "," in raw_b64:
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        image_bytes = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+
+    # 3. Run multi-face detection and feature matching
+    try:
+        panoramic_res = face_service.process_panoramic_snapshot(
+            image_bytes=image_bytes,
+            enrolled_students=enrolled_payloads,
+            min_similarity=0.40
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Panoramic analysis error: {str(e)}")
+
+    timestamp_now = datetime.now(timezone.utc)
+    auto_marked_count = 0
+
+    # 4. If auto_mark is requested, register attendance for all matched students
+    if req.auto_mark and panoramic_res["matched_students"]:
+        for match in panoramic_res["matched_students"]:
+            r_no = match["roll_no"]
+            score = match["confidence_score"]
+            student_obj = db.query(User).filter(User.roll_no == r_no).first()
+            if not student_obj:
+                continue
+
+            existing_record = db.query(AttendanceRecord).filter(
+                AttendanceRecord.session_id == session.session_id,
+                AttendanceRecord.roll_no == r_no
+            ).first()
+
+            if not existing_record:
+                rec = AttendanceRecord(
+                    session_id=session.session_id,
+                    roll_no=r_no,
+                    student_name=student_obj.name,
+                    used_device_id=f"PANORAMIC_AI_{session.session_id}",
+                    distance_meters=0.0,
+                    face_match_score=score,
+                    face_status="PANORAMIC_AI_MATCH",
+                    is_exception_mode=False,
+                    is_manual_override=False,
+                    status="PRESENT",
+                    reason="Verified via Panoramic AI Classroom Snapshot",
+                    remarks=f"Panoramic AI Confidence: {score}%",
+                    marked_at=timestamp_now
+                )
+                db.add(rec)
+                auto_marked_count += 1
+            elif existing_record.status != "PRESENT":
+                existing_record.status = "PRESENT"
+                existing_record.face_status = "PANORAMIC_AI_MATCH"
+                existing_record.face_match_score = score
+                existing_record.reason = "Verified via Panoramic AI Classroom Snapshot"
+                auto_marked_count += 1
+
+            db.flush()
+            recompute_student_stats(db, student_obj.id)
+            session_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
+            recompute_student_subject_enrollment(db, student_obj.roll_no, session_code_prefix)
+
+        # Audit log entry for panoramic scan
+        record_audit_log(
+            db=db,
+            actor_id=current_user.roll_no,
+            actor_name=current_user.name,
+            actor_role=current_user.role,
+            action="PANORAMIC_AI_CLASSROOM_SCAN",
+            target_type="SESSION",
+            target_id=session.session_id,
+            reason=f"Panoramic AI detected {panoramic_res['total_detected_faces']} faces, auto-marking {auto_marked_count} present.",
+            new_value=f"{auto_marked_count} marked"
+        )
+        db.commit()
+
+    return {
+        "success": True,
+        "session_id": session.session_id,
+        "total_detected_faces": panoramic_res["total_detected_faces"],
+        "matched_count": panoramic_res["matched_count"],
+        "unmatched_count": panoramic_res["unmatched_count"],
+        "auto_marked_count": auto_marked_count,
+        "matched_students": panoramic_res["matched_students"],
+        "annotated_image_base64": panoramic_res["annotated_image_base64"]
+    }
+
+# ------------------------------------------------------------------------------
+# 4e. GET /api/faculty/session/{session_id}/fraud-syndicate (Proxy Ring Intelligence)
+# ------------------------------------------------------------------------------
+@app.get("/api/faculty/session/{session_id}/fraud-syndicate")
+def get_fraud_syndicate_intel(
+    session_id: str,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == session_id) | (LectureSession.session_code == session_id)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    # 1. Fetch all security alerts for this session
+    alerts = db.query(SecurityAlert).filter(
+        SecurityAlert.session_id == session.session_id
+    ).order_by(SecurityAlert.created_at.desc()).all()
+
+    # 2. Gather attendance records for this session
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id
+    ).all()
+
+    # 3. Analyze device sharing rings:
+    device_to_rolls = {}
+    for r in records:
+        if r.used_device_id and not r.used_device_id.startswith("MANUAL_") and not r.used_device_id.startswith("PANORAMIC_"):
+            clean_dev = r.used_device_id.split("-")[0] if "-" in r.used_device_id else r.used_device_id
+            device_to_rolls.setdefault(clean_dev, set()).add(r.roll_no)
+
+    syndicates = []
+    # Identify shared device syndicates
+    for dev, rolls in device_to_rolls.items():
+        if len(rolls) > 1:
+            syndicates.append({
+                "syndicate_id": f"SYN-DEV-{dev[:8]}",
+                "type": "DEVICE_SHARING_RING",
+                "severity": "CRITICAL" if len(rolls) > 2 else "HIGH",
+                "device_id": dev,
+                "involved_students": list(rolls),
+                "description": f"Device '{dev}' used by {len(rolls)} distinct students ({', '.join(rolls)}) in this lecture session.",
+                "recommendation": "Inspect physical devices in classroom to ensure no proxy submission."
+            })
+
+    # Identify repeated failed gates
+    roll_alerts = {}
+    for a in alerts:
+        if a.roll_no:
+            roll_alerts.setdefault(a.roll_no, []).append(a)
+
+    for r_no, r_alts in roll_alerts.items():
+        if len(r_alts) >= 2:
+            gates = list(set(a.failed_gate for a in r_alts))
+            syndicates.append({
+                "syndicate_id": f"SYN-REP-{r_no}",
+                "type": "REPEATED_PROXY_ATTEMPTS",
+                "severity": "CRITICAL",
+                "roll_no": r_no,
+                "involved_students": [r_no],
+                "description": f"Student '{r_no}' breached anti-proxy gates {len(r_alts)} times ({', '.join(gates)}).",
+                "recommendation": "Flag for teacher manual verification and academic discipline audit."
+            })
+
+    return {
+        "success": True,
+        "session_id": session.session_id,
+        "total_alerts": len(alerts),
+        "syndicates_detected": len(syndicates),
+        "syndicates": syndicates,
+        "alerts": [a.to_dict() for a in alerts[:25]]
+    }
+
 
 # ------------------------------------------------------------------------------
 # 5. GET /api/student/{roll_no}/dashboard

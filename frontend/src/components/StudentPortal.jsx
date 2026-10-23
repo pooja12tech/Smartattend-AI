@@ -3,7 +3,7 @@ import {
   Fingerprint, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
   MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
-  HelpCircle, History, Eye, User
+  HelpCircle, History, Eye, User, Radio
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -57,6 +57,57 @@ export default function StudentPortal({ user }) {
   // Student Exception Request State
   const [submittingException, setSubmittingException] = useState(false);
   const [exceptionResult, setExceptionResult] = useState(null);
+
+  // Category 2: Ultrasonic Acoustic Inaudible Geofence State
+  const [ultrasonicVerified, setUltrasonicVerified] = useState(false);
+  const [ultrasonicScanning, setUltrasonicScanning] = useState(false);
+
+  const detectUltrasonicChirp = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+      setUltrasonicScanning(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+      if (!stream) {
+        setUltrasonicScanning(false);
+        return false;
+      }
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      const sampleRate = audioCtx.sampleRate;
+      const binWidth = sampleRate / analyser.fftSize;
+      const targetBin = Math.round(18800 / binWidth);
+
+      const buffer = new Uint8Array(analyser.frequencyBinCount);
+      let detected = false;
+
+      for (let i = 0; i < 5; i++) {
+        analyser.getByteFrequencyData(buffer);
+        const energyAtTarget = (buffer[targetBin - 1] + buffer[targetBin] + buffer[targetBin + 1]) / 3;
+        const ambientBin = Math.round(15000 / binWidth);
+        const ambientEnergy = buffer[ambientBin] || 1;
+
+        if (energyAtTarget > 25 && energyAtTarget > ambientEnergy * 1.25) {
+          detected = true;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 60));
+      }
+
+      stream.getTracks().forEach(t => t.stop());
+      audioCtx.close();
+      setUltrasonicScanning(false);
+      setUltrasonicVerified(detected);
+      return detected;
+    } catch (e) {
+      setUltrasonicScanning(false);
+      return false;
+    }
+  };
+
 
   // Face Biometric Reference Enrollment State
   const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
@@ -374,6 +425,7 @@ export default function StudentPortal({ user }) {
 
             // Transition to Step 2: Live Face Verification with Eye-Blink Auto-Capture
             setAttendanceStep('FACE_VERIFY');
+            detectUltrasonicChirp();
             setTimeout(() => {
               startFrontCameraWithBlinkDetection(rawToken, parts[0]);
             }, 300);
@@ -436,47 +488,83 @@ export default function StudentPortal({ user }) {
       }
 
       let framesCalibrated = 0;
-      let baselineScore = 0;
+      let baselineLeftScore = 0;
+      let baselineRightScore = 0;
+      let baselineCombined = 0;
       let eyesClosedCounter = 0;
       let blinkFired = false;
-      let minClosedRatio = 1.0;
+      let bestYOffset = 52; // Dynamically calibrated eye band Y coordinate
+      let prevLumas = null;
 
-      // Helper function to evaluate contrast (standard deviation) and vertical edge gradients in an eye patch
-      const computeEyePatchMetrics = (ctx, x, y, w, h) => {
-        const imgData = ctx.getImageData(x, y, w, h);
-        const data = imgData.data;
+      // Extract comprehensive facial metrics (contrast, vertical edge gradients, pupil darkness, motion)
+      const computePatchMetrics = (currLumas, prevLumasArr, W, x, y, w, h) => {
         const count = w * h;
-        const lumas = new Float32Array(count);
         let sum = 0;
         let sumSq = 0;
+        let motionSum = 0;
 
-        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-          const l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          lumas[p] = l;
-          sum += l;
-          sumSq += l * l;
+        for (let row = 0; row < h; row++) {
+          const rowOffset = (y + row) * W + x;
+          for (let col = 0; col < w; col++) {
+            const idx = rowOffset + col;
+            const l = currLumas[idx];
+            sum += l;
+            sumSq += l * l;
+            if (prevLumasArr) {
+              motionSum += Math.abs(l - prevLumasArr[idx]);
+            }
+          }
         }
 
         const mean = sum / count;
         const variance = Math.max(0, (sumSq / count) - (mean * mean));
         const stdDev = Math.sqrt(variance);
+        const motion = prevLumasArr ? motionSum / count : 0;
 
+        // Vertical edge gradient across the patch (eyelids/lashes/pupil edges)
         let vGrad = 0;
         for (let row = 1; row < h - 1; row++) {
-          const rOffset = row * w;
-          const up = (row - 1) * w;
-          const down = (row + 1) * w;
+          const rOffset = (y + row) * W + x;
+          const upOffset = (y + row - 1) * W + x;
+          const downOffset = (y + row + 1) * W + x;
           for (let col = 0; col < w; col++) {
-            vGrad += Math.abs(lumas[down + col] - lumas[up + col]);
+            vGrad += Math.abs(currLumas[downOffset + col] - currLumas[upOffset + col]);
           }
         }
         const gradScore = vGrad / (w * Math.max(1, h - 2));
 
-        return stdDev + (gradScore * 1.5);
+        // Dark pixel count (pupils/iris are noticeably darker than the surrounding skin)
+        let darkPixelCount = 0;
+        const darkThreshold = mean - (stdDev * 0.45);
+        for (let row = 0; row < h; row++) {
+          const rowOffset = (y + row) * W + x;
+          for (let col = 0; col < w; col++) {
+            if (currLumas[rowOffset + col] < darkThreshold) {
+              darkPixelCount++;
+            }
+          }
+        }
+        const darkRatio = darkPixelCount / count;
+
+        return {
+          stdDev,
+          gradScore,
+          combined: stdDev + (gradScore * 1.4),
+          motion,
+          darkRatio
+        };
       };
 
-      // Real-time eye blink analyzer: runs every 50ms (~20 FPS)
-      blinkAnalysisRef.current = setInterval(() => {
+      // Native Shape Detection API if supported in browser
+      let nativeDetector = null;
+      if (typeof window !== 'undefined' && 'FaceDetector' in window) {
+        try {
+          nativeDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+        } catch (e) {}
+      }
+
+      // High-frequency real-time eye blink analyzer: runs every 35ms (~28 FPS)
+      blinkAnalysisRef.current = setInterval(async () => {
         if (blinkFired) return;
         const video = videoRef.current;
         if (!video || video.readyState < 2) return;
@@ -494,68 +582,130 @@ export default function StudentPortal({ user }) {
         const vy = (vh - minDim) / 2;
         ctx.drawImage(video, vx, vy, minDim, minDim, 0, 0, W, H);
 
-        // Analyze Left Eye (x: 36..72, y: 50..82) and Right Eye (x: 88..124, y: 50..82)
-        const leftScore = computeEyePatchMetrics(ctx, 36, 50, 36, 32);
-        const rightScore = computeEyePatchMetrics(ctx, 88, 50, 36, 32);
-        const combinedScore = (leftScore + rightScore) / 2;
-        const minScore = Math.min(leftScore, rightScore);
+        const imgData = ctx.getImageData(0, 0, W, H);
+        const data = imgData.data;
+        const currLumas = new Float32Array(W * H);
+        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+          currLumas[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        }
 
-        // Phase 1: Rapid calibration (first 6 frames, ~300ms)
-        if (framesCalibrated < 6) {
+        // Trigger helper for fast, crisp auto-capture
+        const triggerBlinkSnap = () => {
+          blinkFired = true;
+          setBlinkStatus('BLINK_DETECTED');
+          setBlinkFlash(true);
+
+          if (blinkAnalysisRef.current) {
+            clearInterval(blinkAnalysisRef.current);
+            blinkAnalysisRef.current = null;
+          }
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
+
+          // Auto-capture immediately as eyes reopen crisp and wide!
+          setTimeout(() => {
+            captureSelfieAndProceed(tokenOverride, sessionOverride);
+          }, 110);
+        };
+
+        // Phase 1: Rapid calibration & dynamic eye height localization (first 4 frames, ~140ms)
+        if (framesCalibrated < 4) {
+          if (nativeDetector && framesCalibrated === 0) {
+            try {
+              const faces = await nativeDetector.detect(canvas);
+              if (faces && faces.length > 0 && faces[0].landmarks) {
+                const eyes = faces[0].landmarks.filter(l => l.type === 'eye');
+                if (eyes.length > 0) {
+                  const avgEyeY = eyes.reduce((acc, e) => acc + e.location.y, 0) / eyes.length;
+                  bestYOffset = Math.max(38, Math.min(84, Math.round(avgEyeY - 16)));
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (!nativeDetector || framesCalibrated > 0) {
+            const candidates = [42, 52, 62, 72];
+            let maxContrast = -1;
+            let bestY = bestYOffset;
+            for (const cY of candidates) {
+              const testLeft = computePatchMetrics(currLumas, null, W, 34, cY, 40, 32);
+              const testRight = computePatchMetrics(currLumas, null, W, 86, cY, 40, 32);
+              const cScore = testLeft.combined + testRight.combined;
+              if (cScore > maxContrast) {
+                maxContrast = cScore;
+                bestY = cY;
+              }
+            }
+            bestYOffset = bestY;
+          }
+
+          const curLeft = computePatchMetrics(currLumas, prevLumas, W, 34, bestYOffset, 40, 32);
+          const curRight = computePatchMetrics(currLumas, prevLumas, W, 86, bestYOffset, 40, 32);
+          const curComb = (curLeft.combined + curRight.combined) / 2;
+
           framesCalibrated++;
-          baselineScore = (baselineScore * (framesCalibrated - 1) + combinedScore) / framesCalibrated;
-          if (framesCalibrated >= 6) {
+          baselineLeftScore = (baselineLeftScore * (framesCalibrated - 1) + curLeft.combined) / framesCalibrated;
+          baselineRightScore = (baselineRightScore * (framesCalibrated - 1) + curRight.combined) / framesCalibrated;
+          baselineCombined = (baselineCombined * (framesCalibrated - 1) + curComb) / framesCalibrated;
+
+          prevLumas = currLumas;
+          if (framesCalibrated >= 4) {
             setBlinkStatus('WAITING_BLINK');
           }
           return;
         }
 
-        // Phase 2: Detect Eyes Closing / Closed
-        // When eyes close, contrast and vertical edge gradients drop significantly (>= 22% drop)
-        const isClosed = (combinedScore < (baselineScore * 0.78)) || (minScore < (baselineScore * 0.70));
+        // Phase 2: High-Sensitivity Multi-Signal Eye Analysis
+        const eyeW = 40;
+        const eyeH = 32;
+        const leftEye = computePatchMetrics(currLumas, prevLumas, W, 34, bestYOffset, eyeW, eyeH);
+        const rightEye = computePatchMetrics(currLumas, prevLumas, W, 86, bestYOffset, eyeW, eyeH);
+        const forehead = computePatchMetrics(currLumas, prevLumas, W, 55, 14, 50, 20);
 
-        if (isClosed) {
+        const currentCombined = (leftEye.combined + rightEye.combined) / 2;
+        const currentMin = Math.min(leftEye.combined, rightEye.combined);
+        const avgEyeMotion = (leftEye.motion + rightEye.motion) / 2;
+        const headMotion = forehead.motion;
+
+        // When eyelids close, contrast/texture in the eye patch drops by >= 14%
+        // OR darkness drops, OR eye motion spikes sharply while head is still
+        const contrastDrop = (currentCombined < baselineCombined * 0.86) || (currentMin < baselineCombined * 0.80);
+        const eyeMotionSpike = (avgEyeMotion > 4.2) && (avgEyeMotion > headMotion * 1.5 + 1.2);
+        const isEyesClosed = contrastDrop || (eyeMotionSpike && currentCombined < baselineCombined * 0.94);
+
+        if (isEyesClosed) {
           eyesClosedCounter++;
-          const ratio = combinedScore / (baselineScore || 1);
-          if (ratio < minClosedRatio) {
-            minClosedRatio = ratio;
-          }
           setEyeClosingFeedback(true);
+
+          // If the user deliberately holds eyes shut for > 280ms (8 frames), snap as soon as eyes start opening
+          if (eyesClosedCounter >= 8 && !blinkFired) {
+            triggerBlinkSnap();
+            return;
+          }
         } else {
           setEyeClosingFeedback(false);
 
-          // Phase 3: Detect Eyes Reopened (Blink Egress)
-          // A natural human blink lasts between 1 and 9 frames (50ms to 450ms)
-          if (eyesClosedCounter >= 1 && eyesClosedCounter <= 9 && minClosedRatio <= 0.82 && !blinkFired) {
-            blinkFired = true;
-            setBlinkStatus('BLINK_DETECTED');
-            setBlinkFlash(true);
-
-            if (blinkAnalysisRef.current) {
-              clearInterval(blinkAnalysisRef.current);
-              blinkAnalysisRef.current = null;
-            }
-            if (countdownTimerRef.current) {
-              clearInterval(countdownTimerRef.current);
-              countdownTimerRef.current = null;
-            }
-
-            // Auto-capture immediately upon reopening eyes!
-            setTimeout(() => {
-              captureSelfieAndProceed(tokenOverride, sessionOverride);
-            }, 130);
+          // Phase 3: Detect Blink Egress (Eyes Reopened)
+          // A natural blink lasts between 1 and 12 frames (35ms to 420ms)
+          if (eyesClosedCounter >= 1 && eyesClosedCounter <= 12 && !blinkFired) {
+            triggerBlinkSnap();
             return;
           }
 
           eyesClosedCounter = 0;
-          minClosedRatio = 1.0;
-          // Smoothly adapt baseline to ambient lighting drift
-          baselineScore = baselineScore * 0.95 + combinedScore * 0.05;
+          // Slowly and conservatively adapt baseline to gradual ambient light drift (without absorbing blinks)
+          if (currentCombined >= baselineCombined * 0.90 && currentCombined <= baselineCombined * 1.15) {
+            baselineCombined = baselineCombined * 0.96 + currentCombined * 0.04;
+          }
         }
-      }, 50);
 
-      // Fallback 8-second countdown if user is wearing dark lenses or in extreme lighting
-      let count = 8;
+        prevLumas = currLumas;
+      }, 35);
+
+      // Fallback 6-second countdown if user is wearing dark lenses or in extreme lighting
+      let count = 6;
       countdownTimerRef.current = setInterval(() => {
         count -= 1;
         setCountdown(count);
@@ -574,7 +724,7 @@ export default function StudentPortal({ user }) {
             setBlinkFlash(true);
             setTimeout(() => {
               captureSelfieAndProceed(tokenOverride, sessionOverride);
-            }, 130);
+            }, 100);
           }
         }
       }, 1000);
@@ -707,7 +857,8 @@ export default function StudentPortal({ user }) {
       device_id: usedDeviceId,
       user_lat: userLat,
       user_lng: userLng,
-      live_selfie_base64: selfieToSend
+      live_selfie_base64: selfieToSend,
+      ultrasonic_verified: ultrasonicVerified
     };
 
     // Gate 1: Hardware Device Lock (Paused for Testing)
@@ -1445,6 +1596,18 @@ export default function StudentPortal({ user }) {
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700">
                         <Clock className="w-3 h-3 text-slate-400" />
                         {capturedLocation.time}
+                      </span>
+                    )}
+                    {ultrasonicVerified && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-500/25 text-indigo-300 border border-indigo-500/40">
+                        <Radio className="w-3 h-3 text-indigo-400 animate-pulse" />
+                        Acoustic Beacon: Confirmed in Room
+                      </span>
+                    )}
+                    {ultrasonicScanning && !ultrasonicVerified && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-indigo-300 bg-indigo-500/10 border border-indigo-500/20">
+                        <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />
+                        Sampling Ultrasonic Beacon...
                       </span>
                     )}
                   </div>

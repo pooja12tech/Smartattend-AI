@@ -413,7 +413,7 @@ export default function AdminPortal({ user }) {
     }
 
     const headers = 'Roll No,Student Name,Department,Attendance %,ML Defaulter Risk %,Risk Level\n';
-    const rows = overview.high_risk_defaulters.map(d =>
+    const rows = (overview?.high_risk_defaulters || []).map(d =>
       `${d.roll_no},"${d.name}","${d.department}",${d.attendance_pct}%,${d.risk_pct}%,${d.risk_level}`
     ).join('\n');
 
@@ -511,6 +511,26 @@ export default function AdminPortal({ user }) {
         </div>
       )}
 
+      {!overview && !loading && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <div>
+              <p className="font-bold">Backend Server Offline or Unreachable</p>
+              <p className="text-slate-400 text-[11px] mt-0.5">
+                Could not connect to FastAPI backend on <code className="text-amber-300 font-mono">http://127.0.0.1:8000</code>. Please start the backend server in your terminal.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => { fetchOverview(); fetchUsers(); fetchSubjects(); }}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold transition flex items-center gap-1.5 shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Reconnect
+          </button>
+        </div>
+      )}
+
       {/* Portal Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
@@ -582,7 +602,7 @@ export default function AdminPortal({ user }) {
                 <span>System Average Attendance</span>
                 <Award className="w-4 h-4 text-amber-400" />
               </div>
-              <p className="text-3xl font-black text-white mt-2">{overview.system_average_attendance_pct || 80.0}%</p>
+              <p className="text-3xl font-black text-white mt-2">{(overview?.system_average_attendance_pct ?? 80.0)}%</p>
               <p className="text-[10px] text-emerald-400 mt-1">Safe campus threshold: 75%</p>
             </div>
 

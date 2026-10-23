@@ -46,6 +46,9 @@ const safeParse = async (res, fallbackMsg = 'Request failed') => {
     data = JSON.parse(text);
   } catch (e) {
     if (!res.ok) {
+      if (res.status === 500 && (!text.trim() || text.includes('ECONNREFUSED'))) {
+        throw new Error('Backend server is unreachable. Please ensure the backend server is running on http://127.0.0.1:8000.');
+      }
       throw new Error(`Server error (${res.status}): ${text.slice(0, 150) || fallbackMsg}`);
     }
     throw new Error(`Invalid server response: ${text.slice(0, 150)}`);
@@ -198,6 +201,23 @@ export const api = {
     });
     return safeParse(res, 'Manual attendance failed');
   },
+
+  async processPanoramicAttendance(sessionId, imageBase64, autoMark = true) {
+    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/panoramic-attendance`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ image_base64: imageBase64, auto_mark: autoMark })
+    });
+    return safeParse(res, 'Panoramic face analysis failed');
+  },
+
+  async getFraudSyndicate(sessionId) {
+    const res = await fetch(`${API_BASE}/api/faculty/session/${sessionId}/fraud-syndicate`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch fraud syndicate intel');
+  },
+
 
   async getAdminOverview() {
     const res = await fetch(`${API_BASE}/api/admin/overview`, {

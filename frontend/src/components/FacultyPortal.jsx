@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import confetti from 'canvas-confetti';
 import {
   Play, Users, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle,
-  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square, MapPin
+  RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square, MapPin,
+  LayoutGrid, List, Maximize2, Minimize2, Volume2, VolumeX, Tv, Zap, CheckCheck,
+  Camera, Upload, Radio, X, Activity, Eye, Network
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -17,7 +20,227 @@ export default function FacultyPortal({ user }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
 
+  // Live Classroom Wall (Projector Mode) State
+  const [viewMode, setViewMode] = useState('wall'); // 'wall' | 'table'
+  const [wallFilter, setWallFilter] = useState('ALL'); // 'ALL' | 'PRESENT' | 'UNMARKED'
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [latestArrival, setLatestArrival] = useState(null);
+  const prevPresentRollsRef = useRef(new Set());
+
+  // Category 2: Ultrasonic Acoustic Beacon (Inaudible Zero-GPS-Drift Geofencing)
+  const [ultrasonicBeaconActive, setUltrasonicBeaconActive] = useState(true);
+  const ultrasonicAudioRef = useRef(null);
+
+  // Category 2: Panoramic Classroom Snapshot AI State
+  const [showPanoramicModal, setShowPanoramicModal] = useState(false);
+  const [panoramicTab, setPanoramicTab] = useState('upload'); // 'upload' | 'camera'
+  const [panoramicImage, setPanoramicImage] = useState(null);
+  const [panoramicLoading, setPanoramicLoading] = useState(false);
+  const [panoramicResult, setPanoramicResult] = useState(null);
+  const [panoramicCameraActive, setPanoramicCameraActive] = useState(false);
+  const panoramicVideoRef = useRef(null);
+
+  // Category 2: Fraud Syndicate & Proxy Ring Intelligence State
+  const [showSyndicateModal, setShowSyndicateModal] = useState(false);
+  const [syndicateLoading, setSyndicateLoading] = useState(false);
+  const [syndicateData, setSyndicateData] = useState(null);
+
+
+  // Web Audio pleasant arrival chime
+  const playArrivalChime = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1174.66, audioCtx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.38);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.38);
+    } catch (e) {}
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const getAvatarGradient = (rollNo) => {
+    const gradients = [
+      'from-indigo-600 to-purple-600',
+      'from-emerald-600 to-teal-600',
+      'from-blue-600 to-cyan-600',
+      'from-violet-600 to-fuchsia-600',
+      'from-amber-600 to-orange-600',
+      'from-rose-600 to-pink-600',
+    ];
+    const sum = (rollNo || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    return gradients[sum % gradients.length];
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'ST';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  // Category 2: Ultrasonic Acoustic Inaudible Beacon
+  useEffect(() => {
+    if (activeSession && ultrasonicBeaconActive) {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(18800, audioCtx.currentTime); // Inaudible ultrasonic frequency
+        gain.gain.setValueAtTime(0.04, audioCtx.currentTime); // Safe low gain
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        ultrasonicAudioRef.current = { audioCtx, osc, gain };
+      } catch (e) {
+        console.warn('Ultrasonic audio beacon failed to start:', e);
+      }
+    } else if (ultrasonicAudioRef.current) {
+      try {
+        ultrasonicAudioRef.current.osc.stop();
+        ultrasonicAudioRef.current.audioCtx.close();
+      } catch (e) {}
+      ultrasonicAudioRef.current = null;
+    }
+    return () => {
+      if (ultrasonicAudioRef.current) {
+        try {
+          ultrasonicAudioRef.current.osc.stop();
+          ultrasonicAudioRef.current.audioCtx.close();
+        } catch (e) {}
+        ultrasonicAudioRef.current = null;
+      }
+    };
+  }, [activeSession, ultrasonicBeaconActive]);
+
+  // Category 2: Panoramic Photo Upload Handler
+  const handleUploadPanoramicPhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPanoramicImage(event.target.result);
+      setPanoramicResult(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Category 2: Panoramic Live Webcam Viewfinder Handlers
+  const handleStartPanoramicWebcam = async () => {
+    setPanoramicCameraActive(true);
+    setPanoramicResult(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      if (panoramicVideoRef.current) {
+        panoramicVideoRef.current.srcObject = stream;
+        panoramicVideoRef.current.play();
+      }
+    } catch (err) {
+      alert('Camera access failed: ' + (err.message || 'Permission denied'));
+      setPanoramicCameraActive(false);
+    }
+  };
+
+  const handleStopPanoramicWebcam = () => {
+    if (panoramicVideoRef.current?.srcObject) {
+      panoramicVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      panoramicVideoRef.current.srcObject = null;
+    }
+    setPanoramicCameraActive(false);
+  };
+
+  const handleCapturePanoramicSnapshot = () => {
+    const video = panoramicVideoRef.current;
+    if (!video || video.readyState < 2) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const b64 = canvas.toDataURL('image/jpeg', 0.88);
+    setPanoramicImage(b64);
+    handleStopPanoramicWebcam();
+  };
+
+  // Category 2: Run InsightFace Multi-Face AI on Panoramic Photo
+  const handleRunPanoramicAI = async () => {
+    if (!panoramicImage) {
+      alert('Please upload or snap a classroom photo first.');
+      return;
+    }
+    if (!activeSession) {
+      alert('Please start a lecture session first.');
+      return;
+    }
+
+    setPanoramicLoading(true);
+    try {
+      const res = await api.processPanoramicAttendance(activeSession.session_id, panoramicImage, true);
+      setPanoramicResult(res);
+
+      if (res.auto_marked_count > 0) {
+        if (soundEnabled) playArrivalChime();
+        confetti({
+          particleCount: 100,
+          spread: 85,
+          origin: { y: 0.4 }
+        });
+        setManualSuccessMsg(`Panoramic AI: Successfully verified and marked ${res.auto_marked_count} students PRESENT!`);
+        setTimeout(() => setManualSuccessMsg(null), 5000);
+
+        // Immediate refresh of roster and live stats
+        const live = await api.getFacultyLiveSession(activeSession.session_id);
+        setLiveData(live);
+        const rData = await api.getSessionRoster(activeSession.session_id);
+        if (rData && rData.roster) setRoster(rData.roster);
+      }
+    } catch (err) {
+      alert('Panoramic AI scan failed: ' + err.message);
+    } finally {
+      setPanoramicLoading(false);
+    }
+  };
+
+  // Category 2: Fraud Syndicate Inspector Handler
+  const handleOpenSyndicateInspector = async () => {
+    setShowSyndicateModal(true);
+    if (!activeSession) return;
+    setSyndicateLoading(true);
+    try {
+      const data = await api.getFraudSyndicate(activeSession.session_id);
+      setSyndicateData(data);
+    } catch (err) {
+      console.warn('Failed to load fraud syndicate data:', err);
+    } finally {
+      setSyndicateLoading(false);
+    }
+  };
+
   // Live faculty GPS state
+
   const [facultyGps, setFacultyGps] = useState({
     lat: null,
     lng: null,
@@ -231,6 +454,36 @@ export default function FacultyPortal({ user }) {
         try {
           const rData = await api.getSessionRoster(activeSession.session_id);
           if (rData && rData.roster) {
+            const currentPresentRolls = new Set(
+              rData.roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').map(s => s.roll_no)
+            );
+
+            // Detect newly verified arrivals
+            const newArrivals = rData.roster.filter(
+              s => (s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT') && !prevPresentRollsRef.current.has(s.roll_no)
+            );
+
+            if (prevPresentRollsRef.current.size > 0 && newArrivals.length > 0) {
+              const newest = newArrivals[0];
+              setLatestArrival({
+                name: newest.name,
+                roll_no: newest.roll_no,
+                distance: newest.distance_meters,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              });
+              setTimeout(() => setLatestArrival(null), 4500);
+
+              if (soundEnabled) {
+                playArrivalChime();
+              }
+              confetti({
+                particleCount: 55,
+                spread: 75,
+                origin: { y: 0.35 }
+              });
+            }
+
+            prevPresentRollsRef.current = currentPresentRolls;
             setRoster(rData.roster);
           }
         } catch (err) {
@@ -312,10 +565,21 @@ export default function FacultyPortal({ user }) {
     }
   };
 
-  const filteredRoster = roster.filter(s =>
-    s.name.toLowerCase().includes(searchRoster.toLowerCase()) ||
-    s.roll_no.toLowerCase().includes(searchRoster.toLowerCase())
-  );
+  const presentCount = roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length;
+  const pendingCount = roster.filter(s => s.status === 'PENDING_APPROVAL').length;
+  const totalCount = roster.length;
+  const unmarkedCount = Math.max(0, totalCount - presentCount - pendingCount);
+  const attendancePct = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
+
+  const filteredRoster = roster.filter(s => {
+    const matchesSearch = s.name.toLowerCase().includes(searchRoster.toLowerCase()) ||
+      s.roll_no.toLowerCase().includes(searchRoster.toLowerCase());
+    if (!matchesSearch) return false;
+    if (wallFilter === 'PRESENT') return s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT';
+    if (wallFilter === 'PENDING') return s.status === 'PENDING_APPROVAL';
+    if (wallFilter === 'UNMARKED') return s.status !== 'PRESENT' && s.status !== 'MANUAL_PRESENT' && s.status !== 'PENDING_APPROVAL';
+    return true;
+  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
@@ -383,12 +647,42 @@ export default function FacultyPortal({ user }) {
             <div className="flex flex-wrap items-center gap-2">
               <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                ACTIVE: {activeSession.session_code || activeSession.session_id.substring(0, 8)}
+                ACTIVE: {activeSession?.session_code || activeSession?.session_id?.substring(0, 8) || 'SESSION'}
               </div>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-indigo-300">
                 <MapPin className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Geofence: 150m (Live Faculty GPS: {facultyGps.lat ? `${facultyGps.lat.toFixed(4)}, ${facultyGps.lng.toFixed(4)}` : 'Syncing...'})</span>
               </div>
+
+              {/* Ultrasonic Beacon Toggle */}
+              <button
+                type="button"
+                onClick={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+                title={ultrasonicBeaconActive ? "Ultrasonic inaudible room audio beacon ACTIVE (18.8 kHz)" : "Ultrasonic beacon MUTED"}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  ultrasonicBeaconActive
+                    ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
+                    : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-400'
+                }`}
+              >
+                <Radio className={`w-3.5 h-3.5 ${ultrasonicBeaconActive ? 'text-indigo-400 animate-pulse' : 'text-slate-500'}`} />
+                <span className="hidden md:inline">Ultrasonic:</span> {ultrasonicBeaconActive ? 'ON' : 'OFF'}
+              </button>
+
+              {/* Panoramic AI Snapshot Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPanoramicModal(true);
+                  setPanoramicResult(null);
+                }}
+                className="px-3.5 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-md shadow-purple-500/20 flex items-center gap-1.5 transition active:scale-95"
+                title="Scan entire lecture hall at once with InsightFace Multi-Face AI"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Panoramic AI</span>
+              </button>
+
               <button
                 onClick={handleEndSession}
                 disabled={ending}
@@ -456,7 +750,7 @@ export default function FacultyPortal({ user }) {
           )}
         </div>
 
-        {/* Column 2 & 3: Live Counters & Class Roster with 1-Click Manual Override */}
+        {/* Column 2 & 3: Live Counters & Class Roster / Live Classroom Wall */}
         <div className="lg:col-span-2 space-y-6">
 
           {/* Counters Row */}
@@ -464,119 +758,453 @@ export default function FacultyPortal({ user }) {
             <div className="glass-card rounded-2xl p-4 border border-slate-800">
               <span className="text-xs text-slate-400 font-medium">Present in Class</span>
               <p className="text-2xl font-black text-emerald-400 mt-1">
-                {liveData?.counters?.present_count || 0}
+                {liveData?.counters?.present_count ?? presentCount}
               </p>
+              <span className="text-[10px] text-slate-500">
+                {totalCount > 0 ? `${Math.round(((liveData?.counters?.present_count ?? presentCount) / totalCount) * 100)}% of enrolled` : 'Awaiting session'}
+              </span>
             </div>
             <div className="glass-card rounded-2xl p-4 border border-slate-800">
               <span className="text-xs text-slate-400 font-medium">Pending Approvals</span>
               <p className="text-2xl font-black text-amber-400 mt-1">
-                {liveData?.counters?.pending_count || 0}
+                {liveData?.counters?.pending_count ?? pendingCount}
               </p>
+              <span className="text-[10px] text-slate-500">Borrowed devices</span>
             </div>
-            <div className="glass-card rounded-2xl p-4 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Proxy Alerts Caught</span>
-              <p className="text-2xl font-black text-rose-400 mt-1">
-                {liveData?.counters?.alerts_count || 0}
-              </p>
+            <div className="glass-card rounded-2xl p-4 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span className="text-xs text-slate-400 font-medium">Proxy Alerts Caught</span>
+                <p className="text-2xl font-black text-rose-400 mt-1">
+                  {liveData?.counters?.alerts_count || 0}
+                </p>
+                <span className="text-[10px] text-slate-500">Prevented frauds</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenSyndicateInspector}
+                className="mt-2 text-[10px] font-bold text-rose-300 hover:text-white flex items-center gap-1 group transition w-fit"
+                title="View AI detected device-sharing rings and proxy syndicates"
+              >
+                <Network className="w-3 h-3 group-hover:scale-110 transition-transform" />
+                <span>Syndicate Intel &rarr;</span>
+              </button>
             </div>
           </div>
 
-          {/* Teacher Manual Attendance Override Panel */}
-          <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-emerald-400" />
-                  Teacher Manual Attendance Override
-                </h3>
-                <p className="text-[11px] text-slate-400">
-                  For students without a phone, battery dead, or screen malfunction. Bypasses 5 gates with teacher signature.
-                </p>
+          {/* Real-time Attendance Velocity & UGC 75% Threshold Bar */}
+          {activeSession && totalCount > 0 && (
+            <div className="glass-panel rounded-2xl p-4 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    Attendance Velocity
+                  </span>
+                  <span className="text-slate-400 font-mono text-[11px]">
+                    {presentCount} of {totalCount} Enrolled ({attendancePct}%)
+                  </span>
+                </div>
+                {attendancePct >= 75 ? (
+                  <span className="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                    <CheckCheck className="w-3.5 h-3.5" /> Met 75% Mandatory UGC Quorum
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-medium text-[11px]">
+                    Need {Math.max(0, Math.ceil(totalCount * 0.75) - presentCount)} more students for 75% UGC Quorum
+                  </span>
+                )}
               </div>
 
-              {/* Search */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchRoster}
-                  onChange={(e) => setSearchRoster(e.target.value)}
-                  placeholder="Search Roll No..."
-                  className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+              {/* Progress Track */}
+              <div className="relative w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
+                {/* 75% Marker */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-amber-400/80 z-10 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
+                  style={{ left: '75%' }}
+                  title="75% UGC Minimum Attendance Rule"
+                />
+                <div
+                  className={`h-full transition-all duration-700 ease-out rounded-full ${
+                    attendancePct >= 75
+                      ? 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400 shadow-lg shadow-emerald-500/30'
+                      : 'bg-gradient-to-r from-brand-600 to-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, attendancePct)}%` }}
                 />
               </div>
             </div>
+          )}
 
-            {/* Roster Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                    <th className="py-2.5 px-3">Roll No</th>
-                    <th className="py-2.5 px-3">Student Name</th>
-                    <th className="py-2.5 px-3">Dept</th>
-                    <th className="py-2.5 px-3">Time Marked</th>
-                    <th className="py-2.5 px-3">Location / Geofence</th>
-                    <th className="py-2.5 px-3 text-right">Status / Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredRoster.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="py-6 text-center text-slate-500 text-xs">
-                        {activeSession ? 'No students found matching search.' : 'Start a lecture session to load enrolled students.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRoster.map((s) => (
-                      <tr key={s.roll_no} className="hover:bg-slate-900/40">
-                        <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
-                        <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
-                        <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
-                        <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
-                          {s.marked_at ? new Date(s.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-[11px]">
-                          {s.distance_meters != null ? (
-                            <span className="inline-flex items-center gap-1 font-mono text-emerald-400">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                              {s.distance_meters}m (Inside Campus)
-                            </span>
-                          ) : s.status === 'MANUAL_PRESENT' ? (
-                            <span className="text-slate-400 italic">Teacher Override</span>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          {s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT' ? (
-                            <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">
-                              <Check className="w-3 h-3" /> {s.status === 'MANUAL_PRESENT' ? 'Manual Present' : 'Present'}
-                            </span>
-                          ) : s.status === 'PENDING_APPROVAL' ? (
-                            <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-semibold text-[11px] inline-flex items-center gap-1">
-                              Pending Approval
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleManualOverride(s.roll_no, s.name)}
-                              disabled={actionLoading}
-                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
+          {/* Real-Time Arrival Toast Celebration */}
+          {latestArrival && (
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-indigo-500/20 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between shadow-xl shadow-emerald-500/10 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center font-bold text-emerald-200 text-xs">
+                  {getInitials(latestArrival.name)}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-xs">{latestArrival.name}</span>
+                    <span className="font-mono text-[11px] text-emerald-400">({latestArrival.roll_no})</span>
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/30 text-emerald-200 font-bold">VERIFIED</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Just checked in with live facial verification • {latestArrival.distance != null ? `${latestArrival.distance}m inside campus` : 'In classroom'}
+                  </p>
+                </div>
+              </div>
+              <span className="font-mono text-[11px] text-slate-400 hidden sm:inline">{latestArrival.time}</span>
+            </div>
+          )}
+
+          {/* Interactive Live Classroom Wall & Manual Override Panel */}
+          <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+            
+            {/* Header: Controls, View Switcher & Filters */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Tv className="w-4 h-4 text-brand-400" />
+                  Live Classroom Wall
+                  <span className="text-[11px] font-normal text-slate-400">
+                    (Interactive Projector Grid & 1-Click Verification)
+                  </span>
+                </h3>
+              </div>
+
+              {/* View Switcher, Sound & Fullscreen Controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
+                  <input
+                    type="text"
+                    value={searchRoster}
+                    onChange={(e) => setSearchRoster(e.target.value)}
+                    placeholder="Search name / roll..."
+                    className="bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 w-36 sm:w-44"
+                  />
+                </div>
+
+                {/* View Switcher: Wall vs Table */}
+                <div className="inline-flex rounded-lg bg-slate-900 border border-slate-800 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('wall')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition ${
+                      viewMode === 'wall' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Live Avatar Grid View for Classroom Projection"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" /> Wall
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition ${
+                      viewMode === 'table' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Detailed Audit Table View"
+                  >
+                    <List className="w-3.5 h-3.5" /> Table
+                  </button>
+                </div>
+
+                {/* Sound Chime Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  title={soundEnabled ? 'Arrival chime sound ON' : 'Arrival chime sound MUTED'}
+                  className={`p-1.5 rounded-lg border text-xs transition ${
+                    soundEnabled
+                      ? 'bg-slate-900 border-slate-700 text-emerald-400 hover:text-emerald-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                  }`}
+                >
+                  {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                </button>
+
+                {/* Fullscreen / Theater Mode */}
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title="Toggle Projector Theater Mode"
+                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:text-white transition"
+                >
+                  {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setWallFilter('ALL')}
+                className={`px-3 py-1 rounded-lg font-medium transition ${
+                  wallFilter === 'ALL'
+                    ? 'bg-slate-800 text-white font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                All Enrolled ({totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setWallFilter('PRESENT')}
+                className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                  wallFilter === 'PRESENT'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
+                    : 'text-slate-400 hover:text-emerald-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                Present ({presentCount})
+              </button>
+              {pendingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setWallFilter('PENDING')}
+                  className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                    wallFilter === 'PENDING'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
+                      : 'text-slate-400 hover:text-amber-300'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  Pending ({pendingCount})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setWallFilter('UNMARKED')}
+                className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                  wallFilter === 'UNMARKED'
+                    ? 'bg-slate-800 text-slate-200 font-bold'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-slate-600"></span>
+                Unmarked ({unmarkedCount})
+              </button>
+            </div>
+
+            {/* View Mode: Live Wall (Avatar Grid) */}
+            {viewMode === 'wall' ? (
+              <div>
+                {filteredRoster.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 space-y-2">
+                    <Users className="w-10 h-10 mx-auto text-slate-600 stroke-1" />
+                    <p className="text-xs font-medium">
+                      {activeSession
+                        ? 'No students found matching current filter.'
+                        : 'Start a lecture session to load enrolled students onto the Live Wall.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[500px] overflow-y-auto pr-1">
+                    {filteredRoster.map((s) => {
+                      const isPresent = s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT';
+                      const isPending = s.status === 'PENDING_APPROVAL';
+
+                      return (
+                        <div
+                          key={s.roll_no}
+                          className={`relative rounded-xl p-3 border transition-all duration-300 flex flex-col items-center text-center group ${
+                            isPresent
+                              ? 'bg-emerald-950/20 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:border-emerald-400'
+                              : isPending
+                              ? 'bg-amber-950/20 border-amber-500/40 animate-pulse'
+                              : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+                          }`}
+                        >
+                          {/* Top Status Pin */}
+                          <div className="absolute top-2 right-2">
+                            {isPresent ? (
+                              <span
+                                className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow"
+                                title="Verified Present"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              </span>
+                            ) : isPending ? (
+                              <span
+                                className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"
+                                title="Pending Faculty Review"
+                              />
+                            ) : (
+                              <span
+                                className="w-2 h-2 rounded-full bg-slate-700 group-hover:bg-slate-600"
+                                title="Not Marked"
+                              />
+                            )}
+                          </div>
+
+                          {/* Student Avatar with Deterministic Gradient */}
+                          <div
+                            className={`w-12 h-12 rounded-full bg-gradient-to-tr ${getAvatarGradient(
+                              s.roll_no
+                            )} flex items-center justify-center text-white font-black text-sm shadow-md transition-transform duration-300 group-hover:scale-105 ${
+                              isPresent
+                                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
+                                : isPending
+                                ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950'
+                                : 'opacity-70 group-hover:opacity-100'
+                            }`}
+                          >
+                            {getInitials(s.name)}
+                          </div>
+
+                          {/* Name & Roll No */}
+                          <div className="mt-2.5 w-full">
+                            <h4
+                              className={`text-xs font-bold truncate ${
+                                isPresent ? 'text-white' : 'text-slate-300'
+                              }`}
+                              title={s.name}
                             >
-                              Mark Present Manually
-                            </button>
-                          )}
+                              {s.name}
+                            </h4>
+                            <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                              {s.roll_no}
+                            </p>
+                          </div>
+
+                          {/* Status Pill or Fast 1-Click Action */}
+                          <div className="mt-2 w-full pt-2 border-t border-slate-800/80">
+                            {isPresent ? (
+                              <div className="text-[10px] font-mono text-emerald-400 space-y-0.5">
+                                <span className="font-bold flex items-center justify-center gap-1">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  {s.status === 'MANUAL_PRESENT' ? 'Teacher Signed' : s.face_status === 'PANORAMIC_AI_MATCH' ? 'Panoramic AI' : 'Verified'}
+                                </span>
+                                {s.ultrasonic_verified && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 inline-flex items-center gap-0.5">
+                                    <Radio className="w-2 h-2" /> Acoustic
+                                  </span>
+                                )}
+                                {s.marked_at && (
+                                  <span className="text-[9px] text-slate-400 block">
+                                    {new Date(s.marked_at).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      second: '2-digit'
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+                            ) : isPending ? (
+                              <div className="flex gap-1 w-full justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveException(s.roll_no, 'APPROVE')}
+                                  disabled={actionLoading}
+                                  className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition"
+                                  title="Approve student exception"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveException(s.roll_no, 'REJECT')}
+                                  disabled={actionLoading}
+                                  className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] transition"
+                                  title="Reject student exception"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleManualOverride(s.roll_no, s.name)}
+                                disabled={actionLoading}
+                                className="w-full py-1 px-1.5 rounded-lg bg-slate-800 hover:bg-brand-600 text-slate-300 hover:text-white font-medium text-[10px] transition active:scale-95 disabled:opacity-50"
+                                title="One-click manual override if student is sitting in class"
+                              >
+                                Mark Present
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* View Mode: Detailed Table View */
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                      <th className="py-2.5 px-3">Roll No</th>
+                      <th className="py-2.5 px-3">Student Name</th>
+                      <th className="py-2.5 px-3">Dept</th>
+                      <th className="py-2.5 px-3">Time Marked</th>
+                      <th className="py-2.5 px-3">Location / Geofence</th>
+                      <th className="py-2.5 px-3 text-right">Status / Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredRoster.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="py-6 text-center text-slate-500 text-xs">
+                          {activeSession ? 'No students found matching search.' : 'Start a lecture session to load enrolled students.'}
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      filteredRoster.map((s) => (
+                        <tr key={s.roll_no} className="hover:bg-slate-900/40">
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
+                          <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
+                          <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
+                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
+                            {s.marked_at ? new Date(s.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-[11px]">
+                            {s.distance_meters != null ? (
+                              <span className="inline-flex items-center gap-1 font-mono text-emerald-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                {s.distance_meters}m (Inside Campus)
+                              </span>
+                            ) : s.status === 'MANUAL_PRESENT' ? (
+                              <span className="text-slate-400 italic">Teacher Override</span>
+                            ) : (
+                              <span className="text-slate-500">—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            {s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT' ? (
+                              <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">
+                                <Check className="w-3 h-3" /> {s.status === 'MANUAL_PRESENT' ? 'Manual Present' : 'Present'}
+                              </span>
+                            ) : s.status === 'PENDING_APPROVAL' ? (
+                              <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-semibold text-[11px] inline-flex items-center gap-1">
+                                Pending Approval
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleManualOverride(s.roll_no, s.name)}
+                                disabled={actionLoading}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
+                              >
+                                Mark Present Manually
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
         </div>
+
 
       </div>
 
@@ -675,6 +1303,343 @@ export default function FacultyPortal({ user }) {
         </div>
 
       </div>
+
+      {/* Category 2 Modal 1: Panoramic Classroom Snapshot AI */}
+      {showPanoramicModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-4xl rounded-3xl border border-slate-700 p-6 space-y-5 bg-slate-900/95 max-h-[90vh] overflow-y-auto shadow-2xl">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-purple-400" />
+                  Panoramic Classroom AI Face Scanner
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    Category 2 AI
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Scan 40–80 students in a single wide lecture hall photo. Multi-face InsightFace AI detects and batch-verifies enrolled students simultaneously.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPanoramicModal(false);
+                  handleStopPanoramicWebcam();
+                }}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab Switcher: Upload Photo vs Live Webcam Viewfinder */}
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPanoramicTab('upload');
+                  handleStopPanoramicWebcam();
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  panoramicTab === 'upload' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" /> Upload Lecture Hall Photo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPanoramicTab('camera');
+                  handleStartPanoramicWebcam();
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  panoramicTab === 'camera' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5" /> Webcam / Camera Viewfinder
+              </button>
+            </div>
+
+            {/* Tab 1: Upload Wide Photo */}
+            {panoramicTab === 'upload' && !panoramicResult && (
+              <div className="space-y-4">
+                <label className="border-2 border-dashed border-slate-700 hover:border-purple-500/60 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition bg-slate-900/40 hover:bg-slate-900/80">
+                  <Upload className="w-10 h-10 text-purple-400 mb-2" />
+                  <span className="text-xs font-bold text-white">Click or drag a wide classroom picture</span>
+                  <span className="text-[11px] text-slate-500 mt-1">Supports high-res JPEG, PNG, WebP up to 15MB</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleUploadPanoramicPhoto}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            )}
+
+            {/* Tab 2: Live Camera Viewfinder */}
+            {panoramicTab === 'camera' && !panoramicResult && (
+              <div className="space-y-3 flex flex-col items-center">
+                <div className="relative rounded-2xl overflow-hidden border border-slate-700 w-full max-w-lg aspect-video bg-black flex items-center justify-center">
+                  <video
+                    ref={panoramicVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCapturePanoramicSnapshot}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"
+                >
+                  <Camera className="w-4 h-4" /> Snap Classroom View
+                </button>
+              </div>
+            )}
+
+            {/* Preview Selected / Captured Image */}
+            {panoramicImage && !panoramicResult && (
+              <div className="space-y-3">
+                <div className="relative rounded-2xl overflow-hidden border border-purple-500/40 max-h-72 flex items-center justify-center bg-black">
+                  <img src={panoramicImage} alt="Classroom Preview" className="max-h-72 w-auto object-contain" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPanoramicImage(null)}
+                    disabled={panoramicLoading}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold"
+                  >
+                    Clear Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRunPanoramicAI}
+                    disabled={panoramicLoading}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {panoramicLoading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        Scanning 60+ Faces with InsightFace...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Run Multi-Face AI (Auto-Mark Present)
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Panoramic AI Results View */}
+            {panoramicResult && (
+              <div className="space-y-4">
+                {/* Metrics Pill Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="glass-card rounded-xl p-3 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Faces Detected</span>
+                    <p className="text-xl font-black text-white mt-0.5">{panoramicResult.total_detected_faces}</p>
+                  </div>
+                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
+                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Enrolled Matched</span>
+                    <p className="text-xl font-black text-emerald-400 mt-0.5">{panoramicResult.matched_count}</p>
+                  </div>
+                  <div className="glass-card rounded-xl p-3 border border-purple-500/30 bg-purple-500/10 text-center">
+                    <span className="text-[10px] text-purple-300 uppercase font-semibold">Auto-Marked Present</span>
+                    <p className="text-xl font-black text-purple-300 mt-0.5">{panoramicResult.auto_marked_count}</p>
+                  </div>
+                  <div className="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-500/10 text-center">
+                    <span className="text-[10px] text-amber-300 uppercase font-semibold">Visitors / Unenrolled</span>
+                    <p className="text-xl font-black text-amber-400 mt-0.5">{panoramicResult.unmatched_count}</p>
+                  </div>
+                </div>
+
+                {/* Annotated Image with Green & Amber Boxes */}
+                <div className="relative rounded-2xl overflow-hidden border border-slate-700 bg-black flex items-center justify-center max-h-96">
+                  <img
+                    src={panoramicResult.annotated_image_base64}
+                    alt="AI Annotated Classroom"
+                    className="max-h-96 w-auto object-contain"
+                  />
+                </div>
+
+                {/* Matched Students Tag List */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Verified Students (Auto-Updated on Live Classroom Wall):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 bg-slate-900/60 rounded-xl border border-slate-800">
+                    {panoramicResult.matched_students.map((st, i) => (
+                      <span
+                        key={i}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-[11px] font-mono flex items-center gap-1"
+                      >
+                        <span className="font-bold">{st.name}</span> ({st.roll_no}) • {st.confidence_score}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPanoramicResult(null);
+                      setPanoramicImage(null);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition"
+                  >
+                    Scan Another Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPanoramicModal(false)}
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg"
+                  >
+                    Done & Return to Live Wall
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Category 2 Modal 2: Fraud Syndicate & Proxy Ring Intelligence */}
+      {showSyndicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-3xl rounded-3xl border border-rose-500/40 p-6 space-y-5 bg-slate-900/95 max-h-[90vh] overflow-y-auto shadow-2xl">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-rose-300 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-rose-400" />
+                  AI Fraud Syndicate & Proxy Ring Intelligence
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Category 2 ML
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bipartite graph clustering detects shared physical devices, rapid replay submissions, and repeat gate violations.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSyndicateModal(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {syndicateLoading ? (
+              <div className="py-12 text-center text-slate-400 space-y-2">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-rose-400" />
+                <p className="text-xs">Computing fraud graph clusters and analyzing device fingerprints...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Metric Summary */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="glass-card rounded-xl p-3 border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Caught Breaches</span>
+                    <p className="text-xl font-black text-rose-400 mt-0.5">{syndicateData?.total_alerts || 0}</p>
+                  </div>
+                  <div className="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-500/10 text-center">
+                    <span className="text-[10px] text-amber-300 uppercase font-semibold">Syndicate Rings</span>
+                    <p className="text-xl font-black text-amber-400 mt-0.5">{syndicateData?.syndicates_detected || 0}</p>
+                  </div>
+                  <div className="glass-card rounded-xl p-3 border border-indigo-500/30 bg-indigo-500/10 text-center">
+                    <span className="text-[10px] text-indigo-300 uppercase font-semibold">Status</span>
+                    <p className="text-sm font-bold text-emerald-400 mt-1">Active Defense</p>
+                  </div>
+                </div>
+
+                {/* Detected Syndicates List */}
+                <div className="space-y-2.5">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Network className="w-4 h-4 text-rose-400" />
+                    Detected Proxy Syndicates & Collusion Clusters:
+                  </h4>
+
+                  {syndicateData?.syndicates?.length ? (
+                    syndicateData.syndicates.map((syn, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-xs text-rose-300">{syn.syndicate_id}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            syn.severity === 'CRITICAL' ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'
+                          }`}>
+                            {syn.severity} RISK
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-200 font-medium">{syn.description}</p>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                          <span className="text-slate-500">Involved Roll Nos:</span>
+                          <span className="font-mono font-bold text-indigo-300">{syn.involved_students?.join(', ')}</span>
+                        </div>
+                        <p className="text-[10px] text-amber-300 italic pt-1 border-t border-rose-500/20">
+                          Recommendation: {syn.recommendation}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-500 text-xs">
+                      No multi-user device-sharing or coordinated proxy rings detected in this lecture session.
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Alerts Feed */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-300">Recent Anti-Proxy Forensics (Raw Gates):</h4>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {syndicateData?.alerts?.length ? (
+                      syndicateData.alerts.map((al, idx) => (
+                        <div key={idx} className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs flex items-center justify-between">
+                          <div>
+                            <span className="font-mono font-bold text-rose-400 text-[11px]">{al.failed_gate}</span>
+                            <span className="text-slate-400 text-[10px] ml-2">Roll: {al.roll_no || 'Unknown'}</span>
+                            <p className="text-slate-300 text-[10px] mt-0.5">{al.reason}</p>
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500">{al.created_at ? new Date(al.created_at).toLocaleTimeString() : ''}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-slate-500 py-3 text-center">No alerts logged yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowSyndicateModal(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition"
+                  >
+                    Close Inspector
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
 
     </div>
   );
