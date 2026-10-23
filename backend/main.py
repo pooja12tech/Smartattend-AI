@@ -39,7 +39,7 @@ from db_postgres import (
 )
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
-    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment
+    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment, StudentNotification
 )
 import face_service
 from seed_postgres import run_postgres_seed
@@ -210,37 +210,170 @@ def compute_face_similarity_score(img1: np.ndarray, img2: np.ndarray) -> float:
         print(f"[Face Comparison Error]: {e}")
         return 0.0
 
-def calculate_bunk_metrics(attended: int, total: int) -> Dict[str, Any]:
+def calculate_bunk_metrics(attended: int, total: int, threshold: float = 75.0) -> Dict[str, Any]:
     if total <= 0:
         return {
             "current_pct": 100.0,
             "status": "SAFE",
             "safe_skips": 0,
             "classes_needed": 0,
+            "target_threshold": threshold,
             "message": "No classes recorded yet."
         }
 
     pct = round((attended / total) * 100.0, 1)
-    if pct >= 75.0:
-        safe_skips = int(math.floor((attended - 0.75 * total) / 0.75))
+    t_ratio = threshold / 100.0
+    if pct >= threshold:
+        safe_skips = int(math.floor((attended - t_ratio * total) / t_ratio)) if t_ratio > 0 else 0
         safe_skips = max(0, safe_skips)
         return {
             "current_pct": pct,
             "status": "SAFE",
             "safe_skips": safe_skips,
             "classes_needed": 0,
-            "message": f"You can safely skip {safe_skips} class{'es' if safe_skips != 1 else ''} and still stay above 75%."
+            "target_threshold": threshold,
+            "message": f"You can safely skip {safe_skips} class{'es' if safe_skips != 1 else ''} and still stay above {threshold}%."
         }
     else:
-        needed = int(math.ceil((0.75 * total - attended) / 0.25))
+        denom = max(0.01, 1.0 - t_ratio)
+        needed = int(math.ceil((t_ratio * total - attended) / denom))
         needed = max(1, needed)
         return {
             "current_pct": pct,
             "status": "DEFICIT",
             "safe_skips": 0,
             "classes_needed": needed,
-            "message": f"You must attend {needed} consecutive class{'es' if needed != 1 else ''} to recover to 75% attendance."
+            "target_threshold": threshold,
+            "message": f"You must attend {needed} consecutive class{'es' if needed != 1 else ''} to recover to {threshold}% attendance."
         }
+
+def simulate_attendance_scenario(
+    attended: int,
+    total: int,
+    planned_bunks: int = 0,
+    planned_attends: int = 0,
+    threshold: float = 75.0,
+    future_events: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    # Calculate extra bunks & attends from future events if provided
+    extra_bunks = 0
+    extra_attends = 0
+    event_timeline = []
+
+    running_att = attended
+    running_tot = total
+
+    if future_events:
+        for ev in future_events:
+            cnt = int(ev.get("classes_count", 1) or 1)
+            action = str(ev.get("action", "BUNK")).upper()
+            if action == "BUNK":
+                extra_bunks += cnt
+                running_tot += cnt
+            else:
+                extra_attends += cnt
+                running_att += cnt
+                running_tot += cnt
+
+            step_pct = round((running_att / running_tot * 100.0), 1) if running_tot > 0 else 100.0
+            event_timeline.append({
+                "date": ev.get("date"),
+                "day": ev.get("day"),
+                "title": ev.get("title", "Lecture Slot"),
+                "action": action,
+                "classes_count": cnt,
+                "projected_pct": step_pct,
+                "is_safe": step_pct >= threshold,
+                "margin_after": round(step_pct - threshold, 1)
+            })
+
+    eff_bunks = planned_bunks + extra_bunks
+    eff_attends = planned_attends + extra_attends
+
+    orig_pct = round((attended / total * 100.0), 1) if total > 0 else 100.0
+    proj_attended = attended + eff_attends
+    proj_total = total + eff_bunks + eff_attends
+    proj_pct = round((proj_attended / proj_total * 100.0), 1) if proj_total > 0 else 100.0
+    pct_delta = round(proj_pct - orig_pct, 1)
+
+    metrics = calculate_bunk_metrics(proj_attended, proj_total, threshold)
+
+    # Build Recovery / Cushion Roadmap milestones
+    roadmap = []
+    if proj_pct < threshold:
+        needed = metrics["classes_needed"]
+        # Generate clear step-by-step milestones
+        if needed <= 8:
+            checkpoints = list(range(1, needed + 1))
+        else:
+            checkpoints = sorted(list(set([1, 2, 3, max(4, needed // 3), max(5, (needed * 2) // 3), max(6, needed - 1), needed])))
+
+        for cp in checkpoints:
+            att_after = proj_attended + cp
+            tot_after = proj_total + cp
+            milestone_pct = round((att_after / tot_after) * 100.0, 1)
+            reached = milestone_pct >= threshold
+            roadmap.append({
+                "step": cp,
+                "classes_attended": cp,
+                "projected_pct": milestone_pct,
+                "reached_target": reached,
+                "label": f"+{cp} lecture{'s' if cp != 1 else ''} attended -> {milestone_pct}%" + (" (Target 75% Recovered! 🎓)" if reached else "")
+            })
+    else:
+        safe = metrics["safe_skips"]
+        # Cushion steps: show skip 1 up to safe + 2 (showing floor & first breach)
+        max_cushion_steps = min(safe + 2, 10)
+        cushion_steps = list(range(1, max_cushion_steps + 1)) if max_cushion_steps > 0 else []
+        for cp in cushion_steps:
+            tot_after = proj_total + cp
+            cushion_pct = round((proj_attended / tot_after) * 100.0, 1)
+            still_safe = cushion_pct >= threshold
+            remaining_after = max(0, safe - cp)
+            roadmap.append({
+                "step": cp,
+                "classes_bunked": cp,
+                "projected_pct": cushion_pct,
+                "still_safe": still_safe,
+                "buffer_remaining": remaining_after,
+                "label": f"Skip {cp} lecture{'s' if cp != 1 else ''} -> {cushion_pct}%" + (
+                    " (Safe buffer floor ⚠️)" if remaining_after == 0 and still_safe else (
+                        " (Detention warning 🛑)" if not still_safe else f" ({remaining_after} safe bunks left)"
+                    )
+                )
+            })
+
+    # Actionable guidance
+    if proj_pct >= threshold:
+        if eff_bunks > 0 and eff_attends == 0:
+            advice = f"Safe Bunk Confirmed! Missing {eff_bunks} lecture{'s' if eff_bunks != 1 else ''} adjusts your attendance from {orig_pct}% to {proj_pct}%. You remain safe with {metrics['safe_skips']} buffer bunk{'s' if metrics['safe_skips'] != 1 else ''} remaining."
+        elif eff_attends > 0 and eff_bunks == 0:
+            advice = f"Attendance Boost Active! Attending {eff_attends} lectures lifts your attendance to {proj_pct}% (+{pct_delta}% gain)."
+        elif eff_bunks > 0 and eff_attends > 0:
+            advice = f"Net Projected Attendance is {proj_pct}%. You remain safely above the {threshold}% UGC benchmark with {metrics['safe_skips']} buffer skips remaining."
+        else:
+            advice = f"Safe Standing at {proj_pct}%. You can safely miss up to {metrics['safe_skips']} class{'es' if metrics['safe_skips'] != 1 else ''} without dropping below the {threshold}% UGC benchmark."
+    else:
+        advice = f"Detention Warning! Dropping to {proj_pct}% puts you below the {threshold}% UGC limit. You must attend {metrics['classes_needed']} consecutive lectures to climb back to safety."
+
+    return {
+        "original_attended": attended,
+        "original_total": total,
+        "original_pct": orig_pct,
+        "planned_bunks": eff_bunks,
+        "planned_attends": eff_attends,
+        "projected_attended": proj_attended,
+        "projected_total": proj_total,
+        "projected_pct": proj_pct,
+        "pct_delta": pct_delta,
+        "target_threshold": threshold,
+        "status": metrics["status"],
+        "safe_skips": metrics["safe_skips"],
+        "classes_needed": metrics["classes_needed"],
+        "advice": advice,
+        "roadmap": roadmap,
+        "event_timeline": event_timeline
+    }
 
 def recompute_student_stats(db: Session, user_id_or_roll: Any) -> Optional[StudentStats]:
     """
@@ -387,6 +520,147 @@ def recompute_student_subject_enrollment(db: Session, roll_no: str, subject_code
         db.flush()
 
     return enrollment
+
+def check_and_generate_attendance_notifications(
+    db: Session,
+    user_id_or_roll: Any,
+    alert_threshold: float = 74.0,
+    target_criteria: float = 75.0
+) -> List[StudentNotification]:
+    """
+    Evaluates attendance for the student (overall aggregate and per-subject enrollments).
+    If attendance in any subject or overall drops below alert_threshold (74.0%),
+    generates or updates high-priority notifications informing the student:
+    - Their exact current attendance percentage.
+    - How many consecutive lectures they must attend to climb back to target_criteria (75.0%).
+    """
+    user = None
+    if isinstance(user_id_or_roll, uuid.UUID):
+        user = db.query(User).filter(User.id == user_id_or_roll).first()
+    elif isinstance(user_id_or_roll, str):
+        try:
+            parsed_id = uuid.UUID(user_id_or_roll)
+            user = db.query(User).filter(User.id == parsed_id).first()
+        except ValueError:
+            user = db.query(User).filter(User.roll_no == user_id_or_roll).first()
+
+    if not user:
+        return []
+
+    now = datetime.now(timezone.utc)
+    cutoff_ratio = target_criteria / 100.0
+    denom = max(0.01, 1.0 - cutoff_ratio)
+
+    # 1. Check Overall Aggregate Attendance
+    stats = db.query(StudentStats).filter(StudentStats.user_id == user.id).first()
+    if stats and stats.total_lectures > 0 and stats.current_attendance_pct < alert_threshold:
+        pct = stats.current_attendance_pct
+        att = stats.attended_lectures
+        tot = stats.total_lectures
+        needed = int(math.ceil((cutoff_ratio * tot - att) / denom))
+        needed = max(1, needed)
+
+        title = f"Attendance Alert: Overall Attendance Dropped to {pct}% (Below 74% Threshold)"
+        message = (
+            f"Your overall semester attendance has dropped to {pct}%, falling below the mandatory 74.0% safety threshold. "
+            f"You are in danger of academic detention and exam hall ticket debarment. You must attend the next {needed} consecutive lecture{'s' if needed != 1 else ''} "
+            f"to climb back to {target_criteria}% and fulfill the university eligibility criteria."
+        )
+
+        existing = db.query(StudentNotification).filter(
+            StudentNotification.roll_no == user.roll_no,
+            StudentNotification.subject_code == "OVERALL",
+            StudentNotification.is_dismissed == False
+        ).first()
+
+        if existing:
+            existing.current_pct = pct
+            existing.classes_needed = needed
+            existing.message = message
+            existing.created_at = now
+            existing.is_read = False
+        else:
+            notif = StudentNotification(
+                user_id=user.id,
+                roll_no=user.roll_no,
+                type="ATTENDANCE_DEFICIT_WARNING",
+                severity="CRITICAL",
+                title=title,
+                message=message,
+                subject_code="OVERALL",
+                subject_name="Overall Semester Aggregate",
+                current_pct=pct,
+                threshold_pct=target_criteria,
+                alert_cutoff_pct=alert_threshold,
+                classes_needed=needed,
+                is_read=False,
+                is_dismissed=False,
+                created_at=now
+            )
+            db.add(notif)
+
+    # 2. Check Each Enrolled Subject
+    enrollments = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == user.roll_no
+    ).all()
+
+    for enr in enrollments:
+        if enr.total_classes > 0 and enr.current_pct < alert_threshold:
+            s_pct = enr.current_pct
+            s_att = enr.attended_classes
+            s_tot = enr.total_classes
+            s_needed = int(math.ceil((cutoff_ratio * s_tot - s_att) / denom))
+            s_needed = max(1, s_needed)
+            s_title_name = enr.subject_name or enr.subject_code
+
+            title = f"Attendance Alert: {enr.subject_code} Dropped to {s_pct}% (< 74%)"
+            message = (
+                f"Your attendance in {enr.subject_code} ({s_title_name}) has fallen to {s_pct}%, "
+                f"breaching the 74.0% safety threshold. You are in danger of exam debarment in this course. "
+                f"You must attend the next {s_needed} consecutive lecture{'s' if s_needed != 1 else ''} "
+                f"to recover to {target_criteria}% and fulfill the criteria."
+            )
+
+            existing = db.query(StudentNotification).filter(
+                StudentNotification.roll_no == user.roll_no,
+                StudentNotification.subject_code == enr.subject_code,
+                StudentNotification.is_dismissed == False
+            ).first()
+
+            if existing:
+                existing.current_pct = s_pct
+                existing.classes_needed = s_needed
+                existing.message = message
+                existing.created_at = now
+                existing.is_read = False
+            else:
+                notif = StudentNotification(
+                    user_id=user.id,
+                    roll_no=user.roll_no,
+                    type="ATTENDANCE_DEFICIT_WARNING",
+                    severity="CRITICAL",
+                    title=title,
+                    message=message,
+                    subject_code=enr.subject_code,
+                    subject_name=s_title_name,
+                    current_pct=s_pct,
+                    threshold_pct=target_criteria,
+                    alert_cutoff_pct=alert_threshold,
+                    classes_needed=s_needed,
+                    is_read=False,
+                    is_dismissed=False,
+                    created_at=now
+                )
+                db.add(notif)
+
+    db.commit()
+
+    all_notifs = db.query(StudentNotification).filter(
+        StudentNotification.roll_no == user.roll_no,
+        StudentNotification.is_dismissed == False
+    ).order_by(StudentNotification.created_at.desc()).all()
+
+    return all_notifs
 
 def finalize_session_absentees(db: Session, session: LectureSession, now: datetime, absent_reason: str) -> tuple[int, bool]:
     """
@@ -584,6 +858,21 @@ class StudentExceptionRequest(BaseModel):
     user_lat: Optional[float] = None
     user_lng: Optional[float] = None
     live_selfie_base64: Optional[str] = None
+
+class FutureEventModel(BaseModel):
+    date: Optional[str] = Field(None, description="Date of future event (YYYY-MM-DD)")
+    day: Optional[str] = Field(None, description="Day of the week (e.g. Friday)")
+    title: Optional[str] = Field(None, description="Event name, e.g. Hackathon Leave")
+    subject_code: Optional[str] = Field(None, description="Specific subject code if applicable")
+    action: str = Field(default="BUNK", description="'BUNK' (skip) or 'ATTEND'")
+    classes_count: int = Field(default=1, ge=1, le=10, description="Number of classes affected on this date")
+
+class AttendanceSimulationRequest(BaseModel):
+    subject_code: Optional[str] = Field(None, description="Subject code or 'OVERALL' for aggregate attendance")
+    planned_bunks: int = Field(default=0, ge=0, le=100, description="Number of future classes to miss/bunk")
+    planned_attends: int = Field(default=0, ge=0, le=100, description="Number of future classes to attend")
+    target_threshold: float = Field(default=75.0, ge=50.0, le=100.0, description="Target attendance threshold percentage (e.g. 75, 80, 85)")
+    future_events: Optional[List[FutureEventModel]] = Field(default=None, description="Future calendar dates toggled for simulation")
 
 class FacultyApproveRequest(BaseModel):
     session_id: str
@@ -2065,6 +2354,13 @@ def student_dashboard(
 
     recent_logs = [r.to_dict() for r in recent_records]
 
+    # Attendance Deficit Notifications & Alert Engine (< 74% Threshold)
+    active_notifications = check_and_generate_attendance_notifications(
+        db, student.id, alert_threshold=74.0, target_criteria=75.0
+    )
+    unread_notifs_count = sum(1 for n in active_notifications if not n.is_read)
+    primary_alert = next((n.to_dict() for n in active_notifications if n.severity == "CRITICAL" and not n.is_dismissed), None)
+
     return {
         "student": {
             "roll_no": student.roll_no,
@@ -2084,7 +2380,268 @@ def student_dashboard(
         "bunk_calculator": bunk_calc,
         "ai_risk_prediction": risk_info,
         "subject_breakdown": subject_breakdown,
-        "recent_logs": recent_logs
+        "recent_logs": recent_logs,
+        "notifications": [n.to_dict() for n in active_notifications],
+        "unread_notifications_count": unread_notifs_count,
+        "attendance_alert": primary_alert
+    }
+
+# ------------------------------------------------------------------------------
+# 5b. POST /api/student/{roll_no}/simulate (The Bunk Calculator & Predictive Safety Simulator)
+# ------------------------------------------------------------------------------
+@app.post("/api/student/{roll_no}/simulate")
+def simulate_student_attendance(
+    roll_no: str,
+    req: AttendanceSimulationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    req_aliases = {"student", "stu01", "stu001"} if roll_no.lower() in ("student", "stu01", "stu001") else {roll_no.lower()}
+    if current_user.role == "student" and current_user.roll_no.lower() not in req_aliases:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Students can only simulate their own attendance."
+        )
+
+    student = db.query(User).filter(
+        (User.roll_no == roll_no) | (User.roll_no.in_(req_aliases))
+    ).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
+
+    stats_obj = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+    if not stats_obj:
+        stats_obj = recompute_student_stats(db, student.id)
+
+    stats = stats_obj.to_dict() if stats_obj else {}
+    overall_attended = stats.get("attended_lectures", 0)
+    overall_total = stats.get("total_lectures", 0)
+
+    # Determine baseline attended & total based on subject_code
+    subject_title = "Overall Semester Aggregate"
+    subject_code = (req.subject_code or "OVERALL").strip()
+    target_attended = overall_attended
+    target_total = overall_total
+
+    if subject_code.upper() != "OVERALL":
+        enr = db.query(StudentSubjectEnrollment).filter(
+            StudentSubjectEnrollment.roll_no == student.roll_no,
+            (StudentSubjectEnrollment.subject_code == subject_code) |
+            (StudentSubjectEnrollment.subject_code.startswith(subject_code))
+        ).first()
+        if enr:
+            target_attended = enr.attended_classes
+            target_total = enr.total_classes
+            subject_title = f"{enr.subject_code} - {enr.subject_name}" if enr.subject_name else enr.subject_code
+        else:
+            # Fallback mock for standard curriculum subjects
+            fallback_map = {
+                "CS301": ("CS301 - Machine Learning & OS", 0.35, 1.0),
+                "CS302": ("CS302 - Database Systems", 0.35, 0.96),
+                "CS303": ("CS303 - Machine Learning", 0.30, 1.02)
+            }
+            if subject_code in fallback_map:
+                name, scale, att_scale = fallback_map[subject_code]
+                subject_title = name
+                target_total = max(10, int(overall_total * scale))
+                target_attended = min(target_total, int(overall_attended * scale * att_scale))
+            else:
+                subject_title = subject_code
+                target_total = max(10, int(overall_total * 0.35))
+                target_attended = min(target_total, int(overall_attended * 0.35))
+
+    events_list = [e.model_dump() if hasattr(e, "model_dump") else e.dict() for e in req.future_events] if req.future_events else []
+    sim_result = simulate_attendance_scenario(
+        attended=target_attended,
+        total=target_total,
+        planned_bunks=req.planned_bunks,
+        planned_attends=req.planned_attends,
+        threshold=req.target_threshold,
+        future_events=events_list
+    )
+
+    sim_result["subject_code"] = subject_code
+    sim_result["subject_title"] = subject_title
+    sim_result["student_roll_no"] = student.roll_no
+    sim_result["student_name"] = student.name
+
+    return {
+        "success": True,
+        "simulation": sim_result
+    }
+
+# ------------------------------------------------------------------------------
+# 5c. STUDENT NOTIFICATIONS & THRESHOLD DEFICIT ALERTS (< 74%)
+# ------------------------------------------------------------------------------
+@app.get("/api/student/{roll_no}/notifications")
+def get_student_notifications(
+    roll_no: str,
+    unread_only: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    req_aliases = {"student", "stu01", "stu001"} if roll_no.lower() in ("student", "stu01", "stu001") else {roll_no.lower()}
+    if current_user.role == "student" and current_user.roll_no.lower() not in req_aliases:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Students can only view their own notifications."
+        )
+
+    student = db.query(User).filter(
+        (User.roll_no == roll_no) | (User.roll_no.in_(req_aliases))
+    ).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student '{roll_no}' not found.")
+
+    all_notifs = check_and_generate_attendance_notifications(db, student.id, alert_threshold=74.0, target_criteria=75.0)
+
+    if unread_only:
+        filtered = [n for n in all_notifs if not n.is_read]
+    else:
+        filtered = all_notifs
+
+    return {
+        "success": True,
+        "roll_no": student.roll_no,
+        "total_count": len(all_notifs),
+        "unread_count": sum(1 for n in all_notifs if not n.is_read),
+        "has_critical_alerts": any(n.severity == "CRITICAL" and not n.is_dismissed for n in all_notifs),
+        "notifications": [n.to_dict() for n in filtered]
+    }
+
+@app.post("/api/student/{roll_no}/notifications/{notification_id}/read")
+def mark_notification_read(
+    roll_no: str,
+    notification_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    req_aliases = {"student", "stu01", "stu001"} if roll_no.lower() in ("student", "stu01", "stu001") else {roll_no.lower()}
+    if current_user.role == "student" and current_user.roll_no.lower() not in req_aliases:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    student = db.query(User).filter((User.roll_no == roll_no) | (User.roll_no.in_(req_aliases))).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    try:
+        notif_uuid = uuid.UUID(notification_id)
+        notif = db.query(StudentNotification).filter(
+            StudentNotification.id == notif_uuid,
+            StudentNotification.roll_no == student.roll_no
+        ).first()
+    except Exception:
+        notif = None
+
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+
+    notif.is_read = True
+    db.commit()
+
+    return {"success": True, "message": "Notification marked as read."}
+
+@app.post("/api/student/{roll_no}/notifications/mark-all-read")
+def mark_all_notifications_read(
+    roll_no: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    req_aliases = {"student", "stu01", "stu001"} if roll_no.lower() in ("student", "stu01", "stu001") else {roll_no.lower()}
+    if current_user.role == "student" and current_user.roll_no.lower() not in req_aliases:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    student = db.query(User).filter((User.roll_no == roll_no) | (User.roll_no.in_(req_aliases))).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    db.query(StudentNotification).filter(
+        StudentNotification.roll_no == student.roll_no,
+        StudentNotification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+
+    return {"success": True, "message": "All notifications marked as read."}
+
+@app.post("/api/student/{roll_no}/notifications/{notification_id}/dismiss")
+def dismiss_notification(
+    roll_no: str,
+    notification_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    req_aliases = {"student", "stu01", "stu001"} if roll_no.lower() in ("student", "stu01", "stu001") else {roll_no.lower()}
+    if current_user.role == "student" and current_user.roll_no.lower() not in req_aliases:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    student = db.query(User).filter((User.roll_no == roll_no) | (User.roll_no.in_(req_aliases))).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    try:
+        notif_uuid = uuid.UUID(notification_id)
+        notif = db.query(StudentNotification).filter(
+            StudentNotification.id == notif_uuid,
+            StudentNotification.roll_no == student.roll_no
+        ).first()
+    except Exception:
+        notif = None
+
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+
+    notif.is_dismissed = True
+    notif.is_read = True
+    db.commit()
+
+    return {"success": True, "message": "Notification dismissed."}
+
+@app.post("/api/student/{roll_no}/test-warning-alert")
+def trigger_test_warning_alert(
+    roll_no: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Demo/testing endpoint to trigger an interactive attendance drop alert (<74%)
+    with exact recovery calculation.
+    """
+    student = db.query(User).filter(User.roll_no == roll_no).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    now = datetime.now(timezone.utc)
+    tot = 28
+    att = 20
+    pct = round((att / tot) * 100.0, 1)  # 71.4%
+    cutoff_ratio = 0.75
+    denom = 0.25
+    needed = int(math.ceil((cutoff_ratio * tot - att) / denom))  # 4 lectures
+
+    notif = StudentNotification(
+        user_id=student.id,
+        roll_no=student.roll_no,
+        type="ATTENDANCE_DEFICIT_WARNING",
+        severity="CRITICAL",
+        title="🚨 Critical Alert: CS301 Dropped to 71.4% (< 74%)",
+        message=f"Attendance Warning: Your attendance in CS301 (Machine Learning & OS) has dropped to 71.4%, falling below the mandatory 74.0% safety threshold. You are in danger of exam debarment. You must attend the next {needed} consecutive lectures to climb back to 75.0% and fulfill the university criteria.",
+        subject_code="CS301",
+        subject_name="Machine Learning & OS",
+        current_pct=pct,
+        threshold_pct=75.0,
+        alert_cutoff_pct=74.0,
+        classes_needed=needed,
+        is_read=False,
+        is_dismissed=False,
+        created_at=now
+    )
+    db.add(notif)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Demo attendance warning alert (< 74%) generated successfully.",
+        "notification": notif.to_dict()
     }
 
 # ------------------------------------------------------------------------------

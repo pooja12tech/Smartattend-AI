@@ -8,6 +8,7 @@ import {
 import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api, getDeviceId } from '../api';
+import BunkSimulator from './BunkSimulator';
 
 export default function StudentPortal({ user }) {
   const [dashboard, setDashboard] = useState(null);
@@ -1307,146 +1308,12 @@ export default function StudentPortal({ user }) {
         </div>
       </div>
 
-      {/* HERO UTILITY: Prominent Safe Bunk Margin & Attendance Runway */}
-      <div className={`glass-panel rounded-3xl p-6 sm:p-7 border relative overflow-hidden transition-all duration-300 ${
-        bunkCalc.status === 'SAFE' ? 'border-emerald-500/30 glow-emerald' : 'border-rose-500/30 glow-rose'
-      }`}>
-        <div className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-20 -mr-20 -mt-20 ${
-          bunkCalc.status === 'SAFE' ? 'bg-emerald-500' : 'bg-rose-500'
-        }`} />
-
-        <div className="relative z-10 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                bunkCalc.status === 'SAFE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-              }`}>
-                <Award className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Attendance Runway & Bunk Calculator</h3>
-                <p className="text-xs text-slate-400">Calculated against the mandatory 75.0% university eligibility threshold</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-sm ${
-                bunkCalc.status === 'SAFE'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-emerald-500/20'
-                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-rose-500/20 animate-pulse'
-              }`}>
-                {bunkCalc.status === 'SAFE' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
-                {bunkCalc.status === 'SAFE' ? 'SAFE STANDING (NO DETENTION RISK)' : 'CRITICAL DEFICIT (DETENTION WARNING)'}
-              </span>
-            </div>
-          </div>
-
-          {/* Primary Hero Metrics Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Current Overall Attendance */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Overall Attendance</span>
-                <span className="font-mono text-indigo-400">Target: 75.0%</span>
-              </div>
-              <div className="my-2">
-                <span className={`text-4xl sm:text-5xl font-black tracking-tight ${attendance.current_pct >= 75 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {attendance.current_pct}%
-                </span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${attendance.current_pct >= 75 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
-                    style={{ width: `${Math.min(100, attendance.current_pct)}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[11px] text-slate-500 font-mono">
-                  <span>{attendance.attended_lectures} Attended</span>
-                  <span>{attendance.total_lectures} Total Held</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Safe Bunks / Classes Needed Major Metric */}
-            <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col justify-between md:col-span-2 ${
-              bunkCalc.status === 'SAFE' ? 'bg-emerald-950/20 border-emerald-500/30' : 'bg-rose-950/20 border-rose-500/30'
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  {bunkCalc.status === 'SAFE' ? 'Safe Bunk Margin' : 'Recovery Requirement'}
-                </span>
-                <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
-                  bunkCalc.status === 'SAFE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}>
-                  {bunkCalc.status === 'SAFE' ? 'Eligible for Examination' : 'Detention Zone'}
-                </span>
-              </div>
-
-              <div className="my-3 flex items-baseline gap-3">
-                <span className={`text-4xl sm:text-5xl font-black tracking-tight ${
-                  bunkCalc.status === 'SAFE' ? 'text-emerald-400' : 'text-rose-400'
-                }`}>
-                  {bunkCalc.status === 'SAFE' ? bunkCalc.safe_skips : bunkCalc.classes_needed}
-                </span>
-                <span className="text-sm sm:text-base font-bold text-slate-200">
-                  {bunkCalc.status === 'SAFE' ? 'Lectures You Can Safely Skip' : 'Consecutive Lectures You Must Attend'}
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                💡 {bunkCalc.message}
-              </p>
-            </div>
-          </div>
-
-          {/* Subject Quick Bunk Matrix Pills */}
-          {subjects.length > 0 && (
-            <div className="pt-2 border-t border-slate-800/80 space-y-2">
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                Curriculum Bunk Status by Subject:
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                {subjects.map((sub, idx) => {
-                  const subCalc = sub.bunk_calculator;
-                  const isSubSafe = sub.pct >= 75.0;
-                  return (
-                    <div
-                      key={idx}
-                      className={`p-2.5 rounded-xl border flex items-center justify-between text-xs transition ${
-                        isSubSafe
-                          ? 'bg-slate-900/70 border-slate-800 hover:border-emerald-500/30'
-                          : 'bg-rose-950/30 border-rose-500/30 hover:border-rose-500/50'
-                      }`}
-                    >
-                      <div className="truncate mr-2">
-                        <p className="font-bold text-white truncate text-xs">{sub.subject_code || sub.subject.split(' - ')[0]}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{sub.attended}/{sub.total} classes</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className={`text-xs font-mono font-bold ${isSubSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {sub.pct}%
-                        </span>
-                        <div>
-                          {subCalc?.status === 'SAFE' ? (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                              +{subCalc.safe_skips} Bunk{subCalc.safe_skips !== 1 ? 's' : ''}
-                            </span>
-                          ) : (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse">
-                              Need {subCalc?.classes_needed || 1}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* THE BUNK CALCULATOR & PREDICTIVE SAFETY SIMULATOR (STUDENT FAVORITE 🔥) */}
+      <BunkSimulator
+        studentRollNo={dashboard?.student?.roll_no || user?.roll_no || 'student'}
+        dashboardData={dashboard}
+        onRefreshDashboard={fetchDashboardData}
+      />
 
       {/* 5-Gate Live Attendance Scanner Trigger */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 text-center relative overflow-hidden">

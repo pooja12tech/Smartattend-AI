@@ -386,4 +386,57 @@ class FaceEnrollment(Base):
             "retention_expires_at": self.retention_expires_at.isoformat() if self.retention_expires_at else None
         }
 
+# ==============================================================================
+# 10. Student Attendance Notifications & Threshold Alerts (< 74%)
+# ==============================================================================
+class StudentNotification(Base):
+    __tablename__ = "student_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    roll_no: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(64), default="ATTENDANCE_DEFICIT_WARNING", nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), default="CRITICAL", nullable=False)  # 'CRITICAL', 'WARNING', 'INFO'
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # e.g. "CS301" or "OVERALL"
+    subject_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    current_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold_pct: Mapped[float] = mapped_column(Float, default=75.0, nullable=False)
+    alert_cutoff_pct: Mapped[float] = mapped_column(Float, default=74.0, nullable=False)
+    classes_needed: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship("User")
+
+    __table_args__ = (
+        Index("idx_notif_roll_unread", "roll_no", "is_read", "is_dismissed"),
+        Index("idx_notif_roll_time", "roll_no", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "type": self.type,
+            "severity": self.severity,
+            "title": self.title,
+            "message": self.message,
+            "subject_code": self.subject_code,
+            "subject_name": self.subject_name,
+            "current_pct": round(self.current_pct, 1),
+            "threshold_pct": self.threshold_pct,
+            "alert_cutoff_pct": self.alert_cutoff_pct,
+            "classes_needed": self.classes_needed,
+            "is_read": self.is_read,
+            "is_dismissed": self.is_dismissed,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
 

@@ -307,5 +307,59 @@ export const api = {
       headers: getHeaders()
     });
     return safeParse(res, 'Failed to fetch student subjects');
+  },
+
+  async simulateAttendance({ rollNo, subjectCode, plannedBunks = 0, plannedAttends = 0, targetThreshold = 75.0, futureEvents = [] }) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/simulate`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        subject_code: subjectCode,
+        planned_bunks: plannedBunks,
+        planned_attends: plannedAttends,
+        target_threshold: targetThreshold,
+        future_events: futureEvents
+      })
+    });
+    return safeParse(res, 'Failed to simulate attendance scenario');
+  },
+
+  async getStudentNotifications(rollNo, unreadOnly = false) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/notifications${unreadOnly ? '?unread_only=true' : ''}`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch student notifications');
+  },
+
+  async markNotificationRead(rollNo, notificationId) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/notifications/${notificationId}/read`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to mark notification as read');
+  },
+
+  async markAllNotificationsRead(rollNo) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/notifications/mark-all-read`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to mark all notifications as read');
+  },
+
+  async dismissNotification(rollNo, notificationId) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/notifications/${notificationId}/dismiss`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to dismiss notification');
+  },
+
+  async triggerTestWarningAlert(rollNo) {
+    const res = await fetch(`${API_BASE}/api/student/${rollNo}/test-warning-alert`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to trigger test warning alert');
   }
 };

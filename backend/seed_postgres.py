@@ -292,6 +292,45 @@ def run_postgres_seed(session: Session = None) -> bool:
                 subj.faculty_name = s_info["faculty_name"]
 
         # ------------------------------------------------------------------
+        # 4b. STUDENT SUBJECT ENROLLMENTS (Realistic Curriculum Baselines)
+        # ------------------------------------------------------------------
+        enrollments_seed = [
+            # Student 1: Aarav Sharma (student / STU01) - 78.5% in CS301
+            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 22, "total": 28, "pct": 78.5},
+            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS302", "name_sub": "Database Systems", "attended": 24, "total": 30, "pct": 80.0},
+            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS303", "name_sub": "Machine Learning", "attended": 18, "total": 24, "pct": 75.0},
+            # STU01 alias
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 22, "total": 28, "pct": 78.5},
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS302", "name_sub": "Database Systems", "attended": 24, "total": 30, "pct": 80.0},
+            {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS303", "name_sub": "Machine Learning", "attended": 18, "total": 24, "pct": 75.0},
+            # Student 3: Rohan Verma (STU03) - Danger zone (68.0%)
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 17, "total": 25, "pct": 68.0},
+            {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS302", "name_sub": "Database Systems", "attended": 18, "total": 25, "pct": 72.0},
+        ]
+
+        for enr_data in enrollments_seed:
+            enr_obj = session.query(StudentSubjectEnrollment).filter(
+                StudentSubjectEnrollment.roll_no == enr_data["roll_no"],
+                StudentSubjectEnrollment.subject_code == enr_data["code"]
+            ).first()
+            if not enr_obj:
+                enr_obj = StudentSubjectEnrollment(
+                    roll_no=enr_data["roll_no"],
+                    student_name=enr_data["name"],
+                    subject_code=enr_data["code"],
+                    subject_name=enr_data["name_sub"],
+                    total_classes=enr_data["total"],
+                    attended_classes=enr_data["attended"],
+                    current_pct=enr_data["pct"],
+                    updated_at=now
+                )
+                session.add(enr_obj)
+            else:
+                enr_obj.total_classes = enr_data["total"]
+                enr_obj.attended_classes = enr_data["attended"]
+                enr_obj.current_pct = enr_data["pct"]
+
+        # ------------------------------------------------------------------
         # 5. ACTIVE LECTURE SESSION
         # ------------------------------------------------------------------
         sample_session = session.query(LectureSession).filter(LectureSession.session_id == "CS301-SEC-A").first()
