@@ -9,6 +9,7 @@ import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api, getDeviceId } from '../api';
 import BunkSimulator from './BunkSimulator';
+import { getFaceLandmarker, analyzeFaceFrame } from '../utils/faceLiveness';
 
 export default function StudentPortal({ user }) {
   const [dashboard, setDashboard] = useState(null);
@@ -30,18 +31,17 @@ export default function StudentPortal({ user }) {
   // Location & Time captured upon QR scan
   const [capturedLocation, setCapturedLocation] = useState(null);
 
-  // Front camera face verification with eye-blink liveness auto-capture
+  // Front camera face verification with AI-powered eye-blink liveness auto-capture
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [countdown, setCountdown] = useState(7);
-  const [blinkStatus, setBlinkStatus] = useState('ALIGNING'); // 'ALIGNING' | 'WAITING_BLINK' | 'BLINK_DETECTED' | 'CAPTURED'
+  const [blinkStatus, setBlinkStatus] = useState('NO_FACE'); // 'INIT' | 'NO_FACE' | 'MULTIPLE_FACES' | 'ALIGNING' | 'WAITING_BLINK' | 'BLINKING' | 'BLINK_DETECTED'
+  const [facePromptMessage, setFacePromptMessage] = useState('Position your face inside the camera frame');
   const [blinkFlash, setBlinkFlash] = useState(false);
   const [eyeClosingFeedback, setEyeClosingFeedback] = useState(false);
   const videoRef = useRef(null);
-  const countdownTimerRef = useRef(null);
   const blinkAnalysisRef = useRef(null);
-  const blinkCanvasRef = useRef(null);
+  const landmarkerRef = useRef(null);
 
   // 5-Gate Checklist Animation State
   const [gateProgress, setGateProgress] = useState(null);
@@ -192,12 +192,12 @@ export default function StudentPortal({ user }) {
 
   // Stop Front Camera Stream
   const stopFrontCamera = () => {
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
     if (blinkAnalysisRef.current) {
-      clearInterval(blinkAnalysisRef.current);
+      if (typeof blinkAnalysisRef.current === 'number') {
+        cancelAnimationFrame(blinkAnalysisRef.current);
+      } else {
+        clearInterval(blinkAnalysisRef.current);
+      }
       blinkAnalysisRef.current = null;
     }
     if (videoRef.current && videoRef.current.srcObject) {
@@ -220,7 +220,8 @@ export default function StudentPortal({ user }) {
     setQrScanError(null);
     setCameraError(null);
     setCapturedLocation(null);
-    setBlinkStatus('ALIGNING');
+    setBlinkStatus('NO_FACE');
+    setFacePromptMessage('Position your face inside the camera frame');
     setBlinkFlash(false);
     setEyeClosingFeedback(false);
   };
@@ -453,19 +454,20 @@ export default function StudentPortal({ user }) {
     }, 100);
   };
 
-  // Step 2: Start Front Camera with Real-Time Eye-Blink Liveness Auto-Capture
+  // Step 2: Start Front Camera with Real-Time AI Face & Eye-Blink Liveness Auto-Capture
   const startFrontCameraWithBlinkDetection = async (tokenOverride, sessionOverride) => {
     setCameraError(null);
-    setCountdown(8);
-    setBlinkStatus('ALIGNING');
+    setBlinkStatus('INIT');
+    setFacePromptMessage('Starting AI face & eye-blink detector...');
     setBlinkFlash(false);
+    setEyeClosingFeedback(false);
 
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
     if (blinkAnalysisRef.current) {
-      clearInterval(blinkAnalysisRef.current);
+      if (typeof blinkAnalysisRef.current === 'number') {
+        cancelAnimationFrame(blinkAnalysisRef.current);
+      } else {
+        clearInterval(blinkAnalysisRef.current);
+      }
       blinkAnalysisRef.current = null;
     }
 
@@ -479,256 +481,117 @@ export default function StudentPortal({ user }) {
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-      }
-
-      // Initialize off-screen analysis canvas (160x160 for high precision & fast processing)
-      if (!blinkCanvasRef.current) {
-        blinkCanvasRef.current = document.createElement('canvas');
-        blinkCanvasRef.current.width = 160;
-        blinkCanvasRef.current.height = 160;
-      }
-
-      let framesCalibrated = 0;
-      let baselineLeftScore = 0;
-      let baselineRightScore = 0;
-      let baselineCombined = 0;
-      let eyesClosedCounter = 0;
-      let blinkFired = false;
-      let bestYOffset = 52; // Dynamically calibrated eye band Y coordinate
-      let prevLumas = null;
-
-      // Extract comprehensive facial metrics (contrast, vertical edge gradients, pupil darkness, motion)
-      const computePatchMetrics = (currLumas, prevLumasArr, W, x, y, w, h) => {
-        const count = w * h;
-        let sum = 0;
-        let sumSq = 0;
-        let motionSum = 0;
-
-        for (let row = 0; row < h; row++) {
-          const rowOffset = (y + row) * W + x;
-          for (let col = 0; col < w; col++) {
-            const idx = rowOffset + col;
-            const l = currLumas[idx];
-            sum += l;
-            sumSq += l * l;
-            if (prevLumasArr) {
-              motionSum += Math.abs(l - prevLumasArr[idx]);
-            }
-          }
-        }
-
-        const mean = sum / count;
-        const variance = Math.max(0, (sumSq / count) - (mean * mean));
-        const stdDev = Math.sqrt(variance);
-        const motion = prevLumasArr ? motionSum / count : 0;
-
-        // Vertical edge gradient across the patch (eyelids/lashes/pupil edges)
-        let vGrad = 0;
-        for (let row = 1; row < h - 1; row++) {
-          const rOffset = (y + row) * W + x;
-          const upOffset = (y + row - 1) * W + x;
-          const downOffset = (y + row + 1) * W + x;
-          for (let col = 0; col < w; col++) {
-            vGrad += Math.abs(currLumas[downOffset + col] - currLumas[upOffset + col]);
-          }
-        }
-        const gradScore = vGrad / (w * Math.max(1, h - 2));
-
-        // Dark pixel count (pupils/iris are noticeably darker than the surrounding skin)
-        let darkPixelCount = 0;
-        const darkThreshold = mean - (stdDev * 0.45);
-        for (let row = 0; row < h; row++) {
-          const rowOffset = (y + row) * W + x;
-          for (let col = 0; col < w; col++) {
-            if (currLumas[rowOffset + col] < darkThreshold) {
-              darkPixelCount++;
-            }
-          }
-        }
-        const darkRatio = darkPixelCount / count;
-
-        return {
-          stdDev,
-          gradScore,
-          combined: stdDev + (gradScore * 1.4),
-          motion,
-          darkRatio
-        };
-      };
-
-      // Native Shape Detection API if supported in browser
-      let nativeDetector = null;
-      if (typeof window !== 'undefined' && 'FaceDetector' in window) {
         try {
-          nativeDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+          await videoRef.current.play();
         } catch (e) {}
       }
 
-      // High-frequency real-time eye blink analyzer: runs every 35ms (~28 FPS)
-      blinkAnalysisRef.current = setInterval(async () => {
+      // Initialize or reuse MediaPipe FaceLandmarker singleton
+      let landmarker = landmarkerRef.current;
+      if (!landmarker) {
+        setFacePromptMessage('Loading neural face mesh & blink tracker...');
+        try {
+          landmarker = await getFaceLandmarker();
+          landmarkerRef.current = landmarker;
+        } catch (mErr) {
+          console.warn('MediaPipe initialization notice:', mErr);
+        }
+      }
+
+      let eyesClosedFrames = 0;
+      let faceSteadyFrames = 0;
+      let blinkFired = false;
+      let lastVideoTime = -1;
+      let baselineEAR = 0.28;
+
+      const triggerBlinkSnap = () => {
         if (blinkFired) return;
-        const video = videoRef.current;
-        if (!video || video.readyState < 2) return;
+        blinkFired = true;
+        setBlinkStatus('BLINK_DETECTED');
+        setFacePromptMessage('✨ Blink Verified! Auto-capturing live photo now...');
+        setBlinkFlash(true);
 
-        const W = 160;
-        const H = 160;
-        const canvas = blinkCanvasRef.current;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-        // Centered square crop matching the camera's circular framing guide exactly
-        const vw = video.videoWidth || 640;
-        const vh = video.videoHeight || 480;
-        const minDim = Math.min(vw, vh);
-        const vx = (vw - minDim) / 2;
-        const vy = (vh - minDim) / 2;
-        ctx.drawImage(video, vx, vy, minDim, minDim, 0, 0, W, H);
-
-        const imgData = ctx.getImageData(0, 0, W, H);
-        const data = imgData.data;
-        const currLumas = new Float32Array(W * H);
-        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-          currLumas[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        if (blinkAnalysisRef.current) {
+          cancelAnimationFrame(blinkAnalysisRef.current);
+          blinkAnalysisRef.current = null;
         }
 
-        // Trigger helper for fast, crisp auto-capture
-        const triggerBlinkSnap = () => {
-          blinkFired = true;
-          setBlinkStatus('BLINK_DETECTED');
-          setBlinkFlash(true);
+        // Auto-capture immediately as eyes reopen crisp and wide!
+        setTimeout(() => {
+          captureSelfieAndProceed(tokenOverride, sessionOverride);
+        }, 90);
+      };
 
-          if (blinkAnalysisRef.current) {
-            clearInterval(blinkAnalysisRef.current);
-            blinkAnalysisRef.current = null;
-          }
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-            countdownTimerRef.current = null;
-          }
-
-          // Auto-capture immediately as eyes reopen crisp and wide!
-          setTimeout(() => {
-            captureSelfieAndProceed(tokenOverride, sessionOverride);
-          }, 110);
-        };
-
-        // Phase 1: Rapid calibration & dynamic eye height localization (first 4 frames, ~140ms)
-        if (framesCalibrated < 4) {
-          if (nativeDetector && framesCalibrated === 0) {
-            try {
-              const faces = await nativeDetector.detect(canvas);
-              if (faces && faces.length > 0 && faces[0].landmarks) {
-                const eyes = faces[0].landmarks.filter(l => l.type === 'eye');
-                if (eyes.length > 0) {
-                  const avgEyeY = eyes.reduce((acc, e) => acc + e.location.y, 0) / eyes.length;
-                  bestYOffset = Math.max(38, Math.min(84, Math.round(avgEyeY - 16)));
-                }
-              }
-            } catch (e) {}
-          }
-
-          if (!nativeDetector || framesCalibrated > 0) {
-            const candidates = [42, 52, 62, 72];
-            let maxContrast = -1;
-            let bestY = bestYOffset;
-            for (const cY of candidates) {
-              const testLeft = computePatchMetrics(currLumas, null, W, 34, cY, 40, 32);
-              const testRight = computePatchMetrics(currLumas, null, W, 86, cY, 40, 32);
-              const cScore = testLeft.combined + testRight.combined;
-              if (cScore > maxContrast) {
-                maxContrast = cScore;
-                bestY = cY;
-              }
-            }
-            bestYOffset = bestY;
-          }
-
-          const curLeft = computePatchMetrics(currLumas, prevLumas, W, 34, bestYOffset, 40, 32);
-          const curRight = computePatchMetrics(currLumas, prevLumas, W, 86, bestYOffset, 40, 32);
-          const curComb = (curLeft.combined + curRight.combined) / 2;
-
-          framesCalibrated++;
-          baselineLeftScore = (baselineLeftScore * (framesCalibrated - 1) + curLeft.combined) / framesCalibrated;
-          baselineRightScore = (baselineRightScore * (framesCalibrated - 1) + curRight.combined) / framesCalibrated;
-          baselineCombined = (baselineCombined * (framesCalibrated - 1) + curComb) / framesCalibrated;
-
-          prevLumas = currLumas;
-          if (framesCalibrated >= 4) {
-            setBlinkStatus('WAITING_BLINK');
-          }
+      const processFrame = () => {
+        if (blinkFired) return;
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) {
+          blinkAnalysisRef.current = requestAnimationFrame(processFrame);
           return;
         }
 
-        // Phase 2: High-Sensitivity Multi-Signal Eye Analysis
-        const eyeW = 40;
-        const eyeH = 32;
-        const leftEye = computePatchMetrics(currLumas, prevLumas, W, 34, bestYOffset, eyeW, eyeH);
-        const rightEye = computePatchMetrics(currLumas, prevLumas, W, 86, bestYOffset, eyeW, eyeH);
-        const forehead = computePatchMetrics(currLumas, prevLumas, W, 55, 14, 50, 20);
+        if (video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
 
-        const currentCombined = (leftEye.combined + rightEye.combined) / 2;
-        const currentMin = Math.min(leftEye.combined, rightEye.combined);
-        const avgEyeMotion = (leftEye.motion + rightEye.motion) / 2;
-        const headMotion = forehead.motion;
+          if (landmarker) {
+            try {
+              const analysis = analyzeFaceFrame(landmarker, video, performance.now(), baselineEAR);
 
-        // When eyelids close, contrast/texture in the eye patch drops by >= 14%
-        // OR darkness drops, OR eye motion spikes sharply while head is still
-        const contrastDrop = (currentCombined < baselineCombined * 0.86) || (currentMin < baselineCombined * 0.80);
-        const eyeMotionSpike = (avgEyeMotion > 4.2) && (avgEyeMotion > headMotion * 1.5 + 1.2);
-        const isEyesClosed = contrastDrop || (eyeMotionSpike && currentCombined < baselineCombined * 0.94);
+              if (!analysis.faceCount || analysis.faceCount === 0) {
+                faceSteadyFrames = 0;
+                eyesClosedFrames = 0;
+                setBlinkStatus('NO_FACE');
+                setFacePromptMessage('Looking for your face... Please face the camera.');
+                setEyeClosingFeedback(false);
+              } else if (analysis.faceCount > 1) {
+                faceSteadyFrames = 0;
+                eyesClosedFrames = 0;
+                setBlinkStatus('MULTIPLE_FACES');
+                setFacePromptMessage(`Multiple faces detected (${analysis.faceCount}). Only 1 student permitted.`);
+                setEyeClosingFeedback(false);
+              } else {
+                // Exactly 1 human face detected
+                faceSteadyFrames++;
 
-        if (isEyesClosed) {
-          eyesClosedCounter++;
-          setEyeClosingFeedback(true);
+                if (!analysis.isCentered && faceSteadyFrames < 4) {
+                  setBlinkStatus('ALIGNING');
+                  setFacePromptMessage(analysis.message);
+                  setEyeClosingFeedback(false);
+                } else {
+                  // Face is locked and ready for blink!
+                  if (!analysis.isEyesClosed && analysis.ear > 0.20) {
+                    baselineEAR = baselineEAR * 0.85 + analysis.ear * 0.15;
+                  }
 
-          // If the user deliberately holds eyes shut for > 280ms (8 frames), snap as soon as eyes start opening
-          if (eyesClosedCounter >= 8 && !blinkFired) {
-            triggerBlinkSnap();
-            return;
-          }
-        } else {
-          setEyeClosingFeedback(false);
-
-          // Phase 3: Detect Blink Egress (Eyes Reopened)
-          // A natural blink lasts between 1 and 12 frames (35ms to 420ms)
-          if (eyesClosedCounter >= 1 && eyesClosedCounter <= 12 && !blinkFired) {
-            triggerBlinkSnap();
-            return;
-          }
-
-          eyesClosedCounter = 0;
-          // Slowly and conservatively adapt baseline to gradual ambient light drift (without absorbing blinks)
-          if (currentCombined >= baselineCombined * 0.90 && currentCombined <= baselineCombined * 1.15) {
-            baselineCombined = baselineCombined * 0.96 + currentCombined * 0.04;
-          }
-        }
-
-        prevLumas = currLumas;
-      }, 35);
-
-      // Fallback 6-second countdown if user is wearing dark lenses or in extreme lighting
-      let count = 6;
-      countdownTimerRef.current = setInterval(() => {
-        count -= 1;
-        setCountdown(count);
-        if (count <= 0) {
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-            countdownTimerRef.current = null;
-          }
-          if (blinkAnalysisRef.current) {
-            clearInterval(blinkAnalysisRef.current);
-            blinkAnalysisRef.current = null;
-          }
-          if (!blinkFired) {
-            blinkFired = true;
-            setBlinkStatus('BLINK_DETECTED');
-            setBlinkFlash(true);
-            setTimeout(() => {
-              captureSelfieAndProceed(tokenOverride, sessionOverride);
-            }, 100);
+                  if (analysis.isEyesClosed) {
+                    // User eyes closed: count frames
+                    eyesClosedFrames++;
+                    setBlinkStatus('BLINKING');
+                    setEyeClosingFeedback(true);
+                    setFacePromptMessage('Blink detected! Open your eyes to capture 📸');
+                  } else {
+                    setEyeClosingFeedback(false);
+                    // Natural blink cycle completed: closed for 1 to 20 frames (~30ms to 600ms)
+                    if (eyesClosedFrames >= 1 && eyesClosedFrames <= 20 && !blinkFired) {
+                      triggerBlinkSnap();
+                      return;
+                    }
+                    eyesClosedFrames = 0;
+                    setBlinkStatus('WAITING_BLINK');
+                    setFacePromptMessage('Face centered! Blink your eyes once to auto-capture 😉');
+                  }
+                }
+              }
+            } catch (frameErr) {
+              console.warn('Frame processing note:', frameErr);
+            }
           }
         }
-      }, 1000);
+
+        blinkAnalysisRef.current = requestAnimationFrame(processFrame);
+      };
+
+      blinkAnalysisRef.current = requestAnimationFrame(processFrame);
 
     } catch (err) {
       console.warn('Front camera error:', err);
@@ -756,12 +619,12 @@ export default function StudentPortal({ user }) {
 
   // Capture selfie frame onto canvas and transition to Step 3
   const captureSelfieAndProceed = (tokenOverride, sessionOverride) => {
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
     if (blinkAnalysisRef.current) {
-      clearInterval(blinkAnalysisRef.current);
+      if (typeof blinkAnalysisRef.current === 'number') {
+        cancelAnimationFrame(blinkAnalysisRef.current);
+      } else {
+        clearInterval(blinkAnalysisRef.current);
+      }
       blinkAnalysisRef.current = null;
     }
 
@@ -783,8 +646,10 @@ export default function StudentPortal({ user }) {
 
       // Cleanly stop front camera stream
       const stream = video.srcObject;
-      stream.getTracks().forEach(track => track.stop());
-      video.srcObject = null;
+      try {
+        stream.getTracks().forEach(track => track.stop());
+      } catch (e) {}
+      videoRef.current.srcObject = null;
       setCameraActive(false);
     } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
       capturedBase64 = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
@@ -1127,8 +992,13 @@ export default function StudentPortal({ user }) {
   // Clean unmount of all camera tracks and timers
   useEffect(() => {
     return () => {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
+      if (blinkAnalysisRef.current) {
+        if (typeof blinkAnalysisRef.current === 'number') {
+          cancelAnimationFrame(blinkAnalysisRef.current);
+        } else {
+          clearInterval(blinkAnalysisRef.current);
+        }
+        blinkAnalysisRef.current = null;
       }
       if (qrScannerRef.current) {
         try {
@@ -1433,111 +1303,118 @@ export default function StudentPortal({ user }) {
 
             {/* STEP 2: FRONT CAMERA LIVE FACE AUTH WITH EYE-BLINK AUTO-CAPTURE */}
             {attendanceStep === 'FACE_VERIFY' && (
-              <div className="space-y-4">
-                <div className="text-center space-y-1.5">
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      <Check className="w-3 h-3" /> QR Scanned: {sessionId}
+              <div className="space-y-3">
+                {/* Compact Session / Security Status Strip */}
+                <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] font-mono text-slate-300">
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-bold truncate">
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>QR #{sessionId?.slice(0, 8)}</span>
+                  </span>
+                  {capturedLocation && !capturedLocation.error ? (
+                    <span className="flex items-center gap-1 text-slate-300 text-[10px]">
+                      <MapPin className="w-3 h-3 text-emerald-400" />
+                      <span>{capturedLocation.distanceMeters !== null ? `${capturedLocation.distanceMeters}m` : 'GPS OK'}</span>
                     </span>
-                    {capturedLocation && !capturedLocation.error ? (
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold ${
-                        capturedLocation.isWithinGeofence
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                      }`}>
-                        <MapPin className="w-3 h-3" />
-                        {capturedLocation.distanceMeters !== null ? `${capturedLocation.distanceMeters}m from Faculty` : 'GPS Acquired'}
-                        {' '}({capturedLocation.isWithinGeofence ? 'Within 150m Limit' : 'Geofence Breach > 150m'})
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={retryCaptureStudentGPS}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition"
-                      >
-                        <AlertTriangle className="w-3 h-3 text-amber-400" />
-                        Location Missing (Click to Retry GPS)
-                      </button>
-                    )}
-                    {capturedLocation?.time && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        {capturedLocation.time}
-                      </span>
-                    )}
-                    {ultrasonicVerified && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-indigo-500/25 text-indigo-300 border border-indigo-500/40">
-                        <Radio className="w-3 h-3 text-indigo-400 animate-pulse" />
-                        Acoustic Beacon: Confirmed in Room
-                      </span>
-                    )}
-                    {ultrasonicScanning && !ultrasonicVerified && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono text-indigo-300 bg-indigo-500/10 border border-indigo-500/20">
-                        <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />
-                        Sampling Ultrasonic Beacon...
-                      </span>
-                    )}
-                  </div>
-                  <h4 className="text-base font-bold text-white flex items-center justify-center gap-1.5">
+                  ) : null}
+                  {ultrasonicVerified && (
+                    <span className="flex items-center gap-1 text-indigo-400 font-bold text-[10px]">
+                      <Radio className="w-3 h-3 animate-pulse" />
+                      <span>Room Confirmed</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-center space-y-1">
+                  <h4 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
                     <Eye className="w-4 h-4 text-purple-400 animate-pulse" />
                     Live Face Auth &amp; Eye-Blink Liveness
                   </h4>
-                  <p className="text-xs text-slate-400">
-                    {blinkStatus === 'ALIGNING' && 'Align your face inside the circle in good lighting...'}
-                    {blinkStatus === 'WAITING_BLINK' && 'Face locked! Blink your eyes once to auto-capture 📸'}
-                    {blinkStatus === 'BLINK_DETECTED' && '✨ Blink Detected! Auto-capturing frame now...'}
+                  <p className="text-xs text-slate-300 px-3 py-1 rounded-xl bg-slate-900/60 border border-slate-800">
+                    {facePromptMessage}
                   </p>
                 </div>
 
-                {/* Front Camera Video Container with Live Reticle & Blink Status HUD */}
-                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-indigo-500/40 aspect-square max-w-[280px] mx-auto shadow-2xl flex items-center justify-center">
+                {/* Front Camera Video Container (Clean, unobstructed view) */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-indigo-500/40 w-64 h-64 mx-auto shadow-2xl flex items-center justify-center">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
+                    muted
                     className="w-full h-full object-cover scale-x-[-1]"
                   />
 
-                  {/* Circular / Oval Face Alignment Framing Guide */}
-                  <div className={`absolute inset-4 rounded-full border-2 border-dashed pointer-events-none transition-all duration-300 ${
+                  {/* Circular / Oval Face Alignment Guide */}
+                  <div className={`absolute inset-4 rounded-full border-2 pointer-events-none transition-all duration-300 ${
                     blinkStatus === 'BLINK_DETECTED'
-                      ? 'border-emerald-400 scale-105 shadow-[0_0_25px_rgba(52,211,153,0.8)]'
+                      ? 'border-emerald-400 scale-105 shadow-[0_0_30px_rgba(52,211,153,0.9)]'
+                      : blinkStatus === 'BLINKING'
+                      ? 'border-emerald-400 border-dashed animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.6)]'
                       : blinkStatus === 'WAITING_BLINK'
-                      ? 'border-amber-400 animate-pulse-slow'
-                      : 'border-indigo-400/60'
+                      ? 'border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.6)]'
+                      : blinkStatus === 'ALIGNING'
+                      ? 'border-amber-400/80 border-dashed animate-pulse'
+                      : blinkStatus === 'MULTIPLE_FACES'
+                      ? 'border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.6)]'
+                      : 'border-slate-500/60 border-dashed'
                   }`} />
 
                   {/* Shutter Flash Animation on Blink */}
                   {blinkFlash && (
-                    <div className="absolute inset-0 bg-white/80 animate-ping z-20 pointer-events-none" />
+                    <div className="absolute inset-0 bg-white/95 animate-ping z-20 pointer-events-none" />
                   )}
+                </div>
 
-                  {/* Interactive Eye-Blink HUD Pill */}
-                  <div className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold flex items-center gap-2 shadow-xl z-10 transition-all ${
+                {/* Dedicated Interactive Eye-Blink HUD Pill (OUTSIDE video - NEVER overlaps face or chin!) */}
+                <div className="flex justify-center">
+                  <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
                     blinkStatus === 'BLINK_DETECTED'
-                      ? 'bg-emerald-500/90 border-emerald-400 text-white animate-bounce'
+                      ? 'bg-emerald-500/95 border-emerald-400 text-white animate-bounce'
+                      : blinkStatus === 'BLINKING'
+                      ? 'bg-emerald-600/90 border-emerald-400 text-white animate-pulse'
                       : blinkStatus === 'WAITING_BLINK'
-                      ? 'bg-amber-500/80 border-amber-400 text-slate-950 font-extrabold animate-pulse'
-                      : 'bg-black/75 border-white/20 text-white'
+                      ? 'bg-amber-500/90 border-amber-400 text-slate-950 font-extrabold animate-pulse'
+                      : blinkStatus === 'ALIGNING'
+                      ? 'bg-slate-900/90 border-amber-500/40 text-amber-300'
+                      : blinkStatus === 'MULTIPLE_FACES'
+                      ? 'bg-rose-950/90 border-rose-500/60 text-rose-300'
+                      : 'bg-slate-900/90 border-slate-700 text-slate-300'
                   }`}>
+                    {blinkStatus === 'INIT' && (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                        <span>Initializing AI Liveness...</span>
+                      </>
+                    )}
+                    {blinkStatus === 'NO_FACE' && (
+                      <>
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Looking for Face</span>
+                      </>
+                    )}
+                    {blinkStatus === 'MULTIPLE_FACES' && (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Multiple Faces! Only 1 Allowed</span>
+                      </>
+                    )}
                     {blinkStatus === 'ALIGNING' && (
                       <>
-                        <Eye className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                        <span>Center Face</span>
+                        <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                        <span>Center Face in Circle</span>
                       </>
                     )}
                     {blinkStatus === 'WAITING_BLINK' && (
-                      eyeClosingFeedback ? (
-                        <>
-                          <span className="text-base animate-bounce">👀</span>
-                          <span className="text-emerald-300 font-extrabold animate-pulse">Blink detected! Open to snap...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-base">😉</span>
-                          <span>Blink Eyes to Auto-Snap!</span>
-                        </>
-                      )
+                      <>
+                        <span className="text-base">😉</span>
+                        <span>Blink Eyes to Auto-Snap!</span>
+                      </>
+                    )}
+                    {blinkStatus === 'BLINKING' && (
+                      <>
+                        <span className="text-base animate-bounce">👀</span>
+                        <span className="text-white font-extrabold">Blink detected! Open eyes...</span>
+                      </>
                     )}
                     {blinkStatus === 'BLINK_DETECTED' && (
                       <>
@@ -1557,14 +1434,14 @@ export default function StudentPortal({ user }) {
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
                     className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 hover:from-slate-700 hover:to-slate-600 text-white text-xs font-semibold transition flex items-center justify-center gap-2 border border-slate-600 shadow-md active:scale-95"
                   >
                     <Camera className="w-4 h-4 text-brand-400" />
-                    <span>Snap Photo Manually ({countdown}s auto-fallback)</span>
+                    <span>Manual Capture (Accessibility Override)</span>
                   </button>
                 </div>
               </div>

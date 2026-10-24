@@ -1547,7 +1547,13 @@ def mark_attendance(
         )
 
     # Decrypt enrolled embedding & compute cosine similarity
-    ref_embedding = face_service.decrypt_embedding(enrollment.embedding)
+    try:
+        ref_embedding = face_service.decrypt_embedding(enrollment.embedding)
+    except Exception as dec_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "FACE_TEMPLATE_CORRUPTED", "message": f"Biometric template decryption failed: {dec_err}. Re-enrollment required."}
+        )
     sim = face_service.cosine_similarity(live_embedding, ref_embedding)
     face_match_score = round(float(sim * 100.0), 1)
 
