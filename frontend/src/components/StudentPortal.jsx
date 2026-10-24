@@ -27,6 +27,8 @@ export default function StudentPortal({ user }) {
   const [sessionId, setSessionId] = useState('');
   const [qrScanError, setQrScanError] = useState(null);
   const qrScannerRef = useRef(null);
+  const qrProcessingRef = useRef(false);
+  const qrStartTimeoutRef = useRef(null);
 
   // Location & Time captured upon QR scan
   const [capturedLocation, setCapturedLocation] = useState(null);
@@ -42,6 +44,31 @@ export default function StudentPortal({ user }) {
   const videoRef = useRef(null);
   const blinkAnalysisRef = useRef(null);
   const landmarkerRef = useRef(null);
+  const activeStreamRef = useRef(null);
+  const attemptIdRef = useRef(0);
+  const isStartingFrontCameraRef = useRef(false);
+  const frontCameraTimeoutRef = useRef(null);
+  const captureTriggeredRef = useRef(false);
+  const diagnosticsRef = useRef({
+    leftEAR: 0,
+    rightEAR: 0,
+    avgEAR: 0,
+    earClosedThreshold: 0,
+    earOpenThreshold: 0,
+    blinkScoreLeft: 0,
+    blinkScoreRight: 0,
+    hasBlendshapes: false,
+    machineState: 'IDLE',
+    transitionReason: '',
+    steadyOpenFrames: 0,
+    eyesClosedFrames: 0,
+    reopenedFrames: 0,
+    closureDurationMs: 0,
+    isCentered: false,
+    rejectionReason: null,
+    captureTriggered: false,
+    captureOutcome: null
+  });
 
   // 5-Gate Checklist Animation State
   const [gateProgress, setGateProgress] = useState(null);
@@ -171,27 +198,40 @@ export default function StudentPortal({ user }) {
     }, 600);
   };
 
-  // Stop Rear Camera QR Scanner
+  // Stop Rear Camera QR Scanner (Idempotent and safe)
   const stopQRScanner = async () => {
-    if (qrScannerRef.current) {
-      try {
-        if (qrScannerRef.current.isScanning) {
-          await qrScannerRef.current.stop();
-        }
-      } catch (err) {
-        console.warn('Error stopping QR scanner:', err);
+    if (qrStartTimeoutRef.current) {
+      clearTimeout(qrStartTimeoutRef.current);
+      qrStartTimeoutRef.current = null;
+    }
+    const scanner = qrScannerRef.current;
+    if (!scanner) return;
+    qrScannerRef.current = null; // Detach immediately to prevent duplicate concurrent stops
+    try {
+      if (scanner.isScanning) {
+        await scanner.stop();
       }
-      try {
-        qrScannerRef.current.clear();
-      } catch (err) {
-        console.warn('Error clearing QR scanner:', err);
-      }
-      qrScannerRef.current = null;
+    } catch (err) {
+      console.warn('Error stopping QR scanner:', err);
+    }
+    try {
+      scanner.clear();
+    } catch (err) {
+      console.warn('Error clearing QR scanner:', err);
     }
   };
 
-  // Stop Front Camera Stream
+  // Stop Front Camera Stream (Idempotent and attempt-cancelling)
   const stopFrontCamera = () => {
+    // Invalidate any in-flight getUserMedia or getFaceLandmarker promises
+    attemptIdRef.current++;
+    isStartingFrontCameraRef.current = false;
+
+    if (frontCameraTimeoutRef.current) {
+      clearTimeout(frontCameraTimeoutRef.current);
+      frontCameraTimeoutRef.current = null;
+    }
+
     if (blinkAnalysisRef.current) {
       if (typeof blinkAnalysisRef.current === 'number') {
         cancelAnimationFrame(blinkAnalysisRef.current);
@@ -200,12 +240,21 @@ export default function StudentPortal({ user }) {
       }
       blinkAnalysisRef.current = null;
     }
+
+    if (activeStreamRef.current) {
+      try {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      activeStreamRef.current = null;
+    }
+
     if (videoRef.current && videoRef.current.srcObject) {
       try {
         videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       } catch (e) {}
       videoRef.current.srcObject = null;
     }
+
     setCameraActive(false);
     setBlinkFlash(false);
     setEyeClosingFeedback(false);
@@ -213,8 +262,19 @@ export default function StudentPortal({ user }) {
 
   // Close & Reset Attendance Modal
   const handleCloseScannerModal = async () => {
+    attemptIdRef.current++;
+    isStartingFrontCameraRef.current = false;
+    qrProcessingRef.current = false;
+    captureTriggeredRef.current = false;
+
+    if (frontCameraTimeoutRef.current) {
+      clearTimeout(frontCameraTimeoutRef.current);
+      frontCameraTimeoutRef.current = null;
+    }
+
     await stopQRScanner();
     stopFrontCamera();
+
     setIsScannerOpen(false);
     setAttendanceStep('IDLE');
     setQrScanError(null);
@@ -229,6 +289,8 @@ export default function StudentPortal({ user }) {
   // Open Attendance Flow (Step 1: Scan QR)
   const handleStartAttendanceFlow = () => {
     if (!biometricUnlocked) handleBiometricUnlock();
+    qrProcessingRef.current = false;
+    captureTriggeredRef.current = false;
     setIsScannerOpen(true);
     setAttendanceStep('SCAN_QR');
     setScannedToken('');
@@ -318,13 +380,19 @@ export default function StudentPortal({ user }) {
   // Start Rear Camera QR Scanner
   const startQRScanner = () => {
     setQrScanError(null);
+    qrProcessingRef.current = false; // Reset guard for fresh scanning attempt
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setQrScanError('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined. Please ensure you are accessing this app over HTTPS.');
       return;
     }
 
-    setTimeout(async () => {
+    if (qrStartTimeoutRef.current) {
+      clearTimeout(qrStartTimeoutRef.current);
+    }
+
+    qrStartTimeoutRef.current = setTimeout(async () => {
+      qrStartTimeoutRef.current = null;
       try {
         await stopQRScanner();
 
@@ -339,12 +407,18 @@ export default function StudentPortal({ user }) {
             aspectRatio: 1.0
           },
           async (decodedText) => {
+            // Synchronous guard: reject duplicate callbacks before any await
+            if (qrProcessingRef.current) return;
+
             const rawToken = decodedText.trim();
             const parts = rawToken.split('.');
             if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
               setQrScanError(`Scanned QR code is not a valid SmartAttend token ("${rawToken.slice(0, 30)}..."). Expected format: session_id.window.signature`);
               return;
             }
+
+            // Immediately set synchronous guard before any await
+            qrProcessingRef.current = true;
 
             // Valid QR token scanned!
             setQrScanError(null);
@@ -428,7 +502,12 @@ export default function StudentPortal({ user }) {
             // Transition to Step 2: Live Face Verification with Eye-Blink Auto-Capture
             setAttendanceStep('FACE_VERIFY');
             detectUltrasonicChirp();
-            setTimeout(() => {
+
+            if (frontCameraTimeoutRef.current) {
+              clearTimeout(frontCameraTimeoutRef.current);
+            }
+            frontCameraTimeoutRef.current = setTimeout(() => {
+              frontCameraTimeoutRef.current = null;
               startFrontCameraWithBlinkDetection(rawToken, parts[0]);
             }, 300);
           },
@@ -456,12 +535,14 @@ export default function StudentPortal({ user }) {
 
   // Step 2: Start Front Camera with Real-Time AI Face & Eye-Blink Liveness Auto-Capture
   const startFrontCameraWithBlinkDetection = async (tokenOverride, sessionOverride) => {
-    setCameraError(null);
-    setBlinkStatus('INIT');
-    setFacePromptMessage('Starting AI face & eye-blink detector...');
-    setBlinkFlash(false);
-    setEyeClosingFeedback(false);
+    // Single-flight guard: prevent duplicate concurrent camera start runs
+    if (isStartingFrontCameraRef.current) return;
+    isStartingFrontCameraRef.current = true;
 
+    // Unique attempt ID for attempt-scoped cancellation
+    const currentAttempt = ++attemptIdRef.current;
+
+    // Explicitly clean up any previous animation frame loops and streams before starting fresh
     if (blinkAnalysisRef.current) {
       if (typeof blinkAnalysisRef.current === 'number') {
         cancelAnimationFrame(blinkAnalysisRef.current);
@@ -471,6 +552,28 @@ export default function StudentPortal({ user }) {
       blinkAnalysisRef.current = null;
     }
 
+    if (activeStreamRef.current) {
+      try {
+        activeStreamRef.current.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      activeStreamRef.current = null;
+    }
+
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraError(null);
+    setBlinkStatus('INIT');
+    setFacePromptMessage('Starting AI face & eye-blink detector...');
+    setBlinkFlash(false);
+    setEyeClosingFeedback(false);
+
+    let acquiredStream = null;
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera access requires HTTPS or localhost.');
@@ -479,11 +582,29 @@ export default function StudentPortal({ user }) {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }
       });
+      acquiredStream = stream;
+
+      // ATTEMPT CHECK 1: Modal closed or attempt cancelled while awaiting getUserMedia
+      if (attemptIdRef.current !== currentAttempt) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      activeStreamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         try {
           await videoRef.current.play();
         } catch (e) {}
+      }
+
+      // ATTEMPT CHECK 2: Modal closed or attempt cancelled during play()
+      if (attemptIdRef.current !== currentAttempt) {
+        stream.getTracks().forEach(t => t.stop());
+        activeStreamRef.current = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
+        return;
       }
 
       // Initialize or reuse MediaPipe FaceLandmarker singleton
@@ -494,21 +615,57 @@ export default function StudentPortal({ user }) {
           landmarker = await getFaceLandmarker();
           landmarkerRef.current = landmarker;
         } catch (mErr) {
-          console.warn('MediaPipe initialization notice:', mErr);
+          console.error('MediaPipe initialization failure:', mErr);
+          // Explicitly clean up resources and show useful error instead of running endless loop
+          stream.getTracks().forEach(t => t.stop());
+          activeStreamRef.current = null;
+          if (videoRef.current) videoRef.current.srcObject = null;
+          setCameraActive(false);
+          setCameraError('Failed to load AI face detection models. Please check your network connection and retry.');
+          return;
         }
       }
 
-      let eyesClosedFrames = 0;
+      // ATTEMPT CHECK 3: Modal closed or attempt cancelled while awaiting landmarker
+      if (attemptIdRef.current !== currentAttempt) {
+        stream.getTracks().forEach(t => t.stop());
+        activeStreamRef.current = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
+        return;
+      }
+
+      if (!landmarker) {
+        stream.getTracks().forEach(t => t.stop());
+        activeStreamRef.current = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
+        setCameraActive(false);
+        setCameraError('AI face detector unavailable. Please retry.');
+        return;
+      }
+
+      // Camera stream and landmarker are fully ready
+      isStartingFrontCameraRef.current = false;
+
+      // Deterministic Blink State Machine:
+      // 'WAITING_OPEN' -> User must establish consecutive valid open-eye frames
+      // 'READY'        -> Baseline established, ready for bilateral closure
+      // 'CLOSING'      -> Valid bilateral closure in progress (tracking duration and frames)
+      // 'REOPENING'    -> Closure ended within valid human blink bounds, waiting for consecutive open frames
+      // 'CONFIRMED'    -> Reopening confirmed; capture executed synchronously from fresh frame
+      let machineState = 'WAITING_OPEN';
       let steadyOpenFrames = 0;
+      let eyesClosedFrames = 0;
+      let reopenedFrames = 0;
       let blinkStartTime = null;
       let faceSteadyFrames = 0;
-      let blinkFired = false;
       let lastVideoTime = -1;
+      let lastFrameTime = -1;
       let baselineEAR = 0.28;
 
-      const triggerBlinkSnap = () => {
-        if (blinkFired) return;
-        blinkFired = true;
+      const triggerVerifiedCapture = () => {
+        if (captureTriggeredRef.current || attemptIdRef.current !== currentAttempt) return;
+        captureTriggeredRef.current = true;
+
         setBlinkStatus('BLINK_DETECTED');
         setFacePromptMessage('✨ Blink Verified! Auto-capturing live photo now...');
         setBlinkFlash(true);
@@ -518,14 +675,12 @@ export default function StudentPortal({ user }) {
           blinkAnalysisRef.current = null;
         }
 
-        // Auto-capture immediately as eyes reopen crisp and wide!
-        setTimeout(() => {
-          captureSelfieAndProceed(tokenOverride, sessionOverride);
-        }, 90);
+        // Synchronous capture right from this verified, open-eyed frame! No blind 90ms timeout!
+        captureSelfieAndProceed(tokenOverride, sessionOverride);
       };
 
       const processFrame = () => {
-        if (blinkFired) return;
+        if (captureTriggeredRef.current || attemptIdRef.current !== currentAttempt) return;
         const video = videoRef.current;
         if (!video || video.readyState < 2) {
           blinkAnalysisRef.current = requestAnimationFrame(processFrame);
@@ -534,88 +689,212 @@ export default function StudentPortal({ user }) {
 
         if (video.currentTime !== lastVideoTime) {
           lastVideoTime = video.currentTime;
+          const now = performance.now();
+
+          // Dropped frames / tab inactive check: gap > 600ms resets blink candidate
+          if (lastFrameTime > 0 && (now - lastFrameTime) > 600) {
+            machineState = 'WAITING_OPEN';
+            steadyOpenFrames = 0;
+            eyesClosedFrames = 0;
+            reopenedFrames = 0;
+            blinkStartTime = null;
+            diagnosticsRef.current.rejectionReason = 'STALE_FRAME_GAP';
+          }
+          lastFrameTime = now;
 
           if (landmarker) {
             try {
-              const analysis = analyzeFaceFrame(landmarker, video, performance.now(), baselineEAR);
+              const analysis = analyzeFaceFrame(landmarker, video, now, baselineEAR);
 
+              // Update diagnostics for development and test assertions
+              diagnosticsRef.current = {
+                leftEAR: analysis.leftEAR || 0,
+                rightEAR: analysis.rightEAR || 0,
+                avgEAR: analysis.ear || 0,
+                earClosedThreshold: analysis.earClosedThreshold || 0,
+                earOpenThreshold: analysis.earOpenThreshold || 0,
+                blinkScoreLeft: analysis.blinkScoreLeft || 0,
+                blinkScoreRight: analysis.blinkScoreRight || 0,
+                hasBlendshapes: Boolean(analysis.hasBlendshapes),
+                machineState,
+                steadyOpenFrames,
+                eyesClosedFrames,
+                reopenedFrames,
+                closureDurationMs: blinkStartTime ? Math.round(now - blinkStartTime) : 0,
+                isCentered: Boolean(analysis.isCentered),
+                isEyesClosed: Boolean(analysis.isEyesClosed),
+                isEyesOpen: Boolean(analysis.isEyesOpen),
+                isAmbiguous: Boolean(analysis.isAmbiguous),
+                rejectionReason: diagnosticsRef.current.rejectionReason,
+                transitionReason: diagnosticsRef.current.transitionReason,
+                captureTriggered: captureTriggeredRef.current,
+                captureOutcome: diagnosticsRef.current.captureOutcome
+              };
+
+              if (typeof window !== 'undefined') {
+                window.__SMARTATTEND_DIAGNOSTICS__ = diagnosticsRef.current;
+              }
+
+              // 1. Revalidate Face Presence and Alignment on Every Frame
               if (!analysis.faceCount || analysis.faceCount === 0) {
+                machineState = 'WAITING_OPEN';
                 faceSteadyFrames = 0;
                 eyesClosedFrames = 0;
                 steadyOpenFrames = 0;
+                reopenedFrames = 0;
                 blinkStartTime = null;
                 setBlinkStatus('NO_FACE');
                 setFacePromptMessage('Looking for your face... Please face the camera.');
                 setEyeClosingFeedback(false);
+                diagnosticsRef.current.rejectionReason = 'NO_FACE';
               } else if (analysis.faceCount > 1) {
+                machineState = 'WAITING_OPEN';
                 faceSteadyFrames = 0;
                 eyesClosedFrames = 0;
                 steadyOpenFrames = 0;
+                reopenedFrames = 0;
                 blinkStartTime = null;
                 setBlinkStatus('MULTIPLE_FACES');
                 setFacePromptMessage(`Multiple faces detected (${analysis.faceCount}). Only 1 student permitted.`);
                 setEyeClosingFeedback(false);
+                diagnosticsRef.current.rejectionReason = 'MULTIPLE_FACES';
+              } else if (!analysis.isCentered) {
+                // Off-center, too far, or too close resets candidate sequence
+                machineState = 'WAITING_OPEN';
+                steadyOpenFrames = 0;
+                eyesClosedFrames = 0;
+                reopenedFrames = 0;
+                blinkStartTime = null;
+                setBlinkStatus('ALIGNING');
+                setFacePromptMessage(analysis.message);
+                setEyeClosingFeedback(false);
+                diagnosticsRef.current.rejectionReason = 'OFF_CENTER';
               } else {
-                // Exactly 1 human face detected
+                // Exactly 1 centered human face verified!
                 faceSteadyFrames++;
 
-                if (!analysis.isCentered && faceSteadyFrames < 4) {
-                  setBlinkStatus('ALIGNING');
-                  setFacePromptMessage(analysis.message);
-                  setEyeClosingFeedback(false);
-                } else {
-                  // Face is locked and ready for blink!
-                  if (!analysis.isEyesClosed) {
-                    steadyOpenFrames++;
-                    if (analysis.ear > 0.20) {
-                      baselineEAR = baselineEAR * 0.85 + analysis.ear * 0.15;
-                    }
+                // Adapt running baseline only during clear open-eye frames
+                if (analysis.isEyesOpen && analysis.ear > 0.18) {
+                  baselineEAR = baselineEAR * 0.90 + analysis.ear * 0.10;
+                  baselineEAR = Math.max(0.18, Math.min(0.42, baselineEAR));
+                }
 
-                    // Check if a blink closure just ended
-                    if (blinkStartTime !== null) {
-                      const closedDurationMs = performance.now() - blinkStartTime;
-                      const framesClosed = eyesClosedFrames;
-                      blinkStartTime = null;
-                      eyesClosedFrames = 0;
-                      setEyeClosingFeedback(false);
-
-                      // Anti-flicker Human Blink Gate:
-                      // - Natural blink closed duration: 120ms to 650ms
-                      // - At least 2-3 consecutive closed video frames
-                      // - Eyes must now be open
-                      // - Face had stable open eyes before blink (steadyOpenFrames >= 4)
-                      if (
-                        closedDurationMs >= 120 &&
-                        closedDurationMs <= 650 &&
-                        framesClosed >= 2 &&
-                        (analysis.isEyesOpen || !analysis.isEyesClosed) &&
-                        !blinkFired
-                      ) {
-                        triggerBlinkSnap();
-                        return;
-                      } else {
-                        // Camera flicker / single-frame glitch or glare discarded!
+                // Deterministic Blink State Machine
+                switch (machineState) {
+                  case 'WAITING_OPEN':
+                    if (analysis.isEyesOpen) {
+                      steadyOpenFrames++;
+                      if (steadyOpenFrames >= 4) {
+                        machineState = 'READY';
                         setBlinkStatus('WAITING_BLINK');
-                        setFacePromptMessage('Face centered! Blink your eyes once naturally 😉');
+                        setFacePromptMessage('Face centered! Blink both eyes naturally 😉');
+                        diagnosticsRef.current.transitionReason = 'STEADY_OPEN_ACHIEVED';
                       }
                     } else {
-                      setEyeClosingFeedback(false);
-                      setBlinkStatus('WAITING_BLINK');
-                      setFacePromptMessage('Face centered! Blink your eyes once to auto-capture 😉');
+                      // Ambiguous or closed: do not increment steady open
+                      steadyOpenFrames = 0;
                     }
-                  } else {
-                    // Eyelids closed in current frame
-                    // Require at least 4 stable open frames first to prevent false starts
-                    if (steadyOpenFrames >= 4) {
-                      if (blinkStartTime === null) {
-                        blinkStartTime = performance.now();
-                      }
-                      eyesClosedFrames++;
+                    break;
+
+                  case 'READY':
+                    if (analysis.isEyesOpen) {
+                      steadyOpenFrames++;
+                      // Remain ready
+                    } else if (analysis.isEyesClosed) {
+                      // Candidate bilateral closure initiated
+                      machineState = 'CLOSING';
+                      blinkStartTime = now;
+                      eyesClosedFrames = 1;
                       setBlinkStatus('BLINKING');
                       setEyeClosingFeedback(true);
                       setFacePromptMessage('Blink detected! Open eyes to capture 📸');
+                      diagnosticsRef.current.transitionReason = 'BILATERAL_CLOSURE_START';
                     }
-                  }
+                    // If ambiguous: do not change state, keep waiting
+                    break;
+
+                  case 'CLOSING':
+                    if (analysis.isEyesClosed) {
+                      eyesClosedFrames++;
+                      const duration = now - blinkStartTime;
+                      if (duration > 650) {
+                        // Closure was too long (sleeping, deliberate squint, photo proxy)
+                        machineState = 'WAITING_OPEN';
+                        eyesClosedFrames = 0;
+                        blinkStartTime = null;
+                        steadyOpenFrames = 0;
+                        setEyeClosingFeedback(false);
+                        setBlinkStatus('WAITING_BLINK');
+                        setFacePromptMessage('Blink was too long. Please blink naturally 😉');
+                        diagnosticsRef.current.rejectionReason = 'CLOSURE_TOO_LONG (>650ms)';
+                      }
+                    } else {
+                      // Eyes have started opening (either isEyesOpen or ambiguous)
+                      const closedDurationMs = now - blinkStartTime;
+                      // Valid human closure candidate:
+                      // Duration between 100ms and 550ms with at least 2 consecutive closed frames
+                      if (closedDurationMs >= 100 && closedDurationMs <= 550 && eyesClosedFrames >= 2) {
+                        machineState = 'REOPENING';
+                        reopenedFrames = analysis.isEyesOpen ? 1 : 0;
+                        diagnosticsRef.current.closureDurationMs = closedDurationMs;
+                        diagnosticsRef.current.transitionReason = 'VALID_CLOSURE_AWAITING_REOPEN';
+                      } else {
+                        // Flicker / single-frame glitch (< 100ms or 1 frame)
+                        machineState = 'WAITING_OPEN';
+                        eyesClosedFrames = 0;
+                        blinkStartTime = null;
+                        steadyOpenFrames = 0;
+                        setEyeClosingFeedback(false);
+                        setBlinkStatus('WAITING_BLINK');
+                        const reason = closedDurationMs < 100 ? 'Camera flicker filtered. Please blink naturally 😉' : 'Blink was too brief. Please blink naturally 😉';
+                        setFacePromptMessage(reason);
+                        diagnosticsRef.current.rejectionReason = closedDurationMs < 100 ? 'CAMERA_FLICKER_FILTERED' : 'CLOSURE_TOO_BRIEF';
+                      }
+                    }
+                    break;
+
+                  case 'REOPENING':
+                    if (analysis.isEyesOpen) {
+                      reopenedFrames++;
+                      // Explicit confirmation that both eyes reopened across consecutive valid frames
+                      if (reopenedFrames >= 2) {
+                        machineState = 'CONFIRMED';
+                        setEyeClosingFeedback(false);
+                        diagnosticsRef.current.transitionReason = 'REOPEN_CONFIRMED_CAPTURING';
+
+                        // Synchronous capture directly from this fresh, confirmed open-eyed frame
+                        triggerVerifiedCapture();
+                        return;
+                      }
+                    } else if (analysis.isEyesClosed) {
+                      // Eyes immediately closed again (flutter / rapid squint)
+                      machineState = 'WAITING_OPEN';
+                      eyesClosedFrames = 0;
+                      blinkStartTime = null;
+                      reopenedFrames = 0;
+                      steadyOpenFrames = 0;
+                      setEyeClosingFeedback(false);
+                      setBlinkStatus('WAITING_BLINK');
+                      diagnosticsRef.current.rejectionReason = 'EYES_RECLOSED_DURING_REOPEN';
+                    } else {
+                      // Ambiguous in-between state: do not count as reopened!
+                      // If stuck in ambiguous state for > 500ms after closing, reset:
+                      if (now - blinkStartTime > 900) {
+                        machineState = 'WAITING_OPEN';
+                        eyesClosedFrames = 0;
+                        blinkStartTime = null;
+                        reopenedFrames = 0;
+                        steadyOpenFrames = 0;
+                        setEyeClosingFeedback(false);
+                        setBlinkStatus('WAITING_BLINK');
+                        diagnosticsRef.current.rejectionReason = 'AMBIGUOUS_REOPEN_TIMEOUT';
+                      }
+                    }
+                    break;
+
+                  default:
+                    machineState = 'WAITING_OPEN';
+                    break;
                 }
               }
             } catch (frameErr) {
@@ -631,6 +910,11 @@ export default function StudentPortal({ user }) {
 
     } catch (err) {
       console.warn('Front camera error:', err);
+      if (acquiredStream) {
+        try { acquiredStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      }
+      activeStreamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
       setCameraActive(false);
       let errorMsg = 'Failed to access front camera.';
       const msg = err?.message || String(err);
@@ -650,6 +934,10 @@ export default function StudentPortal({ user }) {
       } else {
         setCameraError(errorMsg);
       }
+    } finally {
+      if (attemptIdRef.current === currentAttempt) {
+        isStartingFrontCameraRef.current = false;
+      }
     }
   };
 
@@ -664,41 +952,59 @@ export default function StudentPortal({ user }) {
       blinkAnalysisRef.current = null;
     }
 
-    let capturedBase64 = null;
-    if (videoRef.current && videoRef.current.srcObject) {
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = 480;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      // Centered square crop from video to maintain high resolution face landmarks
-      const vWidth = video.videoWidth || 640;
-      const vHeight = video.videoHeight || 480;
-      const minSide = Math.min(vWidth, vHeight);
-      const sx = (vWidth - minSide) / 2;
-      const sy = (vHeight - minSide) / 2;
-      ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
-      capturedBase64 = canvas.toDataURL('image/jpeg', 0.90);
+    try {
+      let capturedBase64 = null;
+      if (videoRef.current && videoRef.current.srcObject) {
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = 480;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        // Centered square crop from video to maintain high resolution face landmarks
+        const vWidth = video.videoWidth || 640;
+        const vHeight = video.videoHeight || 480;
+        const minSide = Math.min(vWidth, vHeight);
+        const sx = (vWidth - minSide) / 2;
+        const sy = (vHeight - minSide) / 2;
+        ctx.drawImage(video, sx, sy, minSide, minSide, 0, 0, 480, 480);
+        capturedBase64 = canvas.toDataURL('image/jpeg', 0.90);
 
-      // Cleanly stop front camera stream
-      const stream = video.srcObject;
-      try {
-        stream.getTracks().forEach(track => track.stop());
-      } catch (e) {}
-      videoRef.current.srcObject = null;
-      setCameraActive(false);
-    } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
-      capturedBase64 = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
+        // Cleanly stop front camera stream
+        if (activeStreamRef.current) {
+          try { activeStreamRef.current.getTracks().forEach(t => t.stop()); } catch (e) {}
+          activeStreamRef.current = null;
+        }
+        const stream = video.srcObject;
+        if (stream) {
+          try {
+            stream.getTracks().forEach(track => track.stop());
+          } catch (e) {}
+        }
+        videoRef.current.srcObject = null;
+        setCameraActive(false);
+      } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
+        capturedBase64 = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
+      }
+
+      if (!capturedBase64 && import.meta.env.VITE_DEMO_MODE !== 'true') {
+        stopFrontCamera();
+        setCameraError('Unable to capture face photo: camera stream was interrupted. Please retry.');
+        captureTriggeredRef.current = false;
+        diagnosticsRef.current.captureOutcome = 'STREAM_INTERRUPTED';
+        return;
+      }
+
+      diagnosticsRef.current.captureOutcome = 'SUCCESS';
+      setSelfieCaptured(capturedBase64);
+      setAttendanceStep('EVALUATING');
+      execute5GateSubmission(tokenOverride || scannedToken, sessionOverride || sessionId, capturedBase64);
+    } catch (captureErr) {
+      console.error('Capture error:', captureErr);
+      stopFrontCamera();
+      setCameraError('Failed to capture photo. Please retry.');
+      captureTriggeredRef.current = false;
+      diagnosticsRef.current.captureOutcome = `ERROR: ${captureErr.message}`;
     }
-
-    if (!capturedBase64 && import.meta.env.VITE_DEMO_MODE !== 'true') {
-      setCameraError('Unable to capture face photo: camera stream was interrupted.');
-      return;
-    }
-
-    setSelfieCaptured(capturedBase64);
-    setAttendanceStep('EVALUATING');
-    execute5GateSubmission(tokenOverride || scannedToken, sessionOverride || sessionId, capturedBase64);
   };
 
   // Step 3: Execute 5-Gate ACID Verification
@@ -889,7 +1195,7 @@ export default function StudentPortal({ user }) {
       setSessionId(qrData.session_id || targetSession);
       await stopQRScanner();
       setAttendanceStep('FACE_VERIFY');
-      startFrontCameraCountdown(qrData.qr_token, qrData.session_id || targetSession);
+      startFrontCameraWithBlinkDetection(qrData.qr_token, qrData.session_id || targetSession);
     } catch (err) {
       const curEpoch = Math.floor(Date.now() / 1000);
       const fakeToken = `${sessionId || 'CS301-SEC-A'}.${curEpoch}.demo_valid_sig`;
@@ -897,7 +1203,7 @@ export default function StudentPortal({ user }) {
       setSessionId(sessionId || 'CS301-SEC-A');
       await stopQRScanner();
       setAttendanceStep('FACE_VERIFY');
-      startFrontCameraCountdown(fakeToken, sessionId || 'CS301-SEC-A');
+      startFrontCameraWithBlinkDetection(fakeToken, sessionId || 'CS301-SEC-A');
     }
   };
 
@@ -1028,6 +1334,18 @@ export default function StudentPortal({ user }) {
   // Clean unmount of all camera tracks and timers
   useEffect(() => {
     return () => {
+      attemptIdRef.current++;
+      isStartingFrontCameraRef.current = false;
+      qrProcessingRef.current = false;
+
+      if (frontCameraTimeoutRef.current) {
+        clearTimeout(frontCameraTimeoutRef.current);
+        frontCameraTimeoutRef.current = null;
+      }
+      if (qrStartTimeoutRef.current) {
+        clearTimeout(qrStartTimeoutRef.current);
+        qrStartTimeoutRef.current = null;
+      }
       if (blinkAnalysisRef.current) {
         if (typeof blinkAnalysisRef.current === 'number') {
           cancelAnimationFrame(blinkAnalysisRef.current);
@@ -1040,16 +1358,25 @@ export default function StudentPortal({ user }) {
         try {
           if (qrScannerRef.current.isScanning) {
             qrScannerRef.current.stop().catch(() => {}).then(() => {
-              try { qrScannerRef.current.clear(); } catch(e){}
+              try { qrScannerRef.current?.clear(); } catch(e){}
             });
+          } else {
+            try { qrScannerRef.current?.clear(); } catch(e){}
           }
         } catch (e) {}
+        qrScannerRef.current = null;
+      }
+      if (activeStreamRef.current) {
+        try { activeStreamRef.current.getTracks().forEach(t => t.stop()); } catch(e){}
+        activeStreamRef.current = null;
       }
       if (videoRef.current?.srcObject) {
         try { videoRef.current.srcObject.getTracks().forEach(t => t.stop()); } catch(e){}
+        videoRef.current.srcObject = null;
       }
       if (enrollVideoRef.current?.srcObject) {
         try { enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop()); } catch(e){}
+        enrollVideoRef.current.srcObject = null;
       }
     };
   }, []);
