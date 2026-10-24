@@ -22,6 +22,7 @@ export default function FacultyPortal({ user }) {
   const [searchRoster, setSearchRoster] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
+  const [qrProjectorOpen, setQrProjectorOpen] = useState(false);
 
   // Live Classroom Wall (Projector Mode) State
   const [viewMode, setViewMode] = useState('wall'); // 'wall' | 'table'
@@ -895,6 +896,18 @@ export default function FacultyPortal({ user }) {
           <div className="absolute top-3 left-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
             <Clock className="w-3.5 h-3.5 text-brand-400" /> Rotating Token
           </div>
+
+          {isSessionActive && qrData && (
+            <button
+              type="button"
+              onClick={() => setQrProjectorOpen(true)}
+              title="Open Fullscreen Projector View"
+              className="absolute top-2.5 right-3 p-1.5 rounded-lg bg-slate-900/90 border border-slate-700 hover:border-brand-500 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-[11px] font-semibold shadow-sm"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-brand-400" />
+              <span className="hidden sm:inline">Projector View</span>
+            </button>
+          )}
 
           {isSessionActive && qrData ? (
             <div className="space-y-4 pt-4 w-full flex flex-col items-center">
@@ -1836,6 +1849,67 @@ export default function FacultyPortal({ user }) {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated High-Contrast Fullscreen Projector Modal for Lecture Halls */}
+      {qrProjectorOpen && qrData && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="max-w-2xl w-full flex flex-col items-center text-center space-y-6">
+            <div className="flex items-center justify-between w-full border-b border-slate-800 pb-4">
+              <div className="text-left">
+                <h2 className="text-xl font-black text-white tracking-wide">
+                  {subject || 'Live Lecture Session'}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Scan using SmartAttend-AI PWA on mobile &bull; Session {activeSession?.session_id || 'Active'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrProjectorOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              >
+                <Minimize2 className="w-4 h-4" />
+                <span>Exit Projector</span>
+              </button>
+            </div>
+
+            {/* Giant QR Code Display */}
+            <div className="p-6 sm:p-8 rounded-3xl bg-white shadow-2xl shadow-indigo-500/20 border-8 border-slate-800">
+              <QRCodeSVG
+                value={qrData.qr_token}
+                size={340}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+
+            {/* Live Progress Bar and Timer */}
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex items-center justify-between text-sm font-bold">
+                <span className="text-slate-400">Next Cryptographic Refresh:</span>
+                <span className="text-indigo-400 font-mono text-lg">{qrData.expires_in_seconds}s</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 via-brand-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
+                  style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Attendance count */}
+            <div className="flex items-center gap-3 text-xs font-semibold text-slate-300">
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                Present: {liveData?.counters?.present_count ?? 0} Students
+              </span>
+              <span className="text-slate-500">&bull;</span>
+              <span className="text-slate-400 font-mono text-[11px] truncate max-w-xs">
+                Token: {qrData.qr_token.slice(0, 24)}...
+              </span>
+            </div>
           </div>
         </div>
       )}

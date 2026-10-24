@@ -2,6 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { registerPwaServiceWorker, initInstallPromptListener } from './pwa/pwaManager';
+
+// Initialize PWA service worker lifecycle & install prompt listener
+registerPwaServiceWorker();
+initInstallPromptListener();
 
 class ErrorBoundary extends React.Component {
   constructor(props) {

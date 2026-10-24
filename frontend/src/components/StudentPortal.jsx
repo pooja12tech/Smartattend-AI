@@ -12,6 +12,7 @@ import BunkSimulator from './BunkSimulator';
 import StudentTimetable from './StudentTimetable';
 import StudentNotificationCenter from './StudentNotificationCenter';
 import { getFaceLandmarker, analyzeFaceFrame } from '../utils/faceLiveness';
+import { setInAttendanceFlow } from '../pwa/pwaManager';
 
 export default function StudentPortal({ user }) {
   const [dashboard, setDashboard] = useState(null);
@@ -32,6 +33,12 @@ export default function StudentPortal({ user }) {
   const qrScannerRef = useRef(null);
   const qrProcessingRef = useRef(false);
   const qrStartTimeoutRef = useRef(null);
+
+  // Sync PWA attendance lock to prevent any service-worker reloads during active flow
+  useEffect(() => {
+    setInAttendanceFlow(isScannerOpen && attendanceStep !== 'RESULT');
+    return () => setInAttendanceFlow(false);
+  }, [isScannerOpen, attendanceStep]);
 
   // Location & Time captured upon QR scan
   const [capturedLocation, setCapturedLocation] = useState(null);
@@ -1592,13 +1599,13 @@ export default function StudentPortal({ user }) {
           {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Hardware Device Lock */}
-        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner">
+            <div className="w-11 h-11 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-inner shrink-0">
               <Smartphone className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-white uppercase tracking-wider">Hardware Device Lock</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Paused for Testing
@@ -1608,12 +1615,12 @@ export default function StudentPortal({ user }) {
             </div>
           </div>
 
-          <div>
+          <div className="shrink-0">
             {!biometricUnlocked ? (
               <button
                 onClick={handleBiometricUnlock}
                 disabled={biometricScanning}
-                className="px-3 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-[11px] font-semibold shadow-lg shadow-brand-500/25 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-[11px] font-semibold shadow-lg shadow-brand-500/25 flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
               >
                 <Fingerprint className={`w-3.5 h-3.5 ${biometricScanning ? 'animate-bounce text-amber-300' : ''}`} />
                 <span>{biometricScanning ? 'Verifying...' : 'Unlock Touch ID'}</span>
@@ -1628,7 +1635,7 @@ export default function StudentPortal({ user }) {
         </div>
 
         {/* Biometric Face Reference Info (Admin Enrolled) */}
-        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
+        <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 border flex items-center justify-center shadow-inner">
               <Camera className="w-6 h-6" />
