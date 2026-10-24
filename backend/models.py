@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
     String, Integer, Float, Boolean, Text, DateTime, LargeBinary,
-    ForeignKey, UniqueConstraint, Index
+    ForeignKey, UniqueConstraint, Index, CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db_postgres import Base
@@ -25,6 +25,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="student")  # 'student', 'faculty', 'admin'
     department: Mapped[str] = mapped_column(String(255), default="Computer Science & Engineering")
     semester: Mapped[Optional[int]] = mapped_column(Integer, default=6, nullable=True)
+    section: Mapped[Optional[str]] = mapped_column(String(16), default="A", nullable=True)
     bound_device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     registered_device_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -50,6 +51,7 @@ class User(Base):
             "role": self.role,
             "department": self.department,
             "semester": self.semester,
+            "section": self.section or "A",
             "bound_device_id": self.bound_device_id,
             "registered_device_id": self.registered_device_id,
             "has_registered_face": bool(self.face_enrollment is not None),
@@ -437,6 +439,68 @@ class StudentNotification(Base):
             "is_dismissed": self.is_dismissed,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+
+# ==============================================================================
+# 11. Timetable Entries (Role-Based Weekly Academic Schedule)
+# ==============================================================================
+class TimetableEntry(Base):
+    __tablename__ = "timetable_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    subject_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    subject_code: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    subject_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    faculty_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    faculty_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    department: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    semester: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    section: Mapped[str] = mapped_column(String(16), default="A", index=True, nullable=False)
+    academic_year: Mapped[str] = mapped_column(String(32), default="2025-2026", nullable=False)
+    room_no: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    day_of_week: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    start_time: Mapped[str] = mapped_column(String(8), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(8), nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    subject: Mapped[Optional["Subject"]] = relationship("Subject")
+
+    __table_args__ = (
+        CheckConstraint("end_time > start_time", name="ck_timetable_time_range"),
+        Index("idx_timetable_faculty_slot", "faculty_id", "day_of_week"),
+        Index("idx_timetable_class_slot", "department", "semester", "section", "day_of_week"),
+        Index("idx_timetable_room_slot", "room_no", "day_of_week"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "subject_id": str(self.subject_id) if self.subject_id else None,
+            "subject_code": self.subject_code,
+            "subject_name": self.subject_name,
+            "faculty_id": self.faculty_id,
+            "faculty_name": self.faculty_name,
+            "department": self.department,
+            "semester": self.semester,
+            "section": self.section,
+            "academic_year": self.academic_year,
+            "room_no": self.room_no,
+            "day_of_week": self.day_of_week,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "is_published": self.is_published,
+            "created_by": self.created_by,
+            "updated_by": self.updated_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
 
 
 

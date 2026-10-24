@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
-  BookOpen, History, Camera, Lock, Unlock, FileText, Check, Trash2, GraduationCap, Building2
+  BookOpen, History, Camera, Lock, Unlock, FileText, Check, Trash2, GraduationCap, Building2,
+  Calendar
 } from 'lucide-react';
 import { api } from '../api';
+import AdminTimetableManagement from './AdminTimetableManagement';
 
 export default function AdminPortal({ user }) {
   // Navigation tabs: 'overview' | 'teachers' | 'students' | 'subjects' | 'audit'
@@ -566,6 +568,14 @@ export default function AdminPortal({ user }) {
         </button>
 
         <button
+          onClick={() => { setActiveTab('timetable'); }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'timetable' ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>Timetable & Schedules</span>
+        </button>
+
+        <button
           onClick={() => { setActiveTab('audit'); fetchAuditLogs(); }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'audit' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
@@ -1087,6 +1097,20 @@ export default function AdminPortal({ user }) {
             </table>
           </div>
         </div>
+      )}
+
+      {/* TAB 6: TIMETABLE & SCHEDULES (PHASE 3) */}
+      {activeTab === 'timetable' && (
+        <AdminTimetableManagement
+          user={user}
+          facultyList={facultyList}
+          subjectsList={subjectsList}
+          allDepartments={allDepartments}
+          onTimetableUpdated={() => {
+            fetchOverview();
+            fetchAuditLogs();
+          }}
+        />
       )}
 
       {/* Modal: Add User (Student or Teacher) */}

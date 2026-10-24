@@ -3,7 +3,10 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 from sqlalchemy.orm import Session
 from db_postgres import get_session_factory, init_db_schema, check_postgres_connection
-from models import User, StudentStats, LectureSession, Subject, StudentSubjectEnrollment, AttendanceRecord, SecurityAlert, AuditLog, FaceEnrollment
+from models import (
+    User, StudentStats, LectureSession, Subject, StudentSubjectEnrollment,
+    AttendanceRecord, SecurityAlert, AuditLog, FaceEnrollment, TimetableEntry
+)
 from auth import hash_password
 import face_service
 
@@ -93,20 +96,21 @@ def run_postgres_seed(session: Session = None) -> bool:
         # ------------------------------------------------------------------
         stu_pw_hash = hash_password("studentpassword")
 
-        # Primary student: 'student' (Aarav Sharma - CSE Sem 6)
+        # Primary student: 'STU01' (Aarav Sharma - CSE Sem 6)
         student1 = session.query(User).filter(
             (User.roll_no == "student") | (User.roll_no == "STU01") | (User.email == "student@smartattend.edu")
         ).first()
 
         if not student1:
             student1 = User(
-                roll_no="student",
+                roll_no="STU01",
                 name="Aarav Sharma",
                 email="student@smartattend.edu",
                 password=stu_pw_hash,
                 role="student",
                 department="Computer Science & Engineering",
                 semester=6,
+                section="A",
                 bound_device_id=None,
                 is_active=True,
                 created_at=now,
@@ -114,15 +118,16 @@ def run_postgres_seed(session: Session = None) -> bool:
             )
             session.add(student1)
             session.flush()
-            print("[Seed] Created Student: student / studentpassword")
+            print("[Seed] Created Student: STU01 (Aarav Sharma)")
         else:
-            student1.roll_no = "student"
+            student1.roll_no = "STU01"
             student1.name = "Aarav Sharma"
             student1.email = "student@smartattend.edu"
             student1.password = stu_pw_hash
             student1.department = "Computer Science & Engineering"
             student1.semester = 6
-            print("[Seed] Updated Student: student / studentpassword")
+            student1.section = "A"
+            print("[Seed] Updated Student: STU01 (Aarav Sharma)")
 
         # Stats for student 1
         s1_stats = session.query(StudentStats).filter(StudentStats.user_id == student1.id).first()
@@ -158,6 +163,7 @@ def run_postgres_seed(session: Session = None) -> bool:
                 role="student",
                 department="Information Technology",
                 semester=4,
+                section="A",
                 bound_device_id=None,
                 is_active=True,
                 created_at=now,
@@ -173,6 +179,7 @@ def run_postgres_seed(session: Session = None) -> bool:
             student2.password = stu_pw_hash
             student2.department = "Information Technology"
             student2.semester = 4
+            student2.section = "A"
 
         s2_stats = session.query(StudentStats).filter(StudentStats.user_id == student2.id).first()
         if not s2_stats:
@@ -203,6 +210,7 @@ def run_postgres_seed(session: Session = None) -> bool:
                 role="student",
                 department="Electronics & Communication",
                 semester=6,
+                section="B",
                 bound_device_id=None,
                 is_active=True,
                 created_at=now,
@@ -218,6 +226,7 @@ def run_postgres_seed(session: Session = None) -> bool:
             student3.password = stu_pw_hash
             student3.department = "Electronics & Communication"
             student3.semester = 6
+            student3.section = "B"
 
         s3_stats = session.query(StudentStats).filter(StudentStats.user_id == student3.id).first()
         if not s3_stats:
@@ -241,9 +250,13 @@ def run_postgres_seed(session: Session = None) -> bool:
             if not stu:
                 continue
             face_rec = session.query(FaceEnrollment).filter(FaceEnrollment.user_id == stu.id).first()
-            rng = np.random.RandomState(42 + idx)
-            emb = rng.randn(512).astype(np.float32)
-            emb /= np.linalg.norm(emb)
+            if os.getenv("TESTING") == "1":
+                emb = np.zeros(512, dtype=np.float32)
+                emb[0] = 1.0
+            else:
+                rng = np.random.RandomState(42 + idx)
+                emb = rng.randn(512).astype(np.float32)
+                emb /= np.linalg.norm(emb)
             encrypted = face_service.encrypt_embedding(emb)
             if not face_rec:
                 face_rec = FaceEnrollment(
@@ -295,14 +308,13 @@ def run_postgres_seed(session: Session = None) -> bool:
         # 4b. STUDENT SUBJECT ENROLLMENTS (Realistic Curriculum Baselines)
         # ------------------------------------------------------------------
         enrollments_seed = [
-            # Student 1: Aarav Sharma (student / STU01) - 78.5% in CS301
-            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 22, "total": 28, "pct": 78.5},
-            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS302", "name_sub": "Database Systems", "attended": 24, "total": 30, "pct": 80.0},
-            {"roll_no": "student", "name": "Aarav Sharma", "code": "CS303", "name_sub": "Machine Learning", "attended": 18, "total": 24, "pct": 75.0},
-            # STU01 alias
+            # Student 1: Aarav Sharma (STU01) - 78.5% in CS301
             {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 22, "total": 28, "pct": 78.5},
             {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS302", "name_sub": "Database Systems", "attended": 24, "total": 30, "pct": 80.0},
             {"roll_no": "STU01", "name": "Aarav Sharma", "code": "CS303", "name_sub": "Machine Learning", "attended": 18, "total": 24, "pct": 75.0},
+            # Student 2: Priya Patel (STU02)
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 28, "total": 36, "pct": 77.8},
+            {"roll_no": "STU02", "name": "Priya Patel", "code": "CS302", "name_sub": "Database Systems", "attended": 20, "total": 25, "pct": 80.0},
             # Student 3: Rohan Verma (STU03) - Danger zone (68.0%)
             {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS301", "name_sub": "Machine Learning & OS", "attended": 17, "total": 25, "pct": 68.0},
             {"roll_no": "STU03", "name": "Rohan Verma", "code": "CS302", "name_sub": "Database Systems", "attended": 18, "total": 25, "pct": 72.0},
@@ -354,6 +366,186 @@ def run_postgres_seed(session: Session = None) -> bool:
             sample_session.status = "ACTIVE"
             sample_session.faculty_id = "faculty"
             sample_session.geofence_radius_meters = 150
+
+        # ------------------------------------------------------------------
+        # 8. TIMETABLE ENTRIES (Official Weekly Schedule)
+        # ------------------------------------------------------------------
+        cs301 = session.query(Subject).filter(Subject.code == "CS301").first()
+        it401 = session.query(Subject).filter(Subject.code == "IT401").first()
+        ec601 = session.query(Subject).filter(Subject.code == "EC601").first()
+
+        sample_timetable = [
+            # Monday
+            {
+                "subject_id": cs301.id if cs301 else None,
+                "subject_code": "CS301",
+                "subject_name": "Operating Systems",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Computer Science & Engineering",
+                "semester": 6,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "MONDAY",
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            {
+                "subject_id": it401.id if it401 else None,
+                "subject_code": "IT401",
+                "subject_name": "Web Technologies",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Information Technology",
+                "semester": 4,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-304",
+                "day_of_week": "MONDAY",
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            # Tuesday
+            {
+                "subject_id": ec601.id if ec601 else None,
+                "subject_code": "EC601",
+                "subject_name": "Embedded Systems",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Electronics & Communication",
+                "semester": 6,
+                "section": "B",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "TUESDAY",
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            {
+                "subject_id": cs301.id if cs301 else None,
+                "subject_code": "CS301",
+                "subject_name": "Operating Systems",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Computer Science & Engineering",
+                "semester": 6,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "TUESDAY",
+                "start_time": "11:00",
+                "end_time": "12:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            # Wednesday
+            {
+                "subject_id": cs301.id if cs301 else None,
+                "subject_code": "CS301",
+                "subject_name": "Operating Systems",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Computer Science & Engineering",
+                "semester": 6,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "WEDNESDAY",
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            # Thursday
+            {
+                "subject_id": it401.id if it401 else None,
+                "subject_code": "IT401",
+                "subject_name": "Web Technologies",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Information Technology",
+                "semester": 4,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-304",
+                "day_of_week": "THURSDAY",
+                "start_time": "14:00",
+                "end_time": "15:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            # Friday (Published)
+            {
+                "subject_id": cs301.id if cs301 else None,
+                "subject_code": "CS301",
+                "subject_name": "Operating Systems",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Computer Science & Engineering",
+                "semester": 6,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "FRIDAY",
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "is_published": True,
+                "created_by": "admin"
+            },
+            # Friday (Draft - should NOT be exposed to students)
+            {
+                "subject_id": cs301.id if cs301 else None,
+                "subject_code": "CS301",
+                "subject_name": "Special Lab Seminar (Draft)",
+                "faculty_id": "faculty",
+                "faculty_name": "Prof. Rajesh Sharma",
+                "department": "Computer Science & Engineering",
+                "semester": 6,
+                "section": "A",
+                "academic_year": "2025-2026",
+                "room_no": "LAB-302",
+                "day_of_week": "FRIDAY",
+                "start_time": "15:00",
+                "end_time": "16:00",
+                "is_published": False,
+                "created_by": "admin"
+            }
+        ]
+
+        for slot in sample_timetable:
+            exists = session.query(TimetableEntry).filter(
+                TimetableEntry.day_of_week == slot["day_of_week"],
+                TimetableEntry.start_time == slot["start_time"],
+                TimetableEntry.room_no == slot["room_no"]
+            ).first()
+            if not exists:
+                tt = TimetableEntry(
+                    subject_id=slot["subject_id"],
+                    subject_code=slot["subject_code"],
+                    subject_name=slot["subject_name"],
+                    faculty_id=slot["faculty_id"],
+                    faculty_name=slot["faculty_name"],
+                    department=slot["department"],
+                    semester=slot["semester"],
+                    section=slot["section"],
+                    academic_year=slot["academic_year"],
+                    room_no=slot["room_no"],
+                    day_of_week=slot["day_of_week"],
+                    start_time=slot["start_time"],
+                    end_time=slot["end_time"],
+                    is_published=slot["is_published"],
+                    created_by=slot["created_by"],
+                    created_at=now,
+                    updated_at=now
+                )
+                session.add(tt)
 
         session.commit()
         print("=" * 65)

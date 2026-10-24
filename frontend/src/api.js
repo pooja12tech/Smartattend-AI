@@ -361,5 +361,109 @@ export const api = {
       headers: getHeaders()
     });
     return safeParse(res, 'Failed to trigger test warning alert');
+  },
+
+  // Timetable APIs
+  async getAdminTimetable(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '' && val !== 'ALL') {
+        params.append(key, val);
+      }
+    });
+    const qs = params.toString();
+    const res = await fetch(`${API_BASE}/api/admin/timetable${qs ? '?' + qs : ''}`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch timetable entries');
+  },
+
+  async createTimetableEntry(entryData) {
+    const res = await fetch(`${API_BASE}/api/admin/timetable`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(entryData)
+    });
+    return safeParse(res, 'Failed to create timetable slot');
+  },
+
+  async updateTimetableEntry(entryId, entryData) {
+    const res = await fetch(`${API_BASE}/api/admin/timetable/${entryId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(entryData)
+    });
+    return safeParse(res, 'Failed to update timetable slot');
+  },
+
+  async deleteTimetableEntry(entryId) {
+    const res = await fetch(`${API_BASE}/api/admin/timetable/${entryId}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to delete timetable slot');
+  },
+
+  async setTimetablePublishStatus(entryId, isPublished) {
+    const res = await fetch(`${API_BASE}/api/admin/timetable/${entryId}/publish`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ is_published: isPublished })
+    });
+    return safeParse(res, 'Failed to update publish status');
+  },
+
+  async batchPublishTimetable({ department, semester, section, is_published }) {
+    const body = { is_published };
+    if (department && department !== 'ALL') body.department = department;
+    if (semester && semester !== 'ALL') body.semester = parseInt(semester);
+    if (section && section !== 'ALL') body.section = section;
+
+    const res = await fetch(`${API_BASE}/api/admin/timetable/batch-publish`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+    return safeParse(res, 'Failed to batch update publication status');
+  },
+
+  async getClassTimetable({ department, semester, section }) {
+    const params = new URLSearchParams();
+    if (department) params.append('department', department);
+    if (semester) params.append('semester', semester);
+    if (section) params.append('section', section);
+    const res = await fetch(`${API_BASE}/api/timetable/class?${params.toString()}`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch class timetable');
+  },
+
+  async getMyTimetable() {
+    const res = await fetch(`${API_BASE}/api/timetable/my`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch personal timetable');
+  },
+
+  async getFacultyTimetableToday(dayOfWeek = null) {
+    let url = `${API_BASE}/api/faculty/timetable/today`;
+    if (dayOfWeek) {
+      url += `?day_of_week=${encodeURIComponent(dayOfWeek)}`;
+    }
+    const res = await fetch(url, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch today faculty timetable');
+  },
+
+  async getStudentTimetableToday(dayOfWeek = null) {
+    let url = `${API_BASE}/api/student/timetable/today`;
+    if (dayOfWeek) {
+      url += `?day_of_week=${encodeURIComponent(dayOfWeek)}`;
+    }
+    const res = await fetch(url, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch today student timetable');
   }
 };

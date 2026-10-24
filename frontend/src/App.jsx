@@ -46,9 +46,9 @@ export default function App() {
   // Quick switch role (Helper for live evaluations and demos)
   const handleQuickSwitchRole = async (targetRole) => {
     const creds = {
-      student: { roll_no: 'STU01', password: 'stu123' },
-      faculty: { roll_no: 'FAC01', password: 'fac123' },
-      admin: { roll_no: 'ADM01', password: 'admin123' }
+      student: { roll_no: 'student', password: 'studentpassword' },
+      faculty: { roll_no: 'faculty', password: 'facultypassword' },
+      admin: { roll_no: 'admin', password: 'adminpassword' }
     };
     const c = creds[targetRole];
     if (c) {

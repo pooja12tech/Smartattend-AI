@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Fingerprint, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
+  Fingerprint, Calendar, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
   MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
   HelpCircle, History, Eye, User, Radio
@@ -9,12 +9,15 @@ import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api, getDeviceId } from '../api';
 import BunkSimulator from './BunkSimulator';
+import StudentTimetable from './StudentTimetable';
+import StudentNotificationCenter from './StudentNotificationCenter';
 import { getFaceLandmarker, analyzeFaceFrame } from '../utils/faceLiveness';
 
 export default function StudentPortal({ user }) {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [portalTab, setPortalTab] = useState('dashboard'); // 'dashboard' | 'timetable'
 
   // Biometric state
   const [biometricUnlocked, setBiometricUnlocked] = useState(false);
@@ -1114,7 +1117,55 @@ export default function StudentPortal({ user }) {
         </div>
       </div>
 
-      {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
+      {/* Top Portal Navigation Tabs & Notification Center */}
+      <div className="flex items-center justify-between gap-3 p-1.5 bg-slate-900/90 rounded-2xl border border-slate-800 backdrop-blur-md">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setPortalTab('dashboard')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
+              portalTab === 'dashboard'
+                ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Fingerprint className="w-3.5 h-3.5" />
+            <span>Dashboard & Attendance</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPortalTab('timetable')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
+              portalTab === 'timetable'
+                ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>My Timetable</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-brand-500/20 text-brand-300 font-semibold border border-brand-500/30">
+              Weekly Schedule
+            </span>
+          </button>
+        </div>
+
+        <div className="shrink-0 pr-1">
+          <StudentNotificationCenter
+            studentRollNo={dashboard?.student?.roll_no || user?.roll_no || 'student'}
+            notifications={dashboard?.notifications || []}
+            unreadCount={dashboard?.unread_notifications_count || 0}
+            attendanceAlert={dashboard?.attendance_alert || null}
+            onNotificationUpdate={fetchDashboardData}
+            onOpenTimetable={() => setPortalTab('timetable')}
+          />
+        </div>
+      </div>
+
+      {/* TAB 1: Dashboard & Attendance */}
+      {portalTab === 'dashboard' && (
+        <div className="space-y-6">
+          {/* Top Bar: Hardware Device Lock & Face Biometric Gate */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Hardware Device Lock */}
         <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-slate-800 flex items-center justify-between">
@@ -1208,6 +1259,183 @@ export default function StudentPortal({ user }) {
           </button>
         </div>
       </div>
+
+      {/* Main Student Analytics: AI Risk Engine & Attendance Trends */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* 1. AI Defaulter Risk Predictor Card (Random Forest ML) */}
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Defaulter Risk Engine</h3>
+            </div>
+            {getRiskBadge(risk.risk_level)}
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400">Random Forest Defaulter Probability</p>
+              <p className="text-3xl font-black text-white mt-0.5">{risk.defaulter_risk_pct}%</p>
+            </div>
+            <div className="w-14 h-14 rounded-full bg-slate-950 flex items-center justify-center border-4 border-indigo-500/30">
+              <TrendingUp className="w-6 h-6 text-indigo-400" />
+            </div>
+          </div>
+
+          {/* Behavioral ML Insights */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Behavioral Risk Insights:</p>
+            <ul className="space-y-1.5 text-xs text-slate-400">
+              {risk.insights && risk.insights.map((insight, idx) => (
+                <li key={idx} className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
+                  <span className="text-indigo-400 font-bold">•</span>
+                  <span>{insight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* 2. Active Attendance Streak & Curriculum Health */}
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Flame className="w-5 h-5 text-amber-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Attendance Momentum</h3>
+            </div>
+            <span className="text-xs font-bold font-mono text-indigo-300">Sem {dashboard?.student?.semester || 6}</span>
+          </div>
+
+          <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-amber-300 font-semibold">Active Streak Metric</p>
+              <p className="text-2xl font-black text-amber-400 mt-0.5">
+                {attendance.active_streak > 0 ? `+${attendance.active_streak} Lectures` : `${attendance.active_streak} Lectures Missed`}
+              </p>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Flame className="w-6 h-6 animate-pulse" />
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 space-y-1">
+            <p className="font-semibold text-white flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> University Regulatory Rule
+            </p>
+            <p className="text-slate-400 leading-relaxed">
+              Minimum 75% aggregate attendance required to obtain exam hall ticket. Students below 75% are placed on the academic detention warning list.
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Detailed Subject-Wise Academic Breakdown */}
+      <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Subject-Wise Attendance Breakdown</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Mandatory: 75.0%</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {subjects.map((sub, idx) => {
+            const isSafe = sub.pct >= 75.0;
+            const bCalc = sub.bunk_calculator;
+            return (
+              <div key={idx} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-white leading-snug">{sub.subject}</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {sub.attended} attended / {sub.total} conducted lectures
+                    </p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-black ${isSafe ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}`}>
+                    {sub.pct}%
+                  </span>
+                </div>
+
+                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${isSafe ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
+                    style={{ width: `${Math.min(100, sub.pct)}%` }}
+                  />
+                </div>
+
+                {bCalc && (
+                  <div className={`p-2.5 rounded-lg text-[11px] flex items-center justify-between ${isSafe ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
+                    <span className="font-semibold">
+                      {isSafe ? `✅ Safe Skips: ${bCalc.safe_skips}` : `⚠️ Attend Next: ${bCalc.classes_needed}`}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[180px]">{bCalc.message}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Recent Attendance Verification Audit Logs */}
+      {logs.length > 0 && (
+        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Recent Attendance Verification Logs</h3>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
+                  <th className="pb-2 font-semibold">Session ID</th>
+                  <th className="pb-2 font-semibold">Status</th>
+                  <th className="pb-2 font-semibold">AI Face Match</th>
+                  <th className="pb-2 font-semibold">GPS Distance</th>
+                  <th className="pb-2 font-semibold">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                {logs.slice(0, 5).map((log, idx) => (
+                  <tr key={idx} className="hover:bg-slate-900/40">
+                    <td className="py-2.5 text-slate-200">{log.session_id}</td>
+                    <td className="py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        log.status === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
+                        log.status === 'PENDING_APPROVAL' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
+                        'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                      }`}>
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-slate-300">{log.face_match_score != null ? `${log.face_match_score}%` : 'N/A'}</td>
+                    <td className="py-2.5 text-slate-300">{log.distance_meters != null ? `${log.distance_meters}m` : 'N/A'}</td>
+                    <td className="py-2.5 text-slate-400 font-sans text-[10px]">{log.marked_at ? new Date(log.marked_at).toLocaleTimeString() : 'Recent'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+        </div>
+      )}
+
+      {/* TAB 2: Official Student Timetable (Phase 5 View) */}
+      {portalTab === 'timetable' && (
+        <StudentTimetable
+          user={user}
+          onOpenScanner={(slot) => {
+            handleStartAttendanceFlow();
+          }}
+          recentLogs={logs}
+        />
+      )}
 
       {/* AUTOMATED ATTENDANCE MODAL (Steps: SCAN_QR -> FACE_VERIFY -> EVALUATING -> RESULT) */}
       {isScannerOpen && (
@@ -1679,169 +1907,6 @@ export default function StudentPortal({ user }) {
               </div>
             )}
 
-          </div>
-        </div>
-      )}
-
-      {/* Main Student Analytics: AI Risk Engine & Attendance Trends */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* 1. AI Defaulter Risk Predictor Card (Random Forest ML) */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-indigo-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">AI Defaulter Risk Engine</h3>
-            </div>
-            {getRiskBadge(risk.risk_level)}
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-400">Random Forest Defaulter Probability</p>
-              <p className="text-3xl font-black text-white mt-0.5">{risk.defaulter_risk_pct}%</p>
-            </div>
-            <div className="w-14 h-14 rounded-full bg-slate-950 flex items-center justify-center border-4 border-indigo-500/30">
-              <TrendingUp className="w-6 h-6 text-indigo-400" />
-            </div>
-          </div>
-
-          {/* Behavioral ML Insights */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Behavioral Risk Insights:</p>
-            <ul className="space-y-1.5 text-xs text-slate-400">
-              {risk.insights && risk.insights.map((insight, idx) => (
-                <li key={idx} className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
-                  <span className="text-indigo-400 font-bold">•</span>
-                  <span>{insight}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* 2. Active Attendance Streak & Curriculum Health */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Flame className="w-5 h-5 text-amber-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Attendance Momentum</h3>
-            </div>
-            <span className="text-xs font-bold font-mono text-indigo-300">Sem {dashboard?.student?.semester || 6}</span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-amber-300 font-semibold">Active Streak Metric</p>
-              <p className="text-2xl font-black text-amber-400 mt-0.5">
-                {attendance.active_streak > 0 ? `+${attendance.active_streak} Lectures` : `${attendance.active_streak} Lectures Missed`}
-              </p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Flame className="w-6 h-6 animate-pulse" />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 space-y-1">
-            <p className="font-semibold text-white flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> University Regulatory Rule
-            </p>
-            <p className="text-slate-400 leading-relaxed">
-              Minimum 75% aggregate attendance required to obtain exam hall ticket. Students below 75% are placed on the academic detention warning list.
-            </p>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Detailed Subject-Wise Academic Breakdown */}
-      <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Subject-Wise Attendance Breakdown</h3>
-          </div>
-          <span className="text-[11px] text-slate-400">Mandatory: 75.0%</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {subjects.map((sub, idx) => {
-            const isSafe = sub.pct >= 75.0;
-            const bCalc = sub.bunk_calculator;
-            return (
-              <div key={idx} className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h4 className="text-xs font-bold text-white leading-snug">{sub.subject}</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {sub.attended} attended / {sub.total} conducted lectures
-                    </p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-black ${isSafe ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'}`}>
-                    {sub.pct}%
-                  </span>
-                </div>
-
-                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${isSafe ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'}`}
-                    style={{ width: `${Math.min(100, sub.pct)}%` }}
-                  />
-                </div>
-
-                {bCalc && (
-                  <div className={`p-2.5 rounded-lg text-[11px] flex items-center justify-between ${isSafe ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
-                    <span className="font-semibold">
-                      {isSafe ? `✅ Safe Skips: ${bCalc.safe_skips}` : `⚠️ Attend Next: ${bCalc.classes_needed}`}
-                    </span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[180px]">{bCalc.message}</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Recent Attendance Verification Audit Logs */}
-      {logs.length > 0 && (
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-3">
-          <div className="flex items-center gap-2">
-            <History className="w-5 h-5 text-indigo-400" />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Recent Attendance Verification Logs</h3>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 text-[11px]">
-                  <th className="pb-2 font-semibold">Session ID</th>
-                  <th className="pb-2 font-semibold">Status</th>
-                  <th className="pb-2 font-semibold">AI Face Match</th>
-                  <th className="pb-2 font-semibold">GPS Distance</th>
-                  <th className="pb-2 font-semibold">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {logs.slice(0, 5).map((log, idx) => (
-                  <tr key={idx} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 text-slate-200">{log.session_id}</td>
-                    <td className="py-2.5">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        log.status === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
-                        log.status === 'PENDING_APPROVAL' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
-                        'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                      }`}>
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-slate-300">{log.face_match_score != null ? `${log.face_match_score}%` : 'N/A'}</td>
-                    <td className="py-2.5 text-slate-300">{log.distance_meters != null ? `${log.distance_meters}m` : 'N/A'}</td>
-                    <td className="py-2.5 text-slate-400 font-sans text-[10px]">{log.marked_at ? new Date(log.marked_at).toLocaleTimeString() : 'Recent'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
       )}

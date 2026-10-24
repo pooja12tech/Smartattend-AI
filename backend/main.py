@@ -9,7 +9,7 @@ import secrets
 import base64
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
 SESSION_MAX_MINUTES = int(os.getenv("SESSION_MAX_MINUTES", "120"))
@@ -39,7 +39,8 @@ from db_postgres import (
 )
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
-    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment, StudentNotification
+    Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment, StudentNotification,
+    TimetableEntry
 )
 import face_service
 from seed_postgres import run_postgres_seed
@@ -920,6 +921,370 @@ class CreateSubjectRequest(BaseModel):
 class ResetDeviceRequest(BaseModel):
     reason: Optional[str] = Field("Hardware device lock reset by administrator", description="Mandatory audit trail reason")
 
+# ------------------------------------------------------------------------------
+# Timetable Pydantic Schemas & Conflict Detection Engine
+# ------------------------------------------------------------------------------
+
+VALID_TIMETABLE_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
+DAY_ORDER = {"MONDAY": 1, "TUESDAY": 2, "WEDNESDAY": 3, "THURSDAY": 4, "FRIDAY": 5, "SATURDAY": 6, "SUNDAY": 7}
+
+class TimetableEntryCreateRequest(BaseModel):
+    subject_code: str = Field(..., example="CS301", description="Subject code, e.g. CS301")
+    subject_id: Optional[str] = Field(None, description="Optional UUID of Subject")
+    subject_name: Optional[str] = Field(None, description="Subject name")
+    faculty_id: str = Field(..., example="faculty", description="Faculty ID / roll_no")
+    faculty_name: Optional[str] = Field(None, description="Faculty full name")
+    department: str = Field("Computer Science & Engineering", description="Department")
+    semester: int = Field(6, ge=1, le=12, description="Academic semester")
+    section: str = Field("A", description="Section (e.g. A, B)")
+    academic_year: str = Field("2025-2026", description="Academic year")
+    room_no: str = Field(..., example="LAB-302", description="Room identifier")
+    day_of_week: str = Field(..., example="MONDAY", description="Day of week (MONDAY to SUNDAY)")
+    start_time: str = Field(..., example="09:00", description="Start time in HH:MM format (24-hour)")
+    end_time: str = Field(..., example="10:00", description="End time in HH:MM format (24-hour)")
+    is_published: bool = Field(True, description="Publish status")
+
+class TimetableEntryUpdateRequest(BaseModel):
+    subject_code: Optional[str] = None
+    subject_id: Optional[str] = None
+    subject_name: Optional[str] = None
+    faculty_id: Optional[str] = None
+    faculty_name: Optional[str] = None
+    department: Optional[str] = None
+    semester: Optional[int] = None
+    section: Optional[str] = None
+    academic_year: Optional[str] = None
+    room_no: Optional[str] = None
+    day_of_week: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    is_published: Optional[bool] = None
+
+class TimetablePublishRequest(BaseModel):
+    is_published: bool
+
+class TimetableBatchPublishRequest(BaseModel):
+    department: Optional[str] = None
+    semester: Optional[int] = None
+    section: Optional[str] = None
+    is_published: bool
+
+def normalize_time_str(t: str) -> str:
+    t = str(t).strip()
+    parts = t.split(":")
+    if len(parts) != 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid time format '{t}'. Must be HH:MM (24-hour format)."
+        )
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError()
+        return f"{hour:02d}:{minute:02d}"
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid time value '{t}'. Hour must be 00-23 and minute 00-59."
+        )
+
+def normalize_day_str(d: str) -> str:
+    day = str(d).strip().upper()
+    if day not in VALID_TIMETABLE_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid day_of_week '{d}'. Must be one of: {', '.join(VALID_TIMETABLE_DAYS)}."
+        )
+    return day
+
+def check_timetable_conflicts(
+    db: Session,
+    day_of_week: str,
+    start_time: str,
+    end_time: str,
+    faculty_id: str,
+    room_no: str,
+    department: str,
+    semester: int,
+    section: str,
+    exclude_id: Optional[uuid.UUID] = None
+):
+    """
+    Checks for scheduling collisions:
+    1. Faculty Conflict (same faculty, overlapping time, same day)
+    2. Room Conflict (same physical room, overlapping time, same day)
+    3. Class/Section Conflict (same dept/sem/sec, overlapping time, same day)
+
+    Overlap condition: (start_A < end_B) AND (end_A > start_B).
+    Adjacent intervals (e.g. 09:00-10:00 and 10:00-11:00) do NOT conflict.
+    """
+    base_query = db.query(TimetableEntry).filter(
+        TimetableEntry.day_of_week == day_of_week,
+        TimetableEntry.start_time < end_time,
+        TimetableEntry.end_time > start_time
+    )
+    if exclude_id:
+        base_query = base_query.filter(TimetableEntry.id != exclude_id)
+
+    # 1. Faculty collision
+    faculty_conflict = base_query.filter(TimetableEntry.faculty_id == faculty_id).first()
+    if faculty_conflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "FACULTY_CONFLICT",
+                "message": f"Faculty '{faculty_conflict.faculty_name}' ({faculty_id}) is already scheduled for {faculty_conflict.subject_name} ({faculty_conflict.subject_code}) in room {faculty_conflict.room_no} from {faculty_conflict.start_time} to {faculty_conflict.end_time} on {day_of_week}.",
+                "conflict_with": faculty_conflict.to_dict()
+            }
+        )
+
+    # 2. Room collision
+    room_conflict = base_query.filter(TimetableEntry.room_no.ilike(room_no.strip())).first()
+    if room_conflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ROOM_CONFLICT",
+                "message": f"Room '{room_no}' is already occupied by {room_conflict.subject_name} ({room_conflict.department} Sem {room_conflict.semester}-{room_conflict.section}) from {room_conflict.start_time} to {room_conflict.end_time} on {day_of_week}.",
+                "conflict_with": room_conflict.to_dict()
+            }
+        )
+
+    # 3. Class cohort collision
+    class_conflict = base_query.filter(
+        TimetableEntry.department == department,
+        TimetableEntry.semester == semester,
+        TimetableEntry.section == section
+    ).first()
+    if class_conflict:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "CLASS_CONFLICT",
+                "message": f"Class '{department} Sem {semester} Sec {section}' already has {class_conflict.subject_name} ({class_conflict.subject_code}) scheduled from {class_conflict.start_time} to {class_conflict.end_time} on {day_of_week}.",
+                "conflict_with": class_conflict.to_dict()
+            }
+        )
+
+
+def dispatch_timetable_notifications(
+    db: Session,
+    entry: Union[TimetableEntry, dict],
+    action: str,
+    old_data: Optional[dict] = None
+) -> int:
+    """
+    Integrates timetable changes with the existing notification system.
+    - Notifies affected students when a published timetable entry is created, updated, published, or deleted.
+    - Includes affected subject, day, time, classroom, and change details.
+    - Avoids duplicate notifications within 30 minutes.
+    - Strictly skips unpublished draft slots (no notifications for drafts).
+    - Returns count of notifications dispatched.
+    """
+    if isinstance(entry, dict):
+        is_published = entry.get("is_published", False)
+        subject_code = entry.get("subject_code", "")
+        subject_name = entry.get("subject_name", "")
+        faculty_name = entry.get("faculty_name", "")
+        day_of_week = entry.get("day_of_week", "")
+        start_time = entry.get("start_time", "")
+        end_time = entry.get("end_time", "")
+        room_no = entry.get("room_no", "")
+        department = entry.get("department", "")
+        semester = entry.get("semester", 1)
+        section = entry.get("section", "A")
+    else:
+        is_published = entry.is_published
+        subject_code = entry.subject_code
+        subject_name = entry.subject_name
+        faculty_name = entry.faculty_name
+        day_of_week = entry.day_of_week
+        start_time = entry.start_time
+        end_time = entry.end_time
+        room_no = entry.room_no
+        department = entry.department
+        semester = entry.semester
+        section = entry.section
+
+    was_published = old_data.get("is_published", False) if old_data else False
+
+    # Never notify for draft entries unless they just became published
+    if action in ("CREATED", "UPDATED") and not is_published and not was_published:
+        return 0
+    if action == "DELETED" and not is_published:
+        return 0
+
+    # 2. Build title and message with subject, day, time, classroom, and change details
+    if action == "DELETED":
+        title = f"Lecture Cancelled: {subject_code} ({day_of_week})"
+        message = (
+            f"The scheduled lecture for {subject_code} ({subject_name}) on {day_of_week} "
+            f"({start_time} - {end_time} in Room {room_no}) with Prof. {faculty_name} has been cancelled."
+        )
+        severity = "WARNING"
+    elif action == "UNPUBLISHED":
+        title = f"Lecture Slot Unpublished: {subject_code}"
+        message = (
+            f"The scheduled lecture for {subject_code} on {day_of_week} ({start_time} - {end_time}) "
+            f"has been temporarily unpublished for schedule adjustments."
+        )
+        severity = "INFO"
+    elif action == "PUBLISHED":
+        title = f"Timetable Published: {subject_code} ({day_of_week})"
+        message = (
+            f"Official timetable slot published for {subject_code} ({subject_name}): "
+            f"{day_of_week} {start_time} - {end_time} in Room {room_no} with Prof. {faculty_name}."
+        )
+        severity = "INFO"
+    elif action == "UPDATED":
+        diffs = []
+        if old_data:
+            if old_data.get("room_no") and old_data["room_no"] != room_no:
+                diffs.append(f"Room changed from {old_data['room_no']} to {room_no}")
+            if old_data.get("day_of_week") and old_data["day_of_week"] != day_of_week:
+                diffs.append(f"Day moved from {old_data['day_of_week']} to {day_of_week}")
+            if (old_data.get("start_time") != start_time) or (old_data.get("end_time") != end_time):
+                diffs.append(f"Time shifted from {old_data.get('start_time')}-{old_data.get('end_time')} to {start_time}-{end_time}")
+            if old_data.get("faculty_name") and old_data["faculty_name"] != faculty_name:
+                diffs.append(f"Faculty updated to Prof. {faculty_name}")
+
+        change_summary = "; ".join(diffs) if diffs else f"rescheduled on {day_of_week} ({start_time}-{end_time} in {room_no})"
+        title = f"Timetable Updated: {subject_code} ({day_of_week})"
+        message = (
+            f"Schedule updated for {subject_code} ({subject_name}): {change_summary}. "
+            f"Current slot: {day_of_week} {start_time} - {end_time} in Room {room_no} (Prof. {faculty_name})."
+        )
+        severity = "INFO"
+    else:  # CREATED
+        title = f"New Lecture Scheduled: {subject_code} ({day_of_week})"
+        message = (
+            f"A new lecture has been scheduled for {subject_code} ({subject_name}): "
+            f"{day_of_week} from {start_time} to {end_time} in Room {room_no} with Prof. {faculty_name}."
+        )
+        severity = "INFO"
+
+    # 3. Query all affected students in the cohort
+    students = db.query(User).filter(
+        User.role == "student",
+        User.is_active == True,
+        User.department.ilike((department or "").strip()),
+        User.semester == semester,
+        User.section.ilike((section or "A").strip())
+    ).all()
+
+    now = datetime.now(timezone.utc)
+    recent_cutoff = now - timedelta(minutes=30)
+    dispatched_count = 0
+
+    for student in students:
+        # 4. Check for duplicate notification within 30 minutes
+        duplicate = db.query(StudentNotification).filter(
+            StudentNotification.roll_no == student.roll_no,
+            StudentNotification.type == "TIMETABLE_CHANGE",
+            StudentNotification.title == title,
+            StudentNotification.created_at >= recent_cutoff,
+            StudentNotification.is_dismissed == False
+        ).first()
+
+        if duplicate:
+            continue
+
+        notif = StudentNotification(
+            user_id=student.id,
+            roll_no=student.roll_no,
+            type="TIMETABLE_CHANGE",
+            severity=severity,
+            title=title,
+            message=message,
+            subject_code=subject_code,
+            subject_name=subject_name,
+            current_pct=100.0,
+            threshold_pct=75.0,
+            alert_cutoff_pct=74.0,
+            classes_needed=0,
+            is_read=False,
+            is_dismissed=False,
+            created_at=now
+        )
+        db.add(notif)
+        dispatched_count += 1
+
+    return dispatched_count
+
+
+def dispatch_batch_timetable_notifications(
+    db: Session,
+    department: Optional[str],
+    semester: Optional[int],
+    section: Optional[str],
+    count: int,
+    is_published: bool
+) -> int:
+    """
+    Notifies affected students when a batch publish/unpublish action occurs.
+    """
+    if count == 0:
+        return 0
+
+    title = (
+        f"Timetable {'Published' if is_published else 'Unpublished'}: "
+        f"{department or 'Class'} Sem {semester or 'All'} Sec {section or 'All'}"
+    )
+    message = (
+        f"The academic timetable for {department or 'your program'} "
+        f"(Semester {semester or 'All'}, Section {section or 'All'}) "
+        f"has been {'published and activated' if is_published else 'temporarily unpublished'} "
+        f"({count} lecture slots). Please check your updated schedule."
+    )
+
+    query = db.query(User).filter(User.role == "student", User.is_active == True)
+    if department:
+        query = query.filter(User.department.ilike(department.strip()))
+    if semester is not None:
+        query = query.filter(User.semester == semester)
+    if section:
+        query = query.filter(User.section.ilike(section.strip()))
+
+    students = query.all()
+    now = datetime.now(timezone.utc)
+    recent_cutoff = now - timedelta(minutes=30)
+    dispatched = 0
+
+    for student in students:
+        dup = db.query(StudentNotification).filter(
+            StudentNotification.roll_no == student.roll_no,
+            StudentNotification.type == "TIMETABLE_CHANGE",
+            StudentNotification.title == title,
+            StudentNotification.created_at >= recent_cutoff,
+            StudentNotification.is_dismissed == False
+        ).first()
+        if dup:
+            continue
+
+        notif = StudentNotification(
+            user_id=student.id,
+            roll_no=student.roll_no,
+            type="TIMETABLE_CHANGE",
+            severity="INFO" if is_published else "WARNING",
+            title=title,
+            message=message,
+            subject_code="ALL",
+            subject_name=f"Semester {semester} Schedule",
+            current_pct=100.0,
+            threshold_pct=75.0,
+            alert_cutoff_pct=74.0,
+            classes_needed=0,
+            is_read=False,
+            is_dismissed=False,
+            created_at=now
+        )
+        db.add(notif)
+        dispatched += 1
+
+    return dispatched
+
+
 def record_audit_log(
     db: Session,
     actor_id: str,
@@ -949,6 +1314,24 @@ def record_audit_log(
     )
     db.add(entry)
     return entry
+
+
+def check_session_faculty_ownership(session: LectureSession, current_user: User, action_desc: str = "manage"):
+    if current_user.role == "admin":
+        return
+    user_roll = (current_user.roll_no or "").strip()
+    session_faculty = (session.faculty_id or "").strip()
+    if session_faculty == user_roll:
+        return
+    fac_aliases = {user_roll.lower(), user_roll}
+    if user_roll.lower() in ("faculty", "fac01"):
+        fac_aliases.update({"faculty", "fac01", "FAC01"})
+    if session_faculty in fac_aliases or session_faculty.lower() in fac_aliases:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Access denied. You can only {action_desc} sessions you started."
+    )
 
 # ==============================================================================
 # API Endpoints
@@ -1186,11 +1569,7 @@ def get_session_qr(
         )
 
     # A faculty member may only act on sessions they started (admin may act on any)
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only view QR codes for sessions you started."
-        )
+    check_session_faculty_ownership(session, current_user, "view QR codes for")
 
     if session.status != "ACTIVE":
         raise HTTPException(
@@ -1245,11 +1624,7 @@ def update_session_location(
             detail=f"Lecture session '{session_id}' not found."
         )
 
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only update location for sessions you created."
-        )
+    check_session_faculty_ownership(session, current_user, "update location for")
 
     session.class_lat = req.class_lat
     session.class_lng = req.class_lng
@@ -1308,11 +1683,7 @@ def end_session(
             detail=f"Lecture session '{session_id}' not found."
         )
 
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only end sessions you started."
-        )
+    check_session_faculty_ownership(session, current_user, "end")
 
     if session.status == "ENDED":
         return {
@@ -1749,24 +2120,13 @@ def enroll_face(
     now = datetime.now(timezone.utc)
     retention_expires = now + timedelta(days=365)
 
-    # Upsert enrollment: update existing template if student re-enrolls
+    # Prevent duplicate biometric enrollment without admin reset
     existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
     if existing_enrollment:
-        existing_enrollment.embedding = encrypted_emb
-        existing_enrollment.model_name = "buffalo_sc"
-        existing_enrollment.model_version = "insightface-2.1"
-        existing_enrollment.consent_given_at = now
-        existing_enrollment.consent_text_version = req.consent_text_version or "v1.0"
-        existing_enrollment.created_at = now
-        existing_enrollment.retention_expires_at = retention_expires
-        current_user.updated_at = now
-        db.commit()
-        return {
-            "success": True,
-            "roll_no": current_user.roll_no,
-            "message": f"Biometric face reference successfully updated for student {current_user.name}.",
-            "enrolled_at": now.isoformat()
-        }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Biometric face template is already enrolled for this student. Contact an administrator to reset."
+        )
 
     enrollment = FaceEnrollment(
         user_id=current_user.id,
@@ -1804,11 +2164,7 @@ def faculty_manual_attendance(
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
 
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only record manual attendance for sessions you started."
-        )
+    check_session_faculty_ownership(session, current_user, "record manual attendance for")
 
     student = db.query(User).filter(User.roll_no == req.roll_no).first()
     if not student:
@@ -1908,11 +2264,7 @@ def faculty_approve_attendance(
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
 
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only approve exception attendance for sessions you started."
-        )
+    check_session_faculty_ownership(session, current_user, "approve exception attendance for")
 
     record = db.query(AttendanceRecord).filter(
         AttendanceRecord.session_id == session.session_id,
@@ -2666,11 +3018,7 @@ def get_faculty_live_session(
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only view live attendance for sessions you started."
-        )
+    check_session_faculty_ownership(session, current_user, "view live attendance for")
 
     records = db.query(AttendanceRecord).filter(
         AttendanceRecord.session_id == session_id
@@ -2726,76 +3074,6 @@ def get_faculty_live_session(
         "present_students": present_students,
         "pending_approvals": pending_approvals,
         "security_alerts": formatted_alerts
-    }
-
-@app.post("/api/faculty/approve")
-def approve_exception(
-    req: FacultyApproveRequest,
-    current_user: User = Depends(require_faculty_or_admin),
-    db: Session = Depends(get_pg_db)
-):
-    session = db.query(LectureSession).filter(
-        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
-    ).first()
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
-
-    if current_user.role != "admin" and session.faculty_id != current_user.roll_no:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. You can only approve exception attendance for sessions you started."
-        )
-
-    action = req.action.upper()
-    if action not in ["APPROVE", "REJECT"]:
-        raise HTTPException(status_code=400, detail="Action must be either 'APPROVE' or 'REJECT'")
-
-    new_status = "PRESENT" if action == "APPROVE" else "REJECTED"
-
-    record = db.query(AttendanceRecord).filter(
-        AttendanceRecord.session_id == session.session_id,
-        AttendanceRecord.roll_no == req.roll_no
-    ).first()
-
-    if not record:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Attendance record for roll number '{req.roll_no}' in session '{req.session_id}' not found."
-        )
-
-    record.status = new_status
-    record.reviewed_at = datetime.now(timezone.utc)
-    record.remarks = req.remarks or f"Faculty {action.lower()}d exception."
-    db.flush()
-
-    student = db.query(User).filter(User.roll_no == req.roll_no).first()
-    if student:
-        stats = recompute_student_stats(db, student.id)
-        subj_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
-        recompute_student_subject_enrollment(db, student.roll_no, subj_prefix)
-
-    record_audit_log(
-        db=db,
-        actor_id=current_user.roll_no,
-        actor_name=current_user.name,
-        actor_role=current_user.role,
-        action="EXCEPTION_APPROVAL",
-        target_type="ATTENDANCE_RECORD",
-        target_id=f"{req.session_id}:{req.roll_no}",
-        old_value="PENDING_APPROVAL",
-        new_value=new_status,
-        reason=req.remarks or f"Faculty {action.lower()}d exception."
-    )
-
-    db.commit()
-
-    return {
-        "success": True,
-        "session_id": req.session_id,
-        "roll_no": req.roll_no,
-        "action": action,
-        "status": new_status,
-        "message": f"Student {req.roll_no} exception attendance has been {new_status}."
     }
 
 # ------------------------------------------------------------------------------
@@ -3353,6 +3631,601 @@ def get_student_subjects(
         "subjects": results
     }
 
+# ==============================================================================
+# Role-Based Timetable Management API Endpoints
+# ==============================================================================
+
+@app.get("/api/timetable/my")
+def get_my_timetable(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Role-based timetable query:
+    - Students: Returns only published timetable entries for their assigned department, semester, and section.
+    - Faculty: Returns all entries assigned to their faculty ID.
+    - Admins: Returns all published and draft timetable entries.
+    """
+    if current_user.role == "student":
+        student_section = (current_user.section or "A").strip()
+        dept = (current_user.department or "").strip()
+        entries = db.query(TimetableEntry).filter(
+            TimetableEntry.department.ilike(dept),
+            TimetableEntry.semester == current_user.semester,
+            TimetableEntry.section.ilike(student_section),
+            TimetableEntry.is_published == True
+        ).all()
+        entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
+        return {
+            "role": "student",
+            "roll_no": current_user.roll_no,
+            "department": current_user.department,
+            "semester": current_user.semester,
+            "section": student_section,
+            "count": len(entries_sorted),
+            "timetable": [e.to_dict() for e in entries_sorted]
+        }
+
+    elif current_user.role == "faculty":
+        entries = db.query(TimetableEntry).filter(
+            TimetableEntry.faculty_id == current_user.roll_no,
+            TimetableEntry.is_published == True
+        ).all()
+        entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
+        return {
+            "role": "faculty",
+            "faculty_id": current_user.roll_no,
+            "faculty_name": current_user.name,
+            "count": len(entries_sorted),
+            "timetable": [e.to_dict() for e in entries_sorted]
+        }
+
+    elif current_user.role == "admin":
+        entries = db.query(TimetableEntry).all()
+        entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
+        return {
+            "role": "admin",
+            "admin_id": current_user.roll_no,
+            "count": len(entries_sorted),
+            "timetable": [e.to_dict() for e in entries_sorted]
+        }
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown role.")
+
+
+@app.get("/api/timetable/class")
+def get_class_timetable(
+    department: str,
+    semester: int,
+    section: str = "A",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Retrieve timetable for a specific department, semester, and section.
+    - Students are strictly restricted to their own assigned class and section.
+    - Faculty and admins may inspect any class timetable.
+    - Draft entries are hidden from students.
+    """
+    sec = section.strip().upper()
+    if current_user.role == "student":
+        student_sec = (current_user.section or "A").strip().upper()
+        if (
+            current_user.department.strip().lower() != department.strip().lower()
+            or current_user.semester != semester
+            or student_sec != sec
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Students are only authorized to view their own assigned class and section timetable."
+            )
+
+    query = db.query(TimetableEntry).filter(
+        TimetableEntry.department.ilike(department.strip()),
+        TimetableEntry.semester == semester,
+        TimetableEntry.section.ilike(sec)
+    )
+
+    if current_user.role == "student":
+        query = query.filter(TimetableEntry.is_published == True)
+
+    entries = query.all()
+    entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
+
+    return {
+        "department": department,
+        "semester": semester,
+        "section": sec,
+        "count": len(entries_sorted),
+        "timetable": [e.to_dict() for e in entries_sorted]
+    }
+
+
+@app.get("/api/faculty/timetable/today")
+def get_faculty_today_timetable(
+    day_of_week: Optional[str] = None,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns today's lecture schedule for the authenticated faculty member.
+    Includes active slot / upcoming slot indicators for 1-click session launching.
+    Strictly returns published timetable entries only.
+    """
+    now = datetime.now(timezone.utc)
+    if day_of_week:
+        target_day = normalize_day_str(day_of_week)
+    else:
+        target_day = now.strftime("%A").upper()
+    current_time_str = now.strftime("%H:%M")
+
+    entries = db.query(TimetableEntry).filter(
+        TimetableEntry.faculty_id == current_user.roll_no,
+        TimetableEntry.day_of_week == target_day,
+        TimetableEntry.is_published == True
+    ).all()
+
+    entries_sorted = sorted(entries, key=lambda x: x.start_time)
+    results = []
+    for e in entries_sorted:
+        d = e.to_dict()
+        d["is_current_slot"] = (e.start_time <= current_time_str <= e.end_time)
+        d["is_upcoming_slot"] = (e.start_time > current_time_str)
+        results.append(d)
+
+    return {
+        "faculty_id": current_user.roll_no,
+        "faculty_name": current_user.name,
+        "day_of_week": target_day,
+        "current_time_utc": current_time_str,
+        "count": len(results),
+        "today_classes": results
+    }
+
+
+@app.get("/api/student/timetable/today")
+def get_student_today_timetable(
+    day_of_week: Optional[str] = None,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns today's lecture schedule for the authenticated student.
+    Strictly returns published timetable entries only for their assigned department, semester, and section.
+    Includes active slot / upcoming slot indicators for real-time check-in.
+    """
+    now = datetime.now(timezone.utc)
+    if day_of_week:
+        target_day = normalize_day_str(day_of_week)
+    else:
+        target_day = now.strftime("%A").upper()
+    current_time_str = now.strftime("%H:%M")
+
+    student_section = (current_user.section or "A").strip()
+    dept = (current_user.department or "").strip()
+
+    entries = db.query(TimetableEntry).filter(
+        TimetableEntry.department.ilike(dept),
+        TimetableEntry.semester == current_user.semester,
+        TimetableEntry.section.ilike(student_section),
+        TimetableEntry.day_of_week == target_day,
+        TimetableEntry.is_published == True
+    ).all()
+
+    entries_sorted = sorted(entries, key=lambda x: x.start_time)
+    results = []
+    for e in entries_sorted:
+        d = e.to_dict()
+        d["is_current_slot"] = (e.start_time <= current_time_str <= e.end_time)
+        d["is_upcoming_slot"] = (e.start_time > current_time_str)
+        results.append(d)
+
+    return {
+        "student_roll_no": current_user.roll_no,
+        "department": current_user.department,
+        "semester": current_user.semester,
+        "section": student_section,
+        "day_of_week": target_day,
+        "current_time_utc": current_time_str,
+        "count": len(results),
+        "today_classes": results
+    }
+
+
+@app.get("/api/admin/timetable")
+def get_admin_timetable(
+    department: Optional[str] = None,
+    semester: Optional[int] = None,
+    section: Optional[str] = None,
+    faculty_id: Optional[str] = None,
+    room_no: Optional[str] = None,
+    day_of_week: Optional[str] = None,
+    is_published: Optional[bool] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Administrator endpoint to query and filter full institutional timetable entries.
+    """
+    query = db.query(TimetableEntry)
+
+    if department:
+        query = query.filter(TimetableEntry.department.ilike(f"%{department.strip()}%"))
+    if semester is not None:
+        query = query.filter(TimetableEntry.semester == semester)
+    if section:
+        query = query.filter(TimetableEntry.section.ilike(section.strip()))
+    if faculty_id:
+        query = query.filter(TimetableEntry.faculty_id == faculty_id.strip())
+    if room_no:
+        query = query.filter(TimetableEntry.room_no.ilike(f"%{room_no.strip()}%"))
+    if day_of_week:
+        query = query.filter(TimetableEntry.day_of_week == day_of_week.strip().upper())
+    if is_published is not None:
+        query = query.filter(TimetableEntry.is_published == is_published)
+
+    entries = query.all()
+    entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
+
+    return {
+        "count": len(entries_sorted),
+        "timetable": [e.to_dict() for e in entries_sorted]
+    }
+
+
+@app.post("/api/admin/timetable", status_code=status.HTTP_201_CREATED)
+def create_timetable_entry(
+    req: TimetableEntryCreateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Create a new timetable entry with real-time conflict checking:
+    - Rejects invalid time format or start_time >= end_time.
+    - Rejects faculty collisions.
+    - Rejects physical room collisions.
+    - Rejects student class cohort collisions.
+    """
+    start_time = normalize_time_str(req.start_time)
+    end_time = normalize_time_str(req.end_time)
+    day = normalize_day_str(req.day_of_week)
+
+    if start_time >= end_time:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"start_time ({start_time}) must be strictly earlier than end_time ({end_time})."
+        )
+
+    # Resolve Subject
+    subject = None
+    if req.subject_id:
+        try:
+            subj_uuid = uuid.UUID(req.subject_id)
+            subject = db.query(Subject).filter(Subject.id == subj_uuid).first()
+        except Exception:
+            pass
+    if not subject:
+        subject = db.query(Subject).filter(Subject.code == req.subject_code.strip().upper()).first()
+
+    subj_name = req.subject_name or (subject.name if subject else req.subject_code)
+    subj_id = subject.id if subject else None
+
+    # Resolve Faculty
+    faculty_user = db.query(User).filter(
+        User.roll_no == req.faculty_id.strip(),
+        User.role == "faculty"
+    ).first()
+    faculty_name = req.faculty_name or (faculty_user.name if faculty_user else req.faculty_id)
+
+    # Perform Conflict Checking across Faculty, Room, Class
+    check_timetable_conflicts(
+        db=db,
+        day_of_week=day,
+        start_time=start_time,
+        end_time=end_time,
+        faculty_id=req.faculty_id.strip(),
+        room_no=req.room_no.strip(),
+        department=req.department.strip(),
+        semester=req.semester,
+        section=req.section.strip().upper()
+    )
+
+    now = datetime.now(timezone.utc)
+    entry = TimetableEntry(
+        subject_id=subj_id,
+        subject_code=req.subject_code.strip().upper(),
+        subject_name=subj_name,
+        faculty_id=req.faculty_id.strip(),
+        faculty_name=faculty_name,
+        department=req.department.strip(),
+        semester=req.semester,
+        section=req.section.strip().upper(),
+        academic_year=req.academic_year.strip(),
+        room_no=req.room_no.strip().upper(),
+        day_of_week=day,
+        start_time=start_time,
+        end_time=end_time,
+        is_published=req.is_published,
+        created_by=current_user.roll_no,
+        updated_by=current_user.roll_no,
+        created_at=now,
+        updated_at=now
+    )
+    db.add(entry)
+    db.flush()
+
+    if entry.is_published:
+        dispatch_timetable_notifications(db=db, entry=entry, action="CREATED")
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="TIMETABLE_ENTRY_CREATED",
+        target_type="TIMETABLE_ENTRY",
+        target_id=str(entry.id),
+        new_value=json.dumps(entry.to_dict()),
+        reason=f"Admin created timetable slot {entry.subject_code} ({entry.day_of_week} {entry.start_time}-{entry.end_time} in {entry.room_no})"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Timetable entry for {entry.subject_code} created successfully.",
+        "entry": entry.to_dict()
+    }
+
+
+@app.put("/api/admin/timetable/{entry_id}")
+def update_timetable_entry(
+    entry_id: str,
+    req: TimetableEntryUpdateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Update an existing timetable entry with conflict re-validation (excluding self).
+    """
+    try:
+        entry_uuid = uuid.UUID(entry_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entry UUID format.")
+
+    entry = db.query(TimetableEntry).filter(TimetableEntry.id == entry_uuid).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Timetable entry not found.")
+
+    old_dict = entry.to_dict()
+
+    start_time = normalize_time_str(req.start_time) if req.start_time is not None else entry.start_time
+    end_time = normalize_time_str(req.end_time) if req.end_time is not None else entry.end_time
+    day = normalize_day_str(req.day_of_week) if req.day_of_week is not None else entry.day_of_week
+    faculty_id = req.faculty_id.strip() if req.faculty_id is not None else entry.faculty_id
+    room_no = req.room_no.strip().upper() if req.room_no is not None else entry.room_no
+    department = req.department.strip() if req.department is not None else entry.department
+    semester = req.semester if req.semester is not None else entry.semester
+    section = req.section.strip().upper() if req.section is not None else entry.section
+
+    if start_time >= end_time:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"start_time ({start_time}) must be strictly earlier than end_time ({end_time})."
+        )
+
+    # Conflict check excluding the entry itself
+    check_timetable_conflicts(
+        db=db,
+        day_of_week=day,
+        start_time=start_time,
+        end_time=end_time,
+        faculty_id=faculty_id,
+        room_no=room_no,
+        department=department,
+        semester=semester,
+        section=section,
+        exclude_id=entry.id
+    )
+
+    # Apply updates
+    entry.day_of_week = day
+    entry.start_time = start_time
+    entry.end_time = end_time
+    entry.faculty_id = faculty_id
+    entry.room_no = room_no
+    entry.department = department
+    entry.semester = semester
+    entry.section = section
+
+    if req.subject_code is not None:
+        entry.subject_code = req.subject_code.strip().upper()
+    if req.subject_name is not None:
+        entry.subject_name = req.subject_name.strip()
+    if req.faculty_name is not None:
+        entry.faculty_name = req.faculty_name.strip()
+    if req.academic_year is not None:
+        entry.academic_year = req.academic_year.strip()
+    if req.is_published is not None:
+        entry.is_published = req.is_published
+
+    entry.updated_by = current_user.roll_no
+    entry.updated_at = datetime.now(timezone.utc)
+    db.flush()
+
+    was_published = old_dict.get("is_published", False)
+    if was_published or entry.is_published:
+        dispatch_timetable_notifications(db=db, entry=entry, action="UPDATED", old_data=old_dict)
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="TIMETABLE_ENTRY_UPDATED",
+        target_type="TIMETABLE_ENTRY",
+        target_id=str(entry.id),
+        old_value=json.dumps(old_dict),
+        new_value=json.dumps(entry.to_dict()),
+        reason=f"Admin updated timetable slot {entry.subject_code} ({entry.day_of_week})"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Timetable entry {entry.id} updated successfully.",
+        "entry": entry.to_dict()
+    }
+
+
+@app.delete("/api/admin/timetable/{entry_id}")
+def delete_timetable_entry(
+    entry_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Delete a timetable slot with audit logging.
+    """
+    try:
+        entry_uuid = uuid.UUID(entry_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entry UUID format.")
+
+    entry = db.query(TimetableEntry).filter(TimetableEntry.id == entry_uuid).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Timetable entry not found.")
+
+    entry_data = entry.to_dict()
+    if entry_data.get("is_published", False):
+        dispatch_timetable_notifications(db=db, entry=entry_data, action="DELETED", old_data=entry_data)
+
+    db.delete(entry)
+    db.flush()
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="TIMETABLE_ENTRY_DELETED",
+        target_type="TIMETABLE_ENTRY",
+        target_id=str(entry_id),
+        old_value=json.dumps(entry_data),
+        reason=f"Admin deleted timetable slot {entry_data['subject_code']} on {entry_data['day_of_week']}"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Timetable entry {entry_id} successfully deleted.",
+        "deleted_id": str(entry_id)
+    }
+
+
+@app.post("/api/admin/timetable/{entry_id}/publish")
+def set_entry_publish_status(
+    entry_id: str,
+    req: TimetablePublishRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Toggle publication status of a single timetable slot.
+    """
+    try:
+        entry_uuid = uuid.UUID(entry_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entry UUID format.")
+
+    entry = db.query(TimetableEntry).filter(TimetableEntry.id == entry_uuid).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Timetable entry not found.")
+
+    old_status = entry.is_published
+    entry.is_published = req.is_published
+    entry.updated_by = current_user.roll_no
+    entry.updated_at = datetime.now(timezone.utc)
+    db.flush()
+
+    if req.is_published != old_status:
+        act = "PUBLISHED" if req.is_published else "UNPUBLISHED"
+        dispatch_timetable_notifications(db=db, entry=entry, action=act)
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="TIMETABLE_PUBLISH_STATUS_CHANGED",
+        target_type="TIMETABLE_ENTRY",
+        target_id=str(entry_id),
+        old_value=str(old_status),
+        new_value=str(req.is_published),
+        reason=f"Admin set publish status to {req.is_published} for {entry.subject_code} ({entry.day_of_week})"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Timetable entry publication status set to {req.is_published}.",
+        "entry": entry.to_dict()
+    }
+
+
+@app.post("/api/admin/timetable/batch-publish")
+def batch_publish_timetable(
+    req: TimetableBatchPublishRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Batch publish or unpublish timetable entries by department, semester, and section.
+    """
+    query = db.query(TimetableEntry)
+    if req.department:
+        query = query.filter(TimetableEntry.department.ilike(req.department.strip()))
+    if req.semester is not None:
+        query = query.filter(TimetableEntry.semester == req.semester)
+    if req.section:
+        query = query.filter(TimetableEntry.section.ilike(req.section.strip()))
+
+    entries = query.all()
+    now = datetime.now(timezone.utc)
+    for e in entries:
+        e.is_published = req.is_published
+        e.updated_by = current_user.roll_no
+        e.updated_at = now
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="TIMETABLE_BATCH_PUBLISH",
+        target_type="TIMETABLE_BATCH",
+        target_id=f"{req.department or 'ALL'}-SEM{req.semester or 'ALL'}-{req.section or 'ALL'}",
+        new_value=str(req.is_published),
+        reason=f"Admin batch {'published' if req.is_published else 'unpublished'} {len(entries)} timetable slots."
+    )
+
+    dispatch_batch_timetable_notifications(
+        db=db,
+        department=req.department,
+        semester=req.semester,
+        section=req.section,
+        count=len(entries),
+        is_published=req.is_published
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Successfully updated {len(entries)} timetable slots to is_published={req.is_published}.",
+        "updated_count": len(entries)
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
