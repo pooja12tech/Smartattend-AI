@@ -71,6 +71,20 @@ def get_engine(override_url: Optional[str] = None):
         if "sqlite" in target_url:
             engine_args["connect_args"] = {"check_same_thread": False}
         else:
+            connect_args: Dict[str, Any] = {"connect_timeout": 8}
+            # Windows/network optimization: resolve IPv4 directly to prevent stalling on unreachable IPv6 routes
+            try:
+                from urllib.parse import urlparse
+                import socket
+                parsed = urlparse(target_url)
+                if parsed.hostname and not parsed.hostname.replace(".", "").isdigit():
+                    ipv4_addr = socket.gethostbyname(parsed.hostname)
+                    if ipv4_addr:
+                        connect_args["hostaddr"] = ipv4_addr
+            except Exception:
+                pass
+            engine_args["connect_args"] = connect_args
+
             # Neon serverless PostgreSQL connection pooling
             engine_args["pool_size"] = int(os.getenv("PG_POOL_SIZE", "5"))
             engine_args["max_overflow"] = int(os.getenv("PG_MAX_OVERFLOW", "10"))
@@ -101,9 +115,22 @@ def get_pg_db():
         db.close()
 
 def init_db_schema():
-    """Ensure relational tables are created."""
+    """Ensure relational tables and required columns are created."""
     eng = get_engine()
     Base.metadata.create_all(bind=eng)
+
+    # Safe schema evolution for development/startup: ensure missing columns are present
+    try:
+        from sqlalchemy import inspect, text
+        insp = inspect(eng)
+        if "attendance_records" in insp.get_table_names():
+            existing_cols = {c["name"] for c in insp.get_columns("attendance_records")}
+            if "challenge_id" not in existing_cols:
+                with eng.begin() as conn:
+                    conn.execute(text("ALTER TABLE attendance_records ADD COLUMN challenge_id VARCHAR(64)"))
+                print("[Schema Init] Successfully added missing 'challenge_id' column to 'attendance_records'.")
+    except Exception as e:
+        print(f"[Schema Init Warning] Could not verify/add challenge_id column: {e}")
 
 def check_postgres_connection(override_url: Optional[str] = None) -> Dict[str, Any]:
     """

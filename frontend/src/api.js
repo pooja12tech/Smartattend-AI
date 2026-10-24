@@ -136,6 +136,15 @@ export const api = {
     return safeParse(res, 'Failed to fetch session information');
   },
 
+  async requestLivenessChallenge(sessionId) {
+    const res = await fetch(`${API_BASE}/api/liveness/challenge`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ session_id: sessionId })
+    });
+    return safeParse(res, 'Failed to obtain liveness challenge');
+  },
+
   async endSession(sessionId) {
     const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/end`, {
       method: 'POST',

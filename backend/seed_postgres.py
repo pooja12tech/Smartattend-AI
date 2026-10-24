@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from db_postgres import get_session_factory, init_db_schema, check_postgres_connection
 from models import (
     User, StudentStats, LectureSession, Subject, StudentSubjectEnrollment,
-    AttendanceRecord, SecurityAlert, AuditLog, FaceEnrollment, TimetableEntry
+    AttendanceRecord, SecurityAlert, AuditLog, FaceEnrollment, TimetableEntry, LivenessChallenge
 )
 from auth import hash_password
 import face_service

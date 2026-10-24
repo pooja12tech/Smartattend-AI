@@ -52,6 +52,9 @@ export default function StudentPortal({ user }) {
   const isStartingFrontCameraRef = useRef(false);
   const frontCameraTimeoutRef = useRef(null);
   const captureTriggeredRef = useRef(false);
+  const livenessChallengeRef = useRef(null);
+  const challengePromiseRef = useRef(null);
+  const closedFrameBufferRef = useRef(null);
   const diagnosticsRef = useRef({
     leftEAR: 0,
     rightEAR: 0,
@@ -261,6 +264,7 @@ export default function StudentPortal({ user }) {
     setCameraActive(false);
     setBlinkFlash(false);
     setEyeClosingFeedback(false);
+    closedFrameBufferRef.current = null;
   };
 
   // Close & Reset Attendance Modal
@@ -296,6 +300,8 @@ export default function StudentPortal({ user }) {
     captureTriggeredRef.current = false;
     setIsScannerOpen(true);
     setAttendanceStep('SCAN_QR');
+    closedFrameBufferRef.current = null;
+    livenessChallengeRef.current = null;
     setScannedToken('');
     setSessionId('');
     setSelfieCaptured(null);
@@ -428,91 +434,108 @@ export default function StudentPortal({ user }) {
             setScannedToken(rawToken);
             setSessionId(parts[0]);
 
-            // Immediately capture device Geolocation & current local Timestamp
+            // Immediately capture local Timestamp
             const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-            // Fetch live session info from backend to get faculty's real GPS anchor and geofence radius
-            let facultyLat = null;
-            let facultyLng = null;
-            let geofenceRadius = 150;
-            try {
-              const sessInfo = await api.getSessionInfo(parts[0]);
-              if (sessInfo) {
-                facultyLat = sessInfo.class_lat;
-                facultyLng = sessInfo.class_lng;
-                geofenceRadius = sessInfo.geofence_radius_meters || 150;
-              }
-            } catch (sessErr) {
-              console.warn('Could not retrieve live session info:', sessErr);
-            }
-
-            let userLat = null;
-            let userLng = null;
-            let dist = null;
-            let isWithin = false;
-            let geoError = null;
-
-            if (navigator.geolocation && !simFarGPS) {
-              try {
-                const pos = await new Promise((resolve, reject) => {
-                  navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 8000,
-                    maximumAge: 2000
-                  });
-                });
-                if (pos?.coords) {
-                  userLat = pos.coords.latitude;
-                  userLng = pos.coords.longitude;
-                }
-              } catch (e) {
-                console.warn('Student geolocation read failed or timed out:', e);
-                geoError = e.code === 1 ? 'Location permission denied' : 'GPS signal weak/timed out';
-              }
-            } else if (!navigator.geolocation) {
-              geoError = 'Geolocation not supported in this browser';
-            }
-
-            if (simFarGPS) {
-              userLat = (facultyLat || 19.0760) + 0.03; // ~3.3km away simulation
-              userLng = (facultyLng || 72.8777) + 0.03;
-              geoError = null;
-            }
-
-            if (userLat !== null && userLng !== null && facultyLat !== null && facultyLng !== null) {
-              dist = calculateHaversine(facultyLat, facultyLng, userLat, userLng);
-              isWithin = dist <= geofenceRadius;
-            } else if (userLat !== null && userLng !== null) {
-              dist = 0.0;
-              isWithin = true;
-            }
-
-            setCapturedLocation({
-              lat: userLat,
-              lng: userLng,
-              facultyLat: facultyLat,
-              facultyLng: facultyLng,
-              geofenceRadius: geofenceRadius,
-              time: currentTimeStr,
-              distanceMeters: dist !== null ? Math.round(dist * 10) / 10 : null,
-              isWithinGeofence: isWithin,
-              error: geoError
-            });
-
-            // Stop rear camera to release hardware lock before front camera opens
+            // 1. Immediately stop rear camera to release hardware lock
             await stopQRScanner();
 
-            // Transition to Step 2: Live Face Verification with Eye-Blink Auto-Capture
+            // 2. Immediately transition UI to Step 2: Live Face Verification
             setAttendanceStep('FACE_VERIFY');
             detectUltrasonicChirp();
 
+            // 3. Immediately schedule front camera startup
             if (frontCameraTimeoutRef.current) {
               clearTimeout(frontCameraTimeoutRef.current);
             }
             frontCameraTimeoutRef.current = setTimeout(() => {
               frontCameraTimeoutRef.current = null;
               startFrontCameraWithBlinkDetection(rawToken, parts[0]);
-            }, 300);
+            }, 200);
+
+            // 4. Background concurrent tasks: request challenge, session info, and device GPS
+            // Start challenge request immediately
+            challengePromiseRef.current = api.requestLivenessChallenge(parts[0])
+              .then(chal => {
+                if (chal && chal.challenge_id) {
+                  livenessChallengeRef.current = chal;
+                }
+                return chal;
+              })
+              .catch(chalErr => {
+                console.warn('Could not retrieve liveness challenge:', chalErr);
+                return null;
+              });
+
+            // Concurrently fetch session info & device GPS
+            (async () => {
+              let facultyLat = null;
+              let facultyLng = null;
+              let geofenceRadius = 150;
+              try {
+                const sessInfo = await api.getSessionInfo(parts[0]);
+                if (sessInfo) {
+                  facultyLat = sessInfo.class_lat;
+                  facultyLng = sessInfo.class_lng;
+                  geofenceRadius = sessInfo.geofence_radius_meters || 150;
+                }
+              } catch (sessErr) {
+                console.warn('Could not retrieve live session info:', sessErr);
+              }
+
+              let userLat = null;
+              let userLng = null;
+              let dist = null;
+              let isWithin = false;
+              let geoError = null;
+
+              if (navigator.geolocation && !simFarGPS) {
+                try {
+                  const pos = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                      enableHighAccuracy: true,
+                      timeout: 6000,
+                      maximumAge: 2000
+                    });
+                  });
+                  if (pos?.coords) {
+                    userLat = pos.coords.latitude;
+                    userLng = pos.coords.longitude;
+                  }
+                } catch (e) {
+                  console.warn('Student geolocation read failed or timed out:', e);
+                  geoError = e.code === 1 ? 'Location permission denied' : 'GPS signal weak/timed out';
+                }
+              } else if (!navigator.geolocation) {
+                geoError = 'Geolocation not supported in this browser';
+              }
+
+              if (simFarGPS) {
+                userLat = (facultyLat || 19.0760) + 0.03; // ~3.3km away simulation
+                userLng = (facultyLng || 72.8777) + 0.03;
+                geoError = null;
+              }
+
+              if (userLat !== null && userLng !== null && facultyLat !== null && facultyLng !== null) {
+                dist = calculateHaversine(facultyLat, facultyLng, userLat, userLng);
+                isWithin = dist <= geofenceRadius;
+              } else if (userLat !== null && userLng !== null) {
+                dist = 0.0;
+                isWithin = true;
+              }
+
+              setCapturedLocation({
+                lat: userLat,
+                lng: userLng,
+                facultyLat: facultyLat,
+                facultyLng: facultyLng,
+                geofenceRadius: geofenceRadius,
+                time: currentTimeStr,
+                distanceMeters: dist !== null ? Math.round(dist * 10) / 10 : null,
+                isWithinGeofence: isWithin,
+                error: geoError
+              });
+            })();
           },
           () => {
             // Frame-level non-detection: normal continuous scan
@@ -541,6 +564,9 @@ export default function StudentPortal({ user }) {
     // Single-flight guard: prevent duplicate concurrent camera start runs
     if (isStartingFrontCameraRef.current) return;
     isStartingFrontCameraRef.current = true;
+
+    // SEC-06: Explicitly clear buffered closed frame before asynchronous camera init
+    closedFrameBufferRef.current = null;
 
     // Unique attempt ID for attempt-scoped cancellation
     const currentAttempt = ++attemptIdRef.current;
@@ -819,9 +845,26 @@ export default function StudentPortal({ user }) {
                   case 'CLOSING':
                     if (analysis.isEyesClosed) {
                       eyesClosedFrames++;
+                      // Phase 4B: buffer closed-eye frame from video stream
+                      if (!closedFrameBufferRef.current && video) {
+                        try {
+                          const cCanvas = document.createElement('canvas');
+                          cCanvas.width = 320;
+                          cCanvas.height = 320;
+                          const cCtx = cCanvas.getContext('2d');
+                          const vW = video.videoWidth || 640;
+                          const vH = video.videoHeight || 480;
+                          const mSide = Math.min(vW, vH);
+                          const sx = (vW - mSide) / 2;
+                          const sy = (vH - mSide) / 2;
+                          cCtx.drawImage(video, sx, sy, mSide, mSide, 0, 0, 320, 320);
+                          closedFrameBufferRef.current = cCanvas.toDataURL('image/jpeg', 0.85);
+                        } catch (e) {}
+                      }
                       const duration = now - blinkStartTime;
                       if (duration > 650) {
                         // Closure was too long (sleeping, deliberate squint, photo proxy)
+                        closedFrameBufferRef.current = null;
                         machineState = 'WAITING_OPEN';
                         eyesClosedFrames = 0;
                         blinkStartTime = null;
@@ -843,6 +886,7 @@ export default function StudentPortal({ user }) {
                         diagnosticsRef.current.transitionReason = 'VALID_CLOSURE_AWAITING_REOPEN';
                       } else {
                         // Flicker / single-frame glitch (< 100ms or 1 frame)
+                        closedFrameBufferRef.current = null;
                         machineState = 'WAITING_OPEN';
                         eyesClosedFrames = 0;
                         blinkStartTime = null;
@@ -871,6 +915,7 @@ export default function StudentPortal({ user }) {
                       }
                     } else if (analysis.isEyesClosed) {
                       // Eyes immediately closed again (flutter / rapid squint)
+                      closedFrameBufferRef.current = null;
                       machineState = 'WAITING_OPEN';
                       eyesClosedFrames = 0;
                       blinkStartTime = null;
@@ -913,6 +958,7 @@ export default function StudentPortal({ user }) {
 
     } catch (err) {
       console.warn('Front camera error:', err);
+      closedFrameBufferRef.current = null;
       if (acquiredStream) {
         try { acquiredStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       }
@@ -1058,6 +1104,16 @@ export default function StudentPortal({ user }) {
       ? `${session}.${Math.floor(Date.now() / 1000) - 25}.expired_sig`
       : token;
 
+    // Ensure background liveness challenge fetch is completed
+    if (!livenessChallengeRef.current && challengePromiseRef.current) {
+      try {
+        const chal = await challengePromiseRef.current;
+        if (chal && chal.challenge_id) {
+          livenessChallengeRef.current = chal;
+        }
+      } catch (e) {}
+    }
+
     const selfieToSend = simFaceMismatch
       ? generateSyntheticSelfie('#dc2626')
       : selfie;
@@ -1069,7 +1125,11 @@ export default function StudentPortal({ user }) {
       user_lat: userLat,
       user_lng: userLng,
       live_selfie_base64: selfieToSend,
-      ultrasonic_verified: ultrasonicVerified
+      closed_eye_frame_base64: closedFrameBufferRef.current,
+      challenge_id: livenessChallengeRef.current?.challenge_id || null,
+      challenge_token: livenessChallengeRef.current?.challenge_token || null,
+      ultrasonic_verified: ultrasonicVerified,
+      liveness_status: (diagnosticsRef.current?.captureOutcome === 'SUCCESS' || blinkStatus === 'BLINK_DETECTED') ? 'CLIENT_BLINK_VERIFIED' : 'NOT_CHECKED'
     };
 
     // Gate 1: Hardware Device Lock (Paused for Testing)
@@ -1185,6 +1245,7 @@ export default function StudentPortal({ user }) {
       setSubmissionResult({ success: false, reason: friendlyMsg, failed_gate: failedGate });
       setAttendanceStep('RESULT');
     } finally {
+      closedFrameBufferRef.current = null;
       setSubmittingAttendance(false);
     }
   };

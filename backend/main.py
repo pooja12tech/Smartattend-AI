@@ -20,6 +20,7 @@ import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import numpy as np
@@ -40,7 +41,7 @@ from db_postgres import (
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
     Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment, StudentNotification,
-    TimetableEntry
+    TimetableEntry, LivenessChallenge
 )
 import face_service
 from seed_postgres import run_postgres_seed
@@ -839,6 +840,9 @@ class SessionLocationUpdateRequest(BaseModel):
     class_lng: float = Field(..., example=72.8777, description="Faculty live longitude")
     geofence_radius_meters: Optional[int] = 150
 
+class LivenessChallengeRequest(BaseModel):
+    session_id: str = Field(..., example="CS301-SEC-A")
+
 class MarkAttendanceRequest(BaseModel):
     session_id: str = Field(..., example="CS301-SEC-A")
     qr_token: str = Field(..., example="CS301-SEC-A.1713400000.a1b2c3d4e5f6")
@@ -846,7 +850,11 @@ class MarkAttendanceRequest(BaseModel):
     user_lat: Optional[float] = Field(None, example=19.07602)
     user_lng: Optional[float] = Field(None, example=72.87768)
     live_selfie_base64: str = Field(..., description="Base64 encoded live camera capture")
+    closed_eye_frame_base64: Optional[str] = Field(None, description="Base64 encoded intermediate closed-eye frame")
+    challenge_id: Optional[str] = Field(None, description="Server-issued liveness challenge ID")
+    challenge_token: Optional[str] = Field(None, description="Secret challenge token")
     ultrasonic_verified: Optional[bool] = Field(False, description="Whether ultrasonic inaudible classroom chirp was verified by microphone")
+    liveness_status: Optional[str] = Field("NOT_CHECKED", description="Liveness check status from client workflow")
 
 class PanoramicAttendanceRequest(BaseModel):
     image_base64: str = Field(..., description="Base64 encoded wide panoramic classroom photo")
@@ -1656,14 +1664,17 @@ def get_session_info(
             detail=f"Lecture session '{session_id}' not found."
         )
 
+    # Security fix: withhold live faculty coordinates from student accounts to prevent GPS spoofing
+    is_faculty_or_admin = current_user.role in ("faculty", "admin")
+
     return {
         "session_id": session.session_id,
         "session_code": session.session_code,
         "subject_name": session.subject_name,
         "faculty_id": session.faculty_id,
         "status": session.status,
-        "class_lat": session.class_lat,
-        "class_lng": session.class_lng,
+        "class_lat": session.class_lat if is_faculty_or_admin else None,
+        "class_lng": session.class_lng if is_faculty_or_admin else None,
         "geofence_radius_meters": session.geofence_radius_meters or 150
     }
 
@@ -1715,6 +1726,107 @@ def end_session(
         res_data["warning"] = "Subject has no enrolled students. No absentees created."
 
     return res_data
+
+# ------------------------------------------------------------------------------
+# 2b. POST /api/liveness/challenge (Phase 4B: Server-Issued Liveness Challenge)
+# ------------------------------------------------------------------------------
+@app.post("/api/liveness/challenge")
+def issue_liveness_challenge(
+    req: LivenessChallengeRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    session = db.query(LectureSession).filter(
+        (LectureSession.session_id == req.session_id) | (LectureSession.session_code == req.session_id)
+    ).first()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture session '{req.session_id}' not found."
+        )
+
+    if session.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Lecture session is {session.status}. Attendance is closed."
+        )
+
+    # Subject enrollment check removed per user request
+
+
+    # Duplicate check: student cannot request a challenge if already marked
+    existing_record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == session.session_id,
+        AttendanceRecord.roll_no == current_user.roll_no
+    ).first()
+    if existing_record:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "success": False,
+                "failed_gate": "DUPLICATE_SUBMISSION",
+                "reason": "Attendance has already been recorded for this student in this lecture session."
+            }
+        )
+
+    now_utc = datetime.now(timezone.utc)
+
+    # Opportunistic cleanup: prune stale challenges older than 24 hours
+    try:
+        cleanup_cutoff = now_utc - timedelta(hours=24)
+        db.query(LivenessChallenge).filter(LivenessChallenge.expires_at < cleanup_cutoff).delete(synchronize_session=False)
+    except Exception as cleanup_err:
+        print(f"[Challenge Maintenance Note]: {cleanup_err}")
+
+    # Generate single-use challenge token & ID
+    ttl_seconds = int(os.getenv("LIVENESS_CHALLENGE_TTL_SECONDS", "45"))
+    expires_at = now_utc + timedelta(seconds=ttl_seconds)
+    challenge_id = f"CHAL_{uuid.uuid4().hex}"
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    # Invalidate prior unconsumed challenges for this (roll_no, session_id) so only latest is active
+    db.query(LivenessChallenge).filter(
+        LivenessChallenge.session_id == session.session_id,
+        LivenessChallenge.roll_no == current_user.roll_no,
+        LivenessChallenge.is_consumed == False
+    ).update({"is_consumed": True, "consumed_at": now_utc}, synchronize_session=False)
+
+    new_challenge = LivenessChallenge(
+        challenge_id=challenge_id,
+        session_id=session.session_id,
+        roll_no=current_user.roll_no,
+        token_hash=token_hash,
+        is_consumed=False,
+        expires_at=expires_at,
+        created_at=now_utc
+    )
+    db.add(new_challenge)
+    db.commit()
+
+    return {
+        "success": True,
+        "challenge_id": challenge_id,
+        "challenge_token": raw_token,
+        "session_id": session.session_id,
+        "expires_at": expires_at.isoformat(),
+        "ttl_seconds": ttl_seconds
+    }
+
+@app.post("/api/admin/maintenance/cleanup-challenges")
+def cleanup_expired_challenges(
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    now_utc = datetime.now(timezone.utc)
+    cleanup_cutoff = now_utc - timedelta(hours=24)
+    deleted_count = db.query(LivenessChallenge).filter(LivenessChallenge.expires_at < cleanup_cutoff).delete(synchronize_session=False)
+    db.commit()
+    return {
+        "success": True,
+        "message": f"Successfully purged {deleted_count} expired challenge(s) older than 24 hours.",
+        "purged_count": deleted_count
+    }
 
 # ------------------------------------------------------------------------------
 # 3. POST /api/attendance/mark (The 5-Gate Anti-Proxy Engine with ACID Transactions)
@@ -1789,6 +1901,9 @@ def mark_attendance(
                 "marked_at": existing_student_log.marked_at.isoformat() if existing_student_log.marked_at else None
             }
         )
+
+    # Subject enrollment check removed per user request
+
 
     # GATE 1: Device Lock (Hardware Fingerprint Verification & Anti-Proxy 1-Phone Rule)
     # Note: Paused during testing when DEVICE_BINDING_ENABLED is False
@@ -1883,17 +1998,19 @@ def mark_attendance(
             }
         )
 
-    # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
-    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
-    if not enrollment:
+    # Payload size and image validation (inexpensive pre-check)
+    raw_b64 = req.live_selfie_base64
+    if not raw_b64:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "FACE_NOT_ENROLLED", "message": "Biometric face template not enrolled. Student must complete face enrollment first."}
+            detail={"code": "INVALID_IMAGE", "message": "Live selfie image data is required."}
         )
-
-    # In-memory decode of live selfie bytes (never persisted to disk or DB)
+    if len(raw_b64) > 6 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "PAYLOAD_TOO_LARGE", "message": "Live selfie payload exceeds size limit."}
+        )
     try:
-        raw_b64 = req.live_selfie_base64
         if "," in raw_b64:
             raw_b64 = raw_b64.split(",", 1)[1]
         live_bytes = base64.b64decode(raw_b64)
@@ -1902,7 +2019,97 @@ def mark_attendance(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "INVALID_IMAGE", "message": "Unable to decode live selfie image data."}
         )
+    if len(live_bytes) > 4 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "PAYLOAD_TOO_LARGE", "message": "Live selfie image exceeds 4MB limit."}
+        )
 
+    closed_bytes = None
+    if req.closed_eye_frame_base64:
+        raw_closed = req.closed_eye_frame_base64
+        if len(raw_closed) > 6 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "PAYLOAD_TOO_LARGE", "message": "Closed-eye frame payload exceeds size limit."}
+            )
+        try:
+            if "," in raw_closed:
+                raw_closed = raw_closed.split(",", 1)[1]
+            closed_bytes = base64.b64decode(raw_closed)
+            if len(closed_bytes) > 4 * 1024 * 1024:
+                closed_bytes = None
+        except Exception:
+            closed_bytes = None
+
+    # Check explicit client liveness status (fails closed if reported failed)
+    req_liveness = (getattr(req, "liveness_status", None) or "NOT_CHECKED").strip().upper()
+    if req_liveness in ("FAILED", "REJECTED"):
+        log_fraud_and_fail(
+            gate="GATE_4_LIVENESS",
+            reason="Liveness check failed on capture device. Please position properly and retry."
+        )
+
+    # Biometric face template enrollment verification
+    enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first()
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "FACE_NOT_ENROLLED", "message": "Biometric face template not enrolled. Student must complete face enrollment first."}
+        )
+
+    # SEC-02 + SEC-03: Challenge Verification & Durable Atomic Consumption
+    # Validated and committed BEFORE expensive InsightFace neural inference.
+    challenge_verified = False
+    if req.challenge_id:
+        token_hash = hashlib.sha256((req.challenge_token or "").encode("utf-8")).hexdigest()
+        stmt = (
+            update(LivenessChallenge)
+            .where(
+                LivenessChallenge.challenge_id == req.challenge_id,
+                LivenessChallenge.session_id == session.session_id,
+                LivenessChallenge.roll_no == roll_no,
+                LivenessChallenge.token_hash == token_hash,
+                LivenessChallenge.is_consumed == False,
+                LivenessChallenge.expires_at >= timestamp_now
+            )
+            .values(
+                is_consumed=True,
+                consumed_at=timestamp_now
+            )
+        )
+        res_chal = db.execute(stmt)
+        if res_chal.rowcount == 0:
+            existing_chal = db.query(LivenessChallenge).filter(LivenessChallenge.challenge_id == req.challenge_id).first()
+            if not existing_chal:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge not found.")
+            elif existing_chal.roll_no != roll_no:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge was issued to a different student (cross-student attempt).")
+            elif existing_chal.session_id != session.session_id:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge was issued for a different lecture session (cross-session attempt).")
+            elif existing_chal.token_hash != token_hash:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge token authentication signature mismatch.")
+            elif existing_chal.is_consumed:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge has already been consumed (replay attempt).")
+            elif (existing_chal.expires_at if existing_chal.expires_at.tzinfo else existing_chal.expires_at.replace(tzinfo=timezone.utc)) < timestamp_now:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "success": False,
+                        "failed_gate": "GATE_4_CHALLENGE",
+                        "code": "CHALLENGE_EXPIRED",
+                        "reason": "Liveness challenge has expired. Please restart face verification to receive a fresh challenge.",
+                        "timestamp": timestamp_now.isoformat()
+                    }
+                )
+            else:
+                log_fraud_and_fail(gate="GATE_4_CHALLENGE", reason="Liveness challenge invalid.")
+        else:
+            challenge_verified = True
+            # Commit challenge consumption durably so subsequent failures or rollbacks do not un-consume it
+            db.commit()
+
+    # GATE 4: AI Face Verification (InsightFace buffalo_sc Normalized Embeddings)
     # Face quality check and feature extraction (returns retryable error, NOT security alert)
     try:
         live_embedding = face_service.extract_embedding(live_bytes)
@@ -1931,16 +2138,40 @@ def mark_attendance(
     match_thresh = float(os.getenv("FACE_MATCH_THRESHOLD", "0.40"))
     review_thresh = float(os.getenv("FACE_REVIEW_THRESHOLD", "0.28"))
 
-    # Three outcomes from cosine similarity:
-    # 1. score >= match -> proceed to PRESENT
-    # 2. between review and match -> record as PENDING_APPROVAL (review required)
-    # 3. below review -> reject and write a SecurityAlert
+    # Phase 4B: Dual-Frame Liveness Evidence Evaluation (SEC-05: Reusing live_embedding)
+    is_live, liveness_code, liveness_details = face_service.verify_dual_frame_liveness(
+        live_bytes, closed_bytes, open_embedding=live_embedding
+    )
+
+    if liveness_code == "FAILED":
+        log_fraud_and_fail(
+            gate="GATE_4_LIVENESS",
+            reason=liveness_details.get("reason", "Liveness check failed on capture device.")
+        )
+
+    # Reconcile liveness status
+    if challenge_verified and liveness_code == "HEURISTIC_SERVER_VERIFIED":
+        recorded_liveness = "SERVER_VERIFIED"
+        is_liveness_verified = True
+    elif req.challenge_id:
+        recorded_liveness = "INCONCLUSIVE"
+        is_liveness_verified = False
+    else:
+        recorded_liveness = "NOT_CHECKED"
+        is_liveness_verified = False
+
     if sim >= match_thresh:
         face_status = "MATCH"
-        attendance_status = "PRESENT"
+        if is_liveness_verified:
+            attendance_status = "PRESENT"
+            decision_reason = None
+        else:
+            attendance_status = "PENDING_APPROVAL"
+            decision_reason = f"Liveness {recorded_liveness}: pending faculty approval."
     elif sim >= review_thresh:
         face_status = "REVIEW_REQUIRED"
         attendance_status = "PENDING_APPROVAL"
+        decision_reason = "Biometric similarity in review band (requires faculty review)"
     else:
         log_fraud_and_fail(
             gate="GATE_4_FACE_VERIFICATION",
@@ -1961,10 +2192,11 @@ def mark_attendance(
         distance_meters=round(distance_meters, 1),
         face_match_score=face_match_score,
         face_status=face_status,
-        liveness_status="NOT_CHECKED",
+        liveness_status=recorded_liveness,
+        challenge_id=req.challenge_id,
         is_exception_mode=False,
         status=attendance_status,
-        reason="Biometric similarity in review band (requires faculty review)" if attendance_status == "PENDING_APPROVAL" else None,
+        reason=decision_reason,
         remarks="Ultrasonic In-Room Acoustic Beacon Confirmed" if getattr(req, "ultrasonic_verified", False) else None,
         marked_at=timestamp_now
     )
@@ -2001,7 +2233,7 @@ def mark_attendance(
             "distance_meters": round(distance_meters, 1),
             "face_match_score": face_match_score,
             "face_status": face_status,
-            "liveness_status": "NOT_CHECKED",
+            "liveness_status": recorded_liveness,
             "marked_at": timestamp_now.isoformat()
         }
     }
@@ -2323,6 +2555,9 @@ def faculty_approve_attendance(
 
     return {
         "success": True,
+        "session_id": session.session_id,
+        "roll_no": req.roll_no,
+        "action": action_upper,
         "status": new_status,
         "message": f"Student '{req.roll_no}' exception request {action_upper}ED. Status is now {new_status}.",
         "details": {
@@ -3075,6 +3310,7 @@ def get_faculty_live_session(
         "pending_approvals": pending_approvals,
         "security_alerts": formatted_alerts
     }
+
 
 # ------------------------------------------------------------------------------
 # 7. ADMIN ENDPOINTS: Overview, User Management, Device Reset
