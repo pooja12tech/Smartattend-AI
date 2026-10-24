@@ -499,6 +499,8 @@ export default function StudentPortal({ user }) {
       }
 
       let eyesClosedFrames = 0;
+      let steadyOpenFrames = 0;
+      let blinkStartTime = null;
       let faceSteadyFrames = 0;
       let blinkFired = false;
       let lastVideoTime = -1;
@@ -540,12 +542,16 @@ export default function StudentPortal({ user }) {
               if (!analysis.faceCount || analysis.faceCount === 0) {
                 faceSteadyFrames = 0;
                 eyesClosedFrames = 0;
+                steadyOpenFrames = 0;
+                blinkStartTime = null;
                 setBlinkStatus('NO_FACE');
                 setFacePromptMessage('Looking for your face... Please face the camera.');
                 setEyeClosingFeedback(false);
               } else if (analysis.faceCount > 1) {
                 faceSteadyFrames = 0;
                 eyesClosedFrames = 0;
+                steadyOpenFrames = 0;
+                blinkStartTime = null;
                 setBlinkStatus('MULTIPLE_FACES');
                 setFacePromptMessage(`Multiple faces detected (${analysis.faceCount}). Only 1 student permitted.`);
                 setEyeClosingFeedback(false);
@@ -559,26 +565,56 @@ export default function StudentPortal({ user }) {
                   setEyeClosingFeedback(false);
                 } else {
                   // Face is locked and ready for blink!
-                  if (!analysis.isEyesClosed && analysis.ear > 0.20) {
-                    baselineEAR = baselineEAR * 0.85 + analysis.ear * 0.15;
-                  }
-
-                  if (analysis.isEyesClosed) {
-                    // User eyes closed: count frames
-                    eyesClosedFrames++;
-                    setBlinkStatus('BLINKING');
-                    setEyeClosingFeedback(true);
-                    setFacePromptMessage('Blink detected! Open your eyes to capture 📸');
-                  } else {
-                    setEyeClosingFeedback(false);
-                    // Natural blink cycle completed: closed for 1 to 20 frames (~30ms to 600ms)
-                    if (eyesClosedFrames >= 1 && eyesClosedFrames <= 20 && !blinkFired) {
-                      triggerBlinkSnap();
-                      return;
+                  if (!analysis.isEyesClosed) {
+                    steadyOpenFrames++;
+                    if (analysis.ear > 0.20) {
+                      baselineEAR = baselineEAR * 0.85 + analysis.ear * 0.15;
                     }
-                    eyesClosedFrames = 0;
-                    setBlinkStatus('WAITING_BLINK');
-                    setFacePromptMessage('Face centered! Blink your eyes once to auto-capture 😉');
+
+                    // Check if a blink closure just ended
+                    if (blinkStartTime !== null) {
+                      const closedDurationMs = performance.now() - blinkStartTime;
+                      const framesClosed = eyesClosedFrames;
+                      blinkStartTime = null;
+                      eyesClosedFrames = 0;
+                      setEyeClosingFeedback(false);
+
+                      // Anti-flicker Human Blink Gate:
+                      // - Natural blink closed duration: 120ms to 650ms
+                      // - At least 2-3 consecutive closed video frames
+                      // - Eyes must now be open
+                      // - Face had stable open eyes before blink (steadyOpenFrames >= 4)
+                      if (
+                        closedDurationMs >= 120 &&
+                        closedDurationMs <= 650 &&
+                        framesClosed >= 2 &&
+                        (analysis.isEyesOpen || !analysis.isEyesClosed) &&
+                        !blinkFired
+                      ) {
+                        triggerBlinkSnap();
+                        return;
+                      } else {
+                        // Camera flicker / single-frame glitch or glare discarded!
+                        setBlinkStatus('WAITING_BLINK');
+                        setFacePromptMessage('Face centered! Blink your eyes once naturally 😉');
+                      }
+                    } else {
+                      setEyeClosingFeedback(false);
+                      setBlinkStatus('WAITING_BLINK');
+                      setFacePromptMessage('Face centered! Blink your eyes once to auto-capture 😉');
+                    }
+                  } else {
+                    // Eyelids closed in current frame
+                    // Require at least 4 stable open frames first to prevent false starts
+                    if (steadyOpenFrames >= 4) {
+                      if (blinkStartTime === null) {
+                        blinkStartTime = performance.now();
+                      }
+                      eyesClosedFrames++;
+                      setBlinkStatus('BLINKING');
+                      setEyeClosingFeedback(true);
+                      setFacePromptMessage('Blink detected! Open eyes to capture 📸');
+                    }
                   }
                 }
               }

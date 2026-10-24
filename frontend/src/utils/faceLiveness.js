@@ -119,7 +119,8 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
       status: 'NO_FACE',
       message: 'Looking for your face... Please position yourself in front of camera.',
       isCentered: false,
-      isEyesClosed: false
+      isEyesClosed: false,
+      isEyesOpen: false
     };
   }
 
@@ -130,7 +131,8 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
       status: 'MULTIPLE_FACES',
       message: `Multiple faces detected (${faceCount}). Anti-proxy allows only 1 student.`,
       isCentered: false,
-      isEyesClosed: false
+      isEyesClosed: false,
+      isEyesOpen: false
     };
   }
 
@@ -157,12 +159,12 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
   const isTooSmall = faceWidth < 0.12 || faceHeight < 0.14;
   const isTooClose = faceWidth > 0.95 || faceHeight > 0.95;
 
-  // Extract Eye Aspect Ratio
+  // Extract Bilateral Eye Aspect Ratio
   const leftEAR = calculateEAR(landmarks, LEFT_EYE_LANDMARKS);
   const rightEAR = calculateEAR(landmarks, RIGHT_EYE_LANDMARKS);
   const avgEAR = (leftEAR + rightEAR) / 2;
 
-  // Extract Blendshapes if available
+  // Extract Blendshapes
   let blinkScoreLeft = 0;
   let blinkScoreRight = 0;
   if (results.faceBlendshapes && results.faceBlendshapes[0]) {
@@ -175,9 +177,25 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
 
   const avgBlinkScore = (blinkScoreLeft + blinkScoreRight) / 2;
 
-  // Dynamic eye closure threshold (dual signal: blendshape OR relative EAR drop)
-  const earThreshold = Math.min(0.22, baselineEAR * 0.75);
-  const isEyesClosed = (avgBlinkScore > 0.35) || (avgEAR < earThreshold);
+  // Strict Bilateral Closure Verification (Both eyes must close together)
+  // This filters out camera flicker, lens glare, and unilateral lighting shifts
+  const hasBlendshapes = results.faceBlendshapes && results.faceBlendshapes.length > 0 && results.faceBlendshapes[0]?.categories?.length > 0;
+  const earThreshold = Math.min(0.20, baselineEAR * 0.72);
+  const bothEARClosed = (leftEAR < earThreshold && rightEAR < earThreshold);
+  const bothBlendshapesClosed = (blinkScoreLeft > 0.40 && blinkScoreRight > 0.40);
+
+  let isEyesClosed = false;
+  let isEyesOpen = false;
+
+  if (hasBlendshapes) {
+    // Both blendshapes closed, OR both EAR closed with supporting blendshapes
+    isEyesClosed = bothBlendshapesClosed || (bothEARClosed && avgBlinkScore > 0.22);
+    isEyesOpen = (blinkScoreLeft < 0.22 && blinkScoreRight < 0.22) && (avgEAR >= earThreshold * 1.15);
+  } else {
+    // Pure EAR mode when blendshapes are unavailable
+    isEyesClosed = bothEARClosed;
+    isEyesOpen = (avgEAR >= earThreshold * 1.20);
+  }
 
   // Position guidance
   let positionStatus = 'LOCKED';
@@ -201,7 +219,12 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
     message,
     isCentered: isCentered && !isTooSmall && !isTooClose,
     isEyesClosed,
-    blinkScore: avgBlinkScore,
+    isEyesOpen,
+    blinkScoreLeft,
+    blinkScoreRight,
+    avgBlinkScore,
+    leftEAR,
+    rightEAR,
     ear: avgEAR,
     landmarks,
     faceBox: { minX, maxX, minY, maxY, width: faceWidth, height: faceHeight }
