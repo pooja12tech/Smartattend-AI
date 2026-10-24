@@ -10,10 +10,11 @@ const LEFT_EYE_LANDMARKS = [33, 160, 158, 133, 153, 144];
 const RIGHT_EYE_LANDMARKS = [362, 385, 387, 263, 373, 380];
 
 /**
- * Calculates Eye Aspect Ratio (EAR) from 6 landmark points.
+ * Calculates Eye Aspect Ratio (EAR) from 6 landmark points in pixel space.
+ * Corrects for video aspect ratio using actual video resolution.
  * Standard formula: (|p2 - p6| + |p3 - p5|) / (2 * |p1 - p4|)
  */
-function calculateEAR(landmarks, indices) {
+export function calculateEAR(landmarks, indices, width = 1, height = 1) {
   if (!landmarks) return 0.28;
   const p1 = landmarks[indices[0]];
   const p2 = landmarks[indices[1]];
@@ -24,7 +25,8 @@ function calculateEAR(landmarks, indices) {
 
   if (!p1 || !p2 || !p3 || !p4 || !p5 || !p6) return 0.28;
 
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  // Unskewed Euclidean distance in camera sensor pixel space
+  const dist = (a, b) => Math.hypot((a.x - b.x) * width, (a.y - b.y) * height);
 
   const vertical1 = dist(p2, p6);
   const vertical2 = dist(p3, p5);
@@ -119,7 +121,9 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
       status: 'NO_FACE',
       message: 'Looking for your face... Please position yourself in front of camera.',
       isCentered: false,
-      isEyesClosed: false
+      isEyesClosed: false,
+      isEyesOpen: false,
+      isAmbiguous: false
     };
   }
 
@@ -130,7 +134,9 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
       status: 'MULTIPLE_FACES',
       message: `Multiple faces detected (${faceCount}). Anti-proxy allows only 1 student.`,
       isCentered: false,
-      isEyesClosed: false
+      isEyesClosed: false,
+      isEyesOpen: false,
+      isAmbiguous: false
     };
   }
 
@@ -153,31 +159,59 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
   const faceCenterY = (minY + maxY) / 2;
 
   // Flexible mobile-friendly center alignment check
-  const isCentered = Math.abs(faceCenterX - 0.5) < 0.30 && Math.abs(faceCenterY - 0.5) < 0.32;
-  const isTooSmall = faceWidth < 0.12 || faceHeight < 0.14;
-  const isTooClose = faceWidth > 0.95 || faceHeight > 0.95;
+  const isCentered = Math.abs(faceCenterX - 0.5) < 0.28 && Math.abs(faceCenterY - 0.5) < 0.30;
+  const isTooSmall = faceWidth < 0.13 || faceHeight < 0.15;
+  const isTooClose = faceWidth > 0.92 || faceHeight > 0.92;
 
-  // Extract Eye Aspect Ratio
-  const leftEAR = calculateEAR(landmarks, LEFT_EYE_LANDMARKS);
-  const rightEAR = calculateEAR(landmarks, RIGHT_EYE_LANDMARKS);
+  // Camera resolution for unskewed pixel-space EAR calculation
+  const videoWidth = videoElement.videoWidth || 640;
+  const videoHeight = videoElement.videoHeight || 480;
+
+  // Extract Bilateral Eye Aspect Ratio in pixel space
+  const leftEAR = calculateEAR(landmarks, LEFT_EYE_LANDMARKS, videoWidth, videoHeight);
+  const rightEAR = calculateEAR(landmarks, RIGHT_EYE_LANDMARKS, videoWidth, videoHeight);
   const avgEAR = (leftEAR + rightEAR) / 2;
 
-  // Extract Blendshapes if available
+  // Extract Blendshapes
   let blinkScoreLeft = 0;
   let blinkScoreRight = 0;
-  if (results.faceBlendshapes && results.faceBlendshapes[0]) {
+  let hasBlendshapes = false;
+  if (results.faceBlendshapes && results.faceBlendshapes[0] && results.faceBlendshapes[0].categories) {
     const categories = results.faceBlendshapes[0].categories;
     for (let c of categories) {
       if (c.categoryName === 'eyeBlinkLeft') blinkScoreLeft = c.score;
       if (c.categoryName === 'eyeBlinkRight') blinkScoreRight = c.score;
     }
+    hasBlendshapes = (blinkScoreLeft > 0 || blinkScoreRight > 0 || categories.length > 5);
   }
 
   const avgBlinkScore = (blinkScoreLeft + blinkScoreRight) / 2;
 
-  // Dynamic eye closure threshold (dual signal: blendshape OR relative EAR drop)
-  const earThreshold = Math.min(0.22, baselineEAR * 0.75);
-  const isEyesClosed = (avgBlinkScore > 0.35) || (avgEAR < earThreshold);
+  // Dynamic baseline thresholds with hysteresis (no artificial Math.min caps)
+  const safeBaseline = Math.max(0.18, Math.min(0.42, baselineEAR || 0.28));
+  const earClosedThreshold = safeBaseline * 0.70;
+  const earOpenThreshold = safeBaseline * 0.85;
+
+  const bothEARClosed = (leftEAR < earClosedThreshold && rightEAR < earClosedThreshold);
+  const bothEAROpen = (leftEAR >= earOpenThreshold && rightEAR >= earOpenThreshold);
+  const bothBlendshapesClosed = (blinkScoreLeft >= 0.42 && blinkScoreRight >= 0.42);
+  const bothBlendshapesOpen = (blinkScoreLeft <= 0.18 && blinkScoreRight <= 0.18);
+
+  let isEyesClosed = false;
+  let isEyesOpen = false;
+
+  if (hasBlendshapes) {
+    // Both blendshapes closed, OR supporting blendshapes + both EAR closed
+    isEyesClosed = bothBlendshapesClosed || (bothEARClosed && avgBlinkScore >= 0.28);
+    // Explicit open requires both blendshapes low AND both EAR open
+    isEyesOpen = bothBlendshapesOpen && bothEAROpen;
+  } else {
+    // Pure EAR mode with hysteresis
+    isEyesClosed = bothEARClosed;
+    isEyesOpen = bothEAROpen;
+  }
+
+  const isAmbiguous = !isEyesClosed && !isEyesOpen;
 
   // Position guidance
   let positionStatus = 'LOCKED';
@@ -201,8 +235,17 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
     message,
     isCentered: isCentered && !isTooSmall && !isTooClose,
     isEyesClosed,
-    blinkScore: avgBlinkScore,
+    isEyesOpen,
+    isAmbiguous,
+    blinkScoreLeft,
+    blinkScoreRight,
+    avgBlinkScore,
+    leftEAR,
+    rightEAR,
     ear: avgEAR,
+    earClosedThreshold,
+    earOpenThreshold,
+    hasBlendshapes,
     landmarks,
     faceBox: { minX, maxX, minY, maxY, width: faceWidth, height: faceHeight }
   };
