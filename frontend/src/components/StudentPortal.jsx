@@ -715,6 +715,7 @@ export default function StudentPortal({ user }) {
       let reopenedFrames = 0;
       let blinkStartTime = null;
       let faceSteadyFrames = 0;
+      let offCenterFrames = 0;
       let lastVideoTime = -1;
       let lastFrameTime = -1;
       let baselineEAR = 0.28;
@@ -761,8 +762,12 @@ export default function StudentPortal({ user }) {
 
           if (landmarker) {
             try {
+              const actualContainerAspect = (video.clientWidth && video.clientHeight && video.clientHeight > 0)
+                ? (video.clientWidth / video.clientHeight)
+                : 0.75;
+
               const analysis = analyzeFaceFrame(landmarker, video, now, baselineEAR, {
-                containerAspect: 0.75, // 3:4 portrait mobile preview container
+                containerAspect: actualContainerAspect,
                 isMirrored: true
               });
 
@@ -799,6 +804,7 @@ export default function StudentPortal({ user }) {
               if (!analysis.faceCount || analysis.faceCount === 0) {
                 machineState = 'WAITING_OPEN';
                 faceSteadyFrames = 0;
+                offCenterFrames = 0;
                 eyesClosedFrames = 0;
                 steadyOpenFrames = 0;
                 reopenedFrames = 0;
@@ -810,6 +816,7 @@ export default function StudentPortal({ user }) {
               } else if (analysis.faceCount > 1) {
                 machineState = 'WAITING_OPEN';
                 faceSteadyFrames = 0;
+                offCenterFrames = 0;
                 eyesClosedFrames = 0;
                 steadyOpenFrames = 0;
                 reopenedFrames = 0;
@@ -819,18 +826,22 @@ export default function StudentPortal({ user }) {
                 setEyeClosingFeedback(false);
                 diagnosticsRef.current.rejectionReason = 'MULTIPLE_FACES';
               } else if (!analysis.isCentered) {
-                // Off-center, too far, or too close resets candidate sequence
-                machineState = 'WAITING_OPEN';
-                steadyOpenFrames = 0;
-                eyesClosedFrames = 0;
-                reopenedFrames = 0;
-                blinkStartTime = null;
-                setBlinkStatus('ALIGNING');
-                setFacePromptMessage(analysis.message);
-                setEyeClosingFeedback(false);
-                diagnosticsRef.current.rejectionReason = 'OFF_CENTER';
+                offCenterFrames++;
+                // Debounce micro-jitter: only reset candidate state if off-center for 3 consecutive frames
+                if (offCenterFrames >= 3) {
+                  machineState = 'WAITING_OPEN';
+                  steadyOpenFrames = 0;
+                  eyesClosedFrames = 0;
+                  reopenedFrames = 0;
+                  blinkStartTime = null;
+                  setBlinkStatus('ALIGNING');
+                  setFacePromptMessage(analysis.message);
+                  setEyeClosingFeedback(false);
+                  diagnosticsRef.current.rejectionReason = 'OFF_CENTER';
+                }
               } else {
                 // Exactly 1 centered human face verified!
+                offCenterFrames = 0;
                 faceSteadyFrames++;
 
                 // Adapt running baseline only during clear open-eye frames
@@ -844,7 +855,7 @@ export default function StudentPortal({ user }) {
                   case 'WAITING_OPEN':
                     if (analysis.isEyesOpen) {
                       steadyOpenFrames++;
-                      if (steadyOpenFrames >= 4) {
+                      if (steadyOpenFrames >= 3) {
                         machineState = 'READY';
                         setBlinkStatus('WAITING_BLINK');
                         setFacePromptMessage('Face centered! Blink both eyes naturally 😉');
@@ -2084,7 +2095,7 @@ export default function StudentPortal({ user }) {
                     {blinkStatus === 'ALIGNING' && (
                       <>
                         <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
-                        <span>Center Face in Guide</span>
+                        <span>{facePromptMessage || 'Center Face in Guide'}</span>
                       </>
                     )}
                     {blinkStatus === 'WAITING_BLINK' && (

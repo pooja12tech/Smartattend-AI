@@ -253,9 +253,12 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
   const faceCenterY = (minPrevY + maxPrevY) / 2.0;
 
   // Face alignment evaluation relative to on-screen oval guide (centered at 0.5, 0.5)
-  const isCentered = Math.abs(faceCenterX - 0.5) < 0.22 && Math.abs(faceCenterY - 0.5) < 0.24;
-  const isTooSmall = faceWidth < 0.22 || faceHeight < 0.25;
-  const isTooClose = faceWidth > 0.88 || faceHeight > 0.88;
+  // Generous, natural tolerances so normal hand-held selfie posture aligns smoothly
+  const isAlignedX = Math.abs(faceCenterX - 0.5) < 0.28;
+  const isAlignedY = Math.abs(faceCenterY - 0.5) < 0.30;
+  const isCentered = isAlignedX && isAlignedY;
+  const isTooSmall = faceWidth < 0.12 || faceHeight < 0.14;
+  const isTooClose = faceWidth > 0.94 || faceHeight > 0.94;
 
   // Unskewed Euclidean distance EAR in true camera sensor pixel space
   const leftEAR = calculateEAR(landmarks, LEFT_EYE_LANDMARKS, videoWidth, videoHeight);
@@ -285,14 +288,15 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
   const bothEARClosed = (leftEAR < earClosedThreshold && rightEAR < earClosedThreshold);
   const bothEAROpen = (leftEAR >= earOpenThreshold && rightEAR >= earOpenThreshold);
   const bothBlendshapesClosed = (blinkScoreLeft >= 0.42 && blinkScoreRight >= 0.42);
-  const bothBlendshapesOpen = (blinkScoreLeft <= 0.18 && blinkScoreRight <= 0.18);
+  const bothBlendshapesOpen = (blinkScoreLeft <= 0.20 && blinkScoreRight <= 0.20);
 
   let isEyesClosed = false;
   let isEyesOpen = false;
 
   if (hasBlendshapes) {
-    isEyesClosed = bothBlendshapesClosed || (bothEARClosed && avgBlinkScore >= 0.28);
-    isEyesOpen = bothBlendshapesOpen && bothEAROpen;
+    isEyesClosed = bothBlendshapesClosed || (bothEARClosed && avgBlinkScore >= 0.26);
+    // Resilient open detection: blendshapes or EAR open with low blink closure score
+    isEyesOpen = bothBlendshapesOpen || (bothEAROpen && avgBlinkScore <= 0.22);
   } else {
     isEyesClosed = bothEARClosed;
     isEyesOpen = bothEAROpen;
