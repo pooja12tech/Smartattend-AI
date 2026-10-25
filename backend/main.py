@@ -129,7 +129,8 @@ async def auto_end_sessions_background_task():
 @app.on_event("startup")
 async def startup_db_init():
     """Ensure database schema is registered and seed users if database is empty."""
-    # Verify Fernet encryption key for biometric templates at rest (fails if missing/weak outside tests)
+    # Verify Fernet encryption key for biometric templates at rest (strictly enforced in production)
+    face_service.validate_key_configuration()
     face_service.get_fernet()
 
     init_db_schema()
@@ -2127,11 +2128,45 @@ def mark_attendance(
     # Decrypt enrolled embedding & compute cosine similarity
     try:
         ref_embedding = face_service.decrypt_embedding(enrollment.embedding)
+    except face_service.BiometricDecryptionError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "BIOMETRIC_DECRYPTION_FAILED",
+                "failed_gate": "GATE_4_BIOMETRIC_TEMPLATE",
+                "message": "Biometric reference template cannot be decrypted with the configured system key. Authorized re-enrollment required."
+            }
+        )
+    except face_service.MalformedEmbeddingError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "MALFORMED_EMBEDDING",
+                "failed_gate": "GATE_4_BIOMETRIC_TEMPLATE",
+                "message": "Stored biometric reference template is malformed. Authorized re-enrollment required."
+            }
+        )
     except Exception as dec_err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "FACE_TEMPLATE_CORRUPTED", "message": f"Biometric template decryption failed: {dec_err}. Re-enrollment required."}
+            detail={
+                "code": "BIOMETRIC_DECRYPTION_FAILED",
+                "failed_gate": "GATE_4_BIOMETRIC_TEMPLATE",
+                "message": "Biometric reference template decryption failed. Authorized re-enrollment required."
+            }
         )
+
+    # Validate numeric vectors before similarity computation
+    if live_embedding.shape != (512,) or ref_embedding.shape != (512,):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "EMBEDDING_DIM_MISMATCH",
+                "failed_gate": "GATE_4_BIOMETRIC_TEMPLATE",
+                "message": "Facial embedding vector dimension mismatch. Re-enrollment required."
+            }
+        )
+
     sim = face_service.cosine_similarity(live_embedding, ref_embedding)
     face_match_score = round(float(sim * 100.0), 1)
 
@@ -3491,31 +3526,42 @@ def admin_create_user(
 
         # If admin captured student photo during creation, enroll biometric template now
         if req.photo_base64:
+            raw_b64 = req.photo_base64
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
             try:
-                raw_b64 = req.photo_base64
-                if "," in raw_b64:
-                    raw_b64 = raw_b64.split(",", 1)[1]
                 img_bytes = base64.b64decode(raw_b64)
-                try:
-                    emb = face_service.extract_embedding(img_bytes)
-                except Exception:
-                    rng = np.random.RandomState(abs(hash(req.roll_no)) % (2**31))
-                    emb = rng.randn(512).astype(np.float32)
-                    emb /= np.linalg.norm(emb)
-                encrypted_emb = face_service.encrypt_embedding(emb)
-                face_rec = FaceEnrollment(
-                    user_id=new_user.id,
-                    embedding=encrypted_emb,
-                    model_name="buffalo_sc",
-                    model_version="insightface-2.1",
-                    consent_given_at=now,
-                    consent_text_version="v1.0-admin-enrollment",
-                    created_at=now,
-                    retention_expires_at=now + timedelta(days=365)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "INVALID_IMAGE", "message": "Unable to decode student photo during creation."}
                 )
-                db.add(face_rec)
-            except Exception as e:
-                print(f"[Admin Create User] Face enrollment warning: {e}")
+
+            try:
+                emb = face_service.extract_embedding(img_bytes)
+            except face_service.FaceQualityError as fqe:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": fqe.code, "message": f"Biometric enrollment rejected: {fqe.message}"}
+                )
+            except Exception as err:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "EXTRACTION_FAILED", "message": f"Biometric extraction failed: {str(err)}"}
+                )
+
+            encrypted_emb = face_service.encrypt_embedding(emb)
+            face_rec = FaceEnrollment(
+                user_id=new_user.id,
+                embedding=encrypted_emb,
+                model_name="buffalo_sc",
+                model_version="insightface-2.1",
+                consent_given_at=now,
+                consent_text_version="v1.0-admin-enrollment",
+                created_at=now,
+                retention_expires_at=now + timedelta(days=365)
+            )
+            db.add(face_rec)
     elif role == "faculty":
         new_user.roll_no = req.roll_no
         db.add(new_user)
@@ -3538,7 +3584,8 @@ def admin_create_user(
 
     return {
         "success": True,
-        "message": f"New {role.capitalize()} account created successfully for {req.name} ({req.roll_no}).",
+        "message": f"New {role.capitalize()} account created successfully for {req.name} ({req.roll_no})." + (" Biometric reference template enrolled." if req.photo_base64 else ""),
+        "biometric_enrolled": bool(req.photo_base64),
         "user": {
             "name": req.name,
             "role": role,
@@ -3692,10 +3739,11 @@ def admin_enroll_face(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": fqe.code, "message": fqe.message}
         )
-    except Exception:
-        rng = np.random.RandomState(abs(hash(roll_no)) % (2**31))
-        embedding = rng.randn(512).astype(np.float32)
-        embedding /= np.linalg.norm(embedding)
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "EXTRACTION_FAILED", "message": f"Biometric extraction failed: {str(err)}"}
+        )
 
     encrypted_emb = face_service.encrypt_embedding(embedding)
     now = datetime.now(timezone.utc)

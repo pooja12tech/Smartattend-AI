@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Dict, Any
 from cryptography.fernet import Fernet
 
 # ------------------------------------------------------------------------------
-# Custom Face Quality Exception with distinct error codes
+# Custom Face Quality & Biometric Encryption Exceptions
 # ------------------------------------------------------------------------------
 class FaceQualityError(Exception):
     def __init__(self, code: str, message: str):
@@ -16,49 +16,131 @@ class FaceQualityError(Exception):
         self.code = code
         self.message = message
 
+class BiometricDecryptionError(Exception):
+    """Raised when Fernet ciphertext cannot be decrypted using configured key (e.g. key mismatch or corruption)."""
+    pass
+
+class MalformedEmbeddingError(Exception):
+    """Raised when decrypted embedding bytes are corrupt, wrong dimension, non-finite or invalid."""
+    pass
+
 # Global lazy singletons
 _face_app = None
 _fernet_cipher = None
 
-import base64
-import hashlib
+def validate_key_configuration():
+    """
+    Validates FACE_EMBED_KEY configuration.
+    Fails startup in production if missing, too short, or invalid.
+    """
+    env = os.getenv("ENVIRONMENT", "").strip().lower()
+    key = os.getenv("FACE_EMBED_KEY", "").strip()
+
+    if env == "production":
+        if not key:
+            raise RuntimeError(
+                "CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY is not set. "
+                "Set a stable 32-byte urlsafe-base64 Fernet key in production environment."
+            )
+        if len(key) < 32:
+            raise RuntimeError(
+                f"CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY is too short ({len(key)} < 32 characters)."
+            )
+        try:
+            if len(key) == 44 and key.endswith("="):
+                Fernet(key.encode())
+            else:
+                derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
+                Fernet(derived)
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY cannot initialize Fernet cipher: {e}")
 
 def get_fernet() -> Fernet:
     """
     Returns Fernet cipher for encrypting face embeddings at rest.
-    Falls back to a deterministic key derived from JWT_SECRET if FACE_EMBED_KEY is not explicitly set.
+    In production, strictly requires an explicitly configured, valid FACE_EMBED_KEY.
+    In development/testing, falls back deterministically to JWT_SECRET if FACE_EMBED_KEY is missing.
+    Never rotates, regenerates, or replaces the key automatically.
     """
     global _fernet_cipher
     if _fernet_cipher is None:
         key = os.getenv("FACE_EMBED_KEY", "").strip()
-        if not key or len(key) < 32:
-            secret = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY") or "smartattend-ai-secure-encryption-seed-2026"
-            derived_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
-            _fernet_cipher = Fernet(derived_key)
-        else:
+        env = os.getenv("ENVIRONMENT", "").strip().lower()
+
+        if env == "production":
+            validate_key_configuration()
+
+        if key and len(key) >= 32:
             try:
                 if len(key) == 44 and key.endswith("="):
                     _fernet_cipher = Fernet(key.encode() if isinstance(key, str) else key)
                 else:
                     derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
                     _fernet_cipher = Fernet(derived_key)
-            except Exception:
+            except Exception as e:
+                if env == "production":
+                    raise RuntimeError(f"Failed to initialize Fernet with configured FACE_EMBED_KEY: {e}")
                 derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
                 _fernet_cipher = Fernet(derived_key)
+        else:
+            # Deterministic development/test fallback only
+            secret = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY") or "smartattend-ai-secure-encryption-seed-2026"
+            derived_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+            _fernet_cipher = Fernet(derived_key)
 
     return _fernet_cipher
 
 def encrypt_embedding(embedding: np.ndarray) -> bytes:
-    """Encrypts float32 embedding vector at rest using Fernet."""
+    """
+    Validates and encrypts a 512-D float32 normalized embedding vector at rest using Fernet.
+    Rejects malformed, non-finite, or invalid dimension vectors.
+    """
+    arr = np.asarray(embedding, dtype=np.float32)
+    if arr.shape != (512,):
+        raise MalformedEmbeddingError(f"Cannot encrypt embedding with shape {arr.shape}; expected (512,).")
+    if not np.all(np.isfinite(arr)):
+        raise MalformedEmbeddingError("Cannot encrypt embedding containing NaN or Inf values.")
+    norm = np.linalg.norm(arr)
+    if norm < 1e-6:
+        raise MalformedEmbeddingError("Cannot encrypt zero-norm embedding vector.")
+    arr = arr / norm
+
     cipher = get_fernet()
-    raw_bytes = np.asarray(embedding, dtype=np.float32).tobytes()
+    raw_bytes = arr.tobytes()
     return cipher.encrypt(raw_bytes)
 
 def decrypt_embedding(encrypted_bytes: bytes) -> np.ndarray:
-    """Decrypts Fernet ciphertext back to normalized float32 embedding vector."""
+    """
+    Decrypts Fernet ciphertext back to a normalized 512-D float32 embedding vector.
+    Validates payload integrity, vector length, and finite numeric values.
+    Raises BiometricDecryptionError on key/token failure; MalformedEmbeddingError on invalid vector structure.
+    """
+    if not encrypted_bytes:
+        raise MalformedEmbeddingError("Encrypted biometric payload is empty.")
+
     cipher = get_fernet()
-    decrypted_bytes = cipher.decrypt(encrypted_bytes)
-    return np.frombuffer(decrypted_bytes, dtype=np.float32)
+    try:
+        decrypted_bytes = cipher.decrypt(encrypted_bytes)
+    except Exception as dec_err:
+        raise BiometricDecryptionError(
+            "Biometric template decryption failed with configured encryption key."
+        ) from dec_err
+
+    expected_len = 512 * 4  # 512 float32 elements = 2048 bytes
+    if len(decrypted_bytes) != expected_len:
+        raise MalformedEmbeddingError(
+            f"Decrypted embedding length ({len(decrypted_bytes)} bytes) does not match expected {expected_len} bytes (512 float32)."
+        )
+
+    arr = np.frombuffer(decrypted_bytes, dtype=np.float32)
+    if not np.all(np.isfinite(arr)):
+        raise MalformedEmbeddingError("Decrypted embedding contains non-finite values (NaN or Inf).")
+
+    norm = np.linalg.norm(arr)
+    if norm < 1e-6:
+        raise MalformedEmbeddingError("Decrypted embedding has near-zero norm.")
+
+    return arr / norm
 
 def get_face_app():
     """
@@ -167,9 +249,14 @@ def extract_embedding(image_bytes: bytes) -> np.ndarray:
         embedding = (raw_emb / norm) if norm > 0 else raw_emb
 
     normed = np.asarray(embedding, dtype=np.float32)
+    if normed.shape != (512,):
+        raise FaceQualityError("EXTRACTION_FAILED", f"Extracted embedding dimension {normed.shape} is incompatible; expected (512,).")
+    if not np.all(np.isfinite(normed)):
+        raise FaceQualityError("EXTRACTION_FAILED", "Extracted facial embedding contains non-finite values.")
     norm = np.linalg.norm(normed)
-    if norm > 0:
-        normed = normed / norm
+    if norm < 1e-6:
+        raise FaceQualityError("EXTRACTION_FAILED", "Extracted facial embedding has zero magnitude.")
+    normed = normed / norm
     return normed
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:

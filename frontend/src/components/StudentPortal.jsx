@@ -11,7 +11,7 @@ import { api, getDeviceId } from '../api';
 import BunkSimulator from './BunkSimulator';
 import StudentTimetable from './StudentTimetable';
 import StudentNotificationCenter from './StudentNotificationCenter';
-import { getFaceLandmarker, analyzeFaceFrame } from '../utils/faceLiveness';
+import { getFaceLandmarker, analyzeFaceFrame, prewarmFaceLandmarker } from '../utils/faceLiveness';
 import { setInAttendanceFlow } from '../pwa/pwaManager';
 
 export default function StudentPortal({ user }) {
@@ -162,22 +162,29 @@ export default function StudentPortal({ user }) {
 
   const getFaceErrorMessage = (code, fallbackMsg) => {
     switch (code) {
+      case 'BIOMETRIC_DECRYPTION_FAILED':
+        return 'Your enrolled biometric template cannot be decrypted with the current system encryption key. Authorized re-enrollment is required.';
+      case 'MALFORMED_EMBEDDING':
+      case 'FACE_TEMPLATE_CORRUPTED':
+        return 'Stored biometric reference template is corrupt or invalid. Re-enrollment is required.';
+      case 'EMBEDDING_DIM_MISMATCH':
+        return 'Biometric model dimension mismatch. Re-enrollment is required.';
+      case 'FACE_NOT_ENROLLED':
+        return 'Biometric face template is not yet enrolled. Please complete face enrollment first before marking attendance.';
       case 'NO_FACE':
-        return 'No face detected in the photo. Please align your face inside the camera circle and ensure good lighting.';
+        return 'No face detected in the photo. Please align your face inside the camera guide in clear lighting.';
       case 'MULTIPLE_FACES':
         return 'Multiple faces detected. Anti-proxy security requires exactly one student in the camera frame.';
       case 'FACE_IMAGE_BLURRY':
         return 'Photo is too blurry. Please hold the phone steady and ensure clear lighting.';
       case 'FACE_TOO_SMALL':
-        return 'Face is too far away (less than 80px). Please move the camera closer to your face.';
+        return 'Face is too far away. Please move the camera closer to your face.';
       case 'LOW_DETECTION_CONFIDENCE':
         return 'Face detection confidence is low. Please look directly at the camera in good lighting.';
-      case 'FACE_NOT_ENROLLED':
-        return 'Face template not enrolled. Please complete face enrollment first before marking attendance.';
       case 'INVALID_IMAGE':
         return 'Unable to process the image frame. Please retry.';
       case 'EXTRACTION_FAILED':
-        return 'Face embedding extraction failed. Please try capturing again.';
+        return 'Face feature extraction failed. Please try capturing again.';
       default:
         return fallbackMsg || 'Face verification failed. Please try again.';
     }
@@ -200,6 +207,8 @@ export default function StudentPortal({ user }) {
 
   useEffect(() => {
     fetchDashboardData();
+    // Pre-warm AI FaceLandmarker in background so it is instantly ready (0ms delay) when student scans QR
+    prewarmFaceLandmarker();
   }, [user.roll_no]);
 
   // Passkey / Fingerprint unlock simulation
@@ -302,6 +311,7 @@ export default function StudentPortal({ user }) {
 
   // Open Attendance Flow (Step 1: Scan QR)
   const handleStartAttendanceFlow = () => {
+    prewarmFaceLandmarker();
     if (!biometricUnlocked) handleBiometricUnlock();
     qrProcessingRef.current = false;
     captureTriggeredRef.current = false;
@@ -646,9 +656,20 @@ export default function StudentPortal({ user }) {
       // Initialize or reuse MediaPipe FaceLandmarker singleton
       let landmarker = landmarkerRef.current;
       if (!landmarker) {
-        setFacePromptMessage('Loading neural face mesh & blink tracker...');
+        setFacePromptMessage('Initializing AI face detection...');
         try {
-          landmarker = await getFaceLandmarker();
+          landmarker = await getFaceLandmarker((stage) => {
+            if (attemptIdRef.current !== currentAttempt) return;
+            if (stage === 'LOADING_WASM') {
+              setFacePromptMessage('Loading AI vision engine (WASM)...');
+            } else if (stage === 'LOADING_MODEL') {
+              setFacePromptMessage('Loading neural face mesh model...');
+            } else if (stage === 'FALLBACK_CPU') {
+              setFacePromptMessage('Setting up CPU fallback mode...');
+            } else if (stage === 'READY') {
+              setFacePromptMessage('Looking for your face... Please position face in guide.');
+            }
+          });
           landmarkerRef.current = landmarker;
         } catch (mErr) {
           console.error('MediaPipe initialization failure:', mErr);
@@ -740,7 +761,10 @@ export default function StudentPortal({ user }) {
 
           if (landmarker) {
             try {
-              const analysis = analyzeFaceFrame(landmarker, video, now, baselineEAR);
+              const analysis = analyzeFaceFrame(landmarker, video, now, baselineEAR, {
+                containerAspect: 0.75, // 3:4 portrait mobile preview container
+                isMirrored: true
+              });
 
               // Update diagnostics for development and test assertions
               diagnosticsRef.current = {
@@ -1249,7 +1273,7 @@ export default function StudentPortal({ user }) {
       }
       gates.error = friendlyMsg;
       setGateProgress({ ...gates });
-      setSubmissionResult({ success: false, reason: friendlyMsg, failed_gate: failedGate });
+      setSubmissionResult({ success: false, reason: friendlyMsg, failed_gate: failedGate, code: faceCode });
       setAttendanceStep('RESULT');
     } finally {
       closedFrameBufferRef.current = null;
@@ -1871,26 +1895,26 @@ export default function StudentPortal({ user }) {
       {/* AUTOMATED ATTENDANCE MODAL (Steps: SCAN_QR -> FACE_VERIFY -> EVALUATING -> RESULT) */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="glass-panel w-full max-w-lg rounded-3xl p-5 sm:p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95 space-y-4 my-8">
+          <div className="glass-panel w-full max-w-sm sm:max-w-md rounded-2xl p-4 sm:p-5 border border-slate-700/80 shadow-2xl relative animate-in fade-in zoom-in-95 space-y-3.5 my-auto max-h-[92vh] overflow-y-auto">
 
             {/* Top Modal Header & Step Indicator */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-brand-400" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">SmartAttend 5-Gate Verification</h3>
+                <ShieldCheck className="w-4 h-4 text-brand-400" />
+                <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">SmartAttend Verification</h3>
               </div>
               <button
                 type="button"
                 onClick={handleCloseScannerModal}
-                className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+                className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 transition"
               >
                 Cancel
               </button>
             </div>
 
             {/* Step Progress Tracker */}
-            <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-semibold">
-              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] sm:text-[11px] font-semibold">
+              <div className={`p-1.5 sm:p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
                 attendanceStep === 'SCAN_QR'
                   ? 'bg-brand-500/20 text-brand-300 border-brand-500/40'
                   : scannedToken
@@ -1901,7 +1925,7 @@ export default function StudentPortal({ user }) {
                 <span>1. Scan QR</span>
               </div>
 
-              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+              <div className={`p-1.5 sm:p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
                 attendanceStep === 'FACE_VERIFY'
                   ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
                   : selfieCaptured
@@ -1912,7 +1936,7 @@ export default function StudentPortal({ user }) {
                 <span>2. Face Check</span>
               </div>
 
-              <div className={`p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
+              <div className={`p-1.5 sm:p-2 rounded-xl border flex items-center justify-center gap-1.5 transition ${
                 attendanceStep === 'EVALUATING' || attendanceStep === 'RESULT'
                   ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
                   : 'bg-slate-900/60 text-slate-500 border-slate-800'
@@ -1926,19 +1950,19 @@ export default function StudentPortal({ user }) {
             {attendanceStep === 'SCAN_QR' && (
               <div className="space-y-3">
                 <div className="text-center space-y-1">
-                  <h4 className="text-base font-bold text-white">Point Rear Camera at Dynamic QR</h4>
-                  <p className="text-xs text-slate-400">
+                  <h4 className="text-sm sm:text-base font-bold text-white">Point Rear Camera at Dynamic QR</h4>
+                  <p className="text-[11px] sm:text-xs text-slate-400">
                     Scan the lecture QR code on the faculty projection screen. Auto-decodes in &lt; 0.5s.
                   </p>
                 </div>
 
                 {/* html5-qrcode Viewport Container */}
-                <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-700 min-h-[260px] shadow-inner">
+                <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-700 min-h-[250px] shadow-inner">
                   <div id="smartattend-qr-reader" className="w-full" />
                 </div>
 
                 {qrScanError && (
-                  <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <p className="font-semibold">{qrScanError}</p>
@@ -1962,11 +1986,11 @@ export default function StudentPortal({ user }) {
 
             {/* STEP 2: FRONT CAMERA LIVE FACE AUTH WITH EYE-BLINK AUTO-CAPTURE */}
             {attendanceStep === 'FACE_VERIFY' && (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {/* Compact Session / Security Status Strip */}
-                <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] font-mono text-slate-300">
+                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-800 text-[10px] font-mono text-slate-300">
                   <span className="flex items-center gap-1.5 text-emerald-400 font-bold truncate">
-                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <Check className="w-3 h-3 shrink-0" />
                     <span>QR #{sessionId?.slice(0, 8)}</span>
                   </span>
                   {capturedLocation && !capturedLocation.error ? (
@@ -1984,17 +2008,17 @@ export default function StudentPortal({ user }) {
                 </div>
 
                 <div className="text-center space-y-1">
-                  <h4 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
-                    <Eye className="w-4 h-4 text-purple-400 animate-pulse" />
+                  <h4 className="text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
                     Live Face Auth &amp; Eye-Blink Liveness
                   </h4>
-                  <p className="text-xs text-slate-300 px-3 py-1 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <p className="text-[11px] text-slate-300 px-2.5 py-1 rounded-lg bg-slate-900/60 border border-slate-800">
                     {facePromptMessage}
                   </p>
                 </div>
 
-                {/* Front Camera Video Container (Clean, unobstructed view) */}
-                <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-indigo-500/40 w-64 h-64 mx-auto shadow-2xl flex items-center justify-center">
+                {/* Front Camera Video Container (Portrait aspect ratio 3:4 tailored to mobile) */}
+                <div className="relative rounded-2xl overflow-hidden bg-black border border-indigo-500/40 w-full max-w-[270px] aspect-[3/4] mx-auto shadow-2xl flex items-center justify-center">
                   <video
                     ref={videoRef}
                     autoPlay
@@ -2003,19 +2027,19 @@ export default function StudentPortal({ user }) {
                     className="w-full h-full object-cover scale-x-[-1]"
                   />
 
-                  {/* Circular / Oval Face Alignment Guide */}
-                  <div className={`absolute inset-4 rounded-full border-2 pointer-events-none transition-all duration-300 ${
+                  {/* Anatomical Oval Face Alignment Guide */}
+                  <div className={`absolute inset-x-6 inset-y-5 rounded-[48%] border-2 pointer-events-none transition-all duration-300 ${
                     blinkStatus === 'BLINK_DETECTED'
-                      ? 'border-emerald-400 scale-105 shadow-[0_0_30px_rgba(52,211,153,0.9)]'
+                      ? 'border-emerald-400 scale-102 shadow-[0_0_25px_rgba(52,211,153,0.8)]'
                       : blinkStatus === 'BLINKING'
                       ? 'border-emerald-400 border-dashed animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.6)]'
                       : blinkStatus === 'WAITING_BLINK'
-                      ? 'border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.6)]'
+                      ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.6)]'
                       : blinkStatus === 'ALIGNING'
                       ? 'border-amber-400/80 border-dashed animate-pulse'
                       : blinkStatus === 'MULTIPLE_FACES'
                       ? 'border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.6)]'
-                      : 'border-slate-500/60 border-dashed'
+                      : 'border-slate-500/50 border-dashed'
                   }`} />
 
                   {/* Shutter Flash Animation on Blink */}
@@ -2024,9 +2048,9 @@ export default function StudentPortal({ user }) {
                   )}
                 </div>
 
-                {/* Dedicated Interactive Eye-Blink HUD Pill (OUTSIDE video - NEVER overlaps face or chin!) */}
+                {/* Dedicated Interactive Eye-Blink HUD Pill */}
                 <div className="flex justify-center">
-                  <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
+                  <div className={`px-3.5 py-1 rounded-full backdrop-blur-md border text-[11px] font-bold flex items-center gap-2 shadow-lg transition-all ${
                     blinkStatus === 'BLINK_DETECTED'
                       ? 'bg-emerald-500/95 border-emerald-400 text-white animate-bounce'
                       : blinkStatus === 'BLINKING'
@@ -2041,43 +2065,43 @@ export default function StudentPortal({ user }) {
                   }`}>
                     {blinkStatus === 'INIT' && (
                       <>
-                        <RefreshCw className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                        <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin" />
                         <span>Initializing AI Liveness...</span>
                       </>
                     )}
                     {blinkStatus === 'NO_FACE' && (
                       <>
-                        <User className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Looking for Face</span>
+                        <User className="w-3 h-3 text-slate-400" />
+                        <span>Position Face in Guide</span>
                       </>
                     )}
                     {blinkStatus === 'MULTIPLE_FACES' && (
                       <>
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Multiple Faces! Only 1 Allowed</span>
+                        <AlertTriangle className="w-3 h-3 text-rose-400" />
+                        <span>Multiple Faces Detected</span>
                       </>
                     )}
                     {blinkStatus === 'ALIGNING' && (
                       <>
-                        <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                        <span>Center Face in Circle</span>
+                        <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />
+                        <span>Center Face in Guide</span>
                       </>
                     )}
                     {blinkStatus === 'WAITING_BLINK' && (
                       <>
-                        <span className="text-base">😉</span>
-                        <span>Blink Eyes to Auto-Snap!</span>
+                        <span className="text-sm">😉</span>
+                        <span>Blink Naturally to Snap</span>
                       </>
                     )}
                     {blinkStatus === 'BLINKING' && (
                       <>
-                        <span className="text-base animate-bounce">👀</span>
-                        <span className="text-white font-extrabold">Blink detected! Open eyes...</span>
+                        <span className="text-sm animate-bounce">👀</span>
+                        <span className="text-white font-extrabold">Blink detected!</span>
                       </>
                     )}
                     {blinkStatus === 'BLINK_DETECTED' && (
                       <>
-                        <Camera className="w-3.5 h-3.5 text-white" />
+                        <Camera className="w-3 h-3 text-white" />
                         <span>Blink Verified! Capturing...</span>
                       </>
                     )}
@@ -2085,7 +2109,7 @@ export default function StudentPortal({ user }) {
                 </div>
 
                 {cameraError && (
-                  <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-semibold">{cameraError}</p>
@@ -2093,13 +2117,13 @@ export default function StudentPortal({ user }) {
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-2 pt-0.5">
                   <button
                     type="button"
                     onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 hover:from-slate-700 hover:to-slate-600 text-white text-xs font-semibold transition flex items-center justify-center gap-2 border border-slate-600 shadow-md active:scale-95"
+                    className="flex-1 py-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition flex items-center justify-center gap-1.5 border border-slate-700 shadow-sm active:scale-95"
                   >
-                    <Camera className="w-4 h-4 text-brand-400" />
+                    <Camera className="w-3.5 h-3.5 text-brand-400" />
                     <span>Manual Capture (Accessibility Override)</span>
                   </button>
                 </div>
@@ -2108,59 +2132,59 @@ export default function StudentPortal({ user }) {
 
             {/* STEP 3: 5-GATE ACID EVALUATION IN PROGRESS */}
             {attendanceStep === 'EVALUATING' && gateProgress && (
-              <div className="space-y-4 py-2">
+              <div className="space-y-3 py-1">
                 <div className="text-center space-y-1">
-                  <h4 className="text-base font-bold text-white">5-Gate Anti-Proxy Evaluation</h4>
+                  <h4 className="text-sm sm:text-base font-bold text-white">5-Gate Anti-Proxy Evaluation</h4>
                   <p className="text-xs text-slate-400">
-                    Executing atomic server verification across all physical and biometric gates...
+                    Executing atomic server verification across physical &amp; biometric gates...
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
-                    <span className="flex items-center gap-2.5 text-slate-200">
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2 text-slate-200">
                       {gateProgress.gate1 && gateProgress.gate1.startsWith('PASSED') ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate1 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />}
-                      Gate 1: Hardware Device Lock & 1-Phone Rule <span className="text-[10px] text-amber-400 font-normal">(Paused in Testing)</span>
+                      Gate 1: Hardware Lock <span className="text-[10px] text-amber-400 font-normal">(Testing)</span>
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate1 && gateProgress.gate1.startsWith('PASSED') ? 'text-emerald-400' : gateProgress.gate1 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate1}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
-                    <span className="flex items-center gap-2.5 text-slate-200">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2 text-slate-200">
                       {gateProgress.gate2 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate2 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 2 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 2: Dynamic QR Time & Signature Check
+                      Gate 2: Dynamic QR Time Check
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate2 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate2 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate2}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
-                    <span className="flex items-center gap-2.5 text-slate-200">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2 text-slate-200">
                       {gateProgress.gate3 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate3 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 3 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 3: GPS Geofence Check (&le; 150m from Faculty)
+                      Gate 3: GPS Geofence Check
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate3 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate3 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate3}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
-                    <span className="flex items-center gap-2.5 text-slate-200">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2 text-slate-200">
                       {gateProgress.gate4 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate4 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 4 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 4: AI Face Match Verification
+                      Gate 4: AI Face Match &amp; Liveness
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate4 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate4 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate4}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60">
-                    <span className="flex items-center gap-2.5 text-slate-200">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60">
+                    <span className="flex items-center gap-2 text-slate-200">
                       {gateProgress.gate5 === 'PASSED' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : gateProgress.gate5 === 'FAILED' ? <XCircle className="w-4 h-4 text-rose-400" /> : gateProgress.activeGate >= 5 ? <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-700" />}
-                      Gate 5: Anti-Fraud Audit Logger & Final Grant
+                      Gate 5: Anti-Fraud Audit &amp; Grant
                     </span>
                     <span className={`font-mono text-[10px] font-bold ${gateProgress.gate5 === 'PASSED' ? 'text-emerald-400' : gateProgress.gate5 === 'FAILED' ? 'text-rose-400' : 'text-slate-400'}`}>
                       {gateProgress.gate5}
@@ -2172,14 +2196,14 @@ export default function StudentPortal({ user }) {
 
             {/* STEP 4: VERIFICATION RESULT VIEW */}
             {attendanceStep === 'RESULT' && (
-              <div className="space-y-4 py-2">
+              <div className="space-y-3 py-1">
                 {submissionResult?.success ? (
-                  <div className="p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center space-y-3">
-                    <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                      <CheckCircle2 className="w-8 h-8" />
+                  <div className="p-4 sm:p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                      <CheckCircle2 className="w-7 h-7" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-black text-white">ATTENDANCE CONFIRMED</h4>
+                      <h4 className="text-base sm:text-lg font-black text-white">ATTENDANCE CONFIRMED</h4>
                       <p className="text-xs text-emerald-300 font-semibold mt-0.5">
                         Status: {submissionResult.status}
                       </p>
@@ -2188,7 +2212,7 @@ export default function StudentPortal({ user }) {
                     <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs grid grid-cols-2 gap-2 text-left font-mono">
                       <div>
                         <span className="text-slate-400 text-[10px]">Session ID:</span>
-                        <p className="font-bold text-white">{sessionId}</p>
+                        <p className="font-bold text-white truncate">{sessionId}</p>
                       </div>
                       <div>
                         <span className="text-slate-400 text-[10px]">Geofence Distance:</span>
@@ -2199,7 +2223,7 @@ export default function StudentPortal({ user }) {
                         <p className="font-bold text-emerald-400">{submissionResult.details?.face_match_score}%</p>
                       </div>
                       <div>
-                        <span className="text-slate-400 text-[10px]">Device Fingerprint:</span>
+                        <span className="text-slate-400 text-[10px]">Device:</span>
                         <p className="font-bold text-white truncate">{deviceId}</p>
                       </div>
                     </div>
@@ -2207,32 +2231,71 @@ export default function StudentPortal({ user }) {
                     <button
                       type="button"
                       onClick={handleCloseScannerModal}
-                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition"
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition"
                     >
-                      Done & Return to Dashboard
+                      Done &amp; Return to Dashboard
                     </button>
                   </div>
                 ) : (
-                  <div className="p-5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center space-y-3">
-                    <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/20">
-                      <XCircle className="w-8 h-8" />
+                  <div className="p-4 sm:p-5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/20">
+                      <XCircle className="w-7 h-7" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-black text-white">ATTENDANCE REJECTED</h4>
+                      <h4 className="text-base sm:text-lg font-black text-white">ATTENDANCE REJECTED</h4>
                       <p className="text-xs text-rose-300 font-medium mt-1">
                         {submissionResult?.reason || gateProgress?.error || 'Verification check failed.'}
                       </p>
                     </div>
 
-                    <div className="flex flex-col gap-2 pt-2">
-                      {(!isFaceEnrolled || submissionResult?.reason?.includes('enroll') || submissionResult?.failed_gate === 'GATE_4_FACE_VERIFICATION') && (
-                        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 space-y-1 text-center">
-                          <p className="font-semibold">Face Verification Mismatch</p>
-                          <p className="text-slate-400 text-[10px]">Your live selfie did not match the official reference photo enrolled by the Admin Department. If you need a photo update, please contact the Registrar office.</p>
+                    <div className="flex flex-col gap-2 pt-1 text-left">
+                      {/* Biometric Decryption Failure / Key Mismatch */}
+                      {(submissionResult?.code === 'BIOMETRIC_DECRYPTION_FAILED' || submissionResult?.failed_gate === 'GATE_4_BIOMETRIC_TEMPLATE' || submissionResult?.reason?.includes('decrypted') || submissionResult?.reason?.includes('encryption key')) && (
+                        <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-200 space-y-1">
+                          <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            Biometric Security Key Mismatch
+                          </p>
+                          <p className="text-slate-300 text-[10px] leading-relaxed">
+                            Your enrolled biometric template was encrypted under a different system key and cannot be securely decrypted. Please contact the Administrator or Registrar to reset and re-enroll your reference photo.
+                          </p>
                         </div>
                       )}
 
-                      <div className="flex gap-2">
+                      {/* Not Enrolled Error */}
+                      {(submissionResult?.code === 'FACE_NOT_ENROLLED' || (!isFaceEnrolled && !submissionResult?.reason?.includes('decrypted') && !submissionResult?.code?.includes('DECRYPTION'))) && (
+                        <div className="p-3 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-[11px] text-indigo-200 space-y-1.5">
+                          <p className="font-bold text-indigo-300 flex items-center gap-1.5">
+                            <User className="w-4 h-4 text-indigo-400 shrink-0" />
+                            Face Template Not Enrolled
+                          </p>
+                          <p className="text-slate-300 text-[10px] leading-relaxed">
+                            No biometric reference template exists for your student account. Please complete face enrollment first before marking attendance.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCloseScannerModal();
+                              setShowFaceEnrollModal(true);
+                            }}
+                            className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] transition"
+                          >
+                            Go to Face Enrollment
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Genuine Face Verification Mismatch */}
+                      {submissionResult?.failed_gate === 'GATE_4_FACE_VERIFICATION' && submissionResult?.code !== 'BIOMETRIC_DECRYPTION_FAILED' && !submissionResult?.reason?.includes('decrypted') && (
+                        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 space-y-1 text-center">
+                          <p className="font-semibold text-rose-400">Face Verification Mismatch</p>
+                          <p className="text-slate-400 text-[10px]">
+                            Your live selfie did not match the official reference photo enrolled by the Admin Department. If you need a photo update, please contact the Registrar office.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
                         <button
                           type="button"
                           onClick={handleStartAttendanceFlow}
