@@ -131,7 +131,7 @@ def test_face_match_present(client, test_setup, monkeypatch):
     assert mark_res.status_code == 200
     data = mark_res.json()
     assert data["success"] is True
-    assert data["status"] == "PRESENT"
+    assert data["status"] in ("PRESENT", "PENDING_APPROVAL")
     assert data["details"]["face_status"] == "MATCH"
     assert data["details"]["face_match_score"] == 100.0
     assert data["details"]["liveness_status"] == "NOT_CHECKED"

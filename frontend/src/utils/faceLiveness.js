@@ -131,59 +131,84 @@ export function determineEyeState({
 
 /**
  * Initializes and caches the MediaPipe FaceLandmarker singleton.
- * Uses local static wasm & models, falling back to Google CDN if necessary,
- * with automatic CPU fallback if GPU execution fails.
+ * Uses local static wasm & models with resilient GPU -> CPU delegate fallback.
+ * Emits progress stages: LOADING_WASM, LOADING_MODEL, FALLBACK_CPU, READY.
  */
-export async function getFaceLandmarker() {
-  if (landmarkerInstance) return landmarkerInstance;
-  if (landmarkerLoadingPromise) return landmarkerLoadingPromise;
+export async function getFaceLandmarker(onProgress) {
+  if (landmarkerInstance) {
+    if (typeof onProgress === 'function') onProgress('READY');
+    return landmarkerInstance;
+  }
+  if (landmarkerLoadingPromise) {
+    return landmarkerLoadingPromise;
+  }
+
+  const withTimeout = (promise, ms, timeoutMessage) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms))
+    ]);
 
   landmarkerLoadingPromise = (async () => {
     try {
+      if (typeof onProgress === 'function') onProgress('LOADING_WASM');
       let filesetResolver;
       try {
         filesetResolver = await FilesetResolver.forVisionTasks('/wasm');
       } catch (localWasmErr) {
-        console.warn('Local WASM load failed, trying CDN fallback:', localWasmErr);
+        console.warn('Local WASM load failed, trying pinned CDN fallback:', localWasmErr);
         filesetResolver = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
         );
       }
 
-      const createLandmarker = async (delegate = 'GPU') => {
-        try {
-          return await FaceLandmarker.createFromOptions(filesetResolver, {
+      if (typeof onProgress === 'function') onProgress('LOADING_MODEL');
+      let landmarker = null;
+
+      // 1. Try local model with GPU delegate (with 2500ms timeout for mobile GPU stalls)
+      try {
+        landmarker = await withTimeout(
+          FaceLandmarker.createFromOptions(filesetResolver, {
             baseOptions: {
               modelAssetPath: '/models/face_landmarker.task',
-              delegate
+              delegate: 'GPU'
+            },
+            outputFaceBlendshapes: true,
+            runningMode: 'VIDEO',
+            numFaces: 2
+          }),
+          2500,
+          'GPU delegate initialization timed out (>2500ms)'
+        );
+      } catch (gpuErr) {
+        console.warn('MediaPipe GPU delegate failed or timed out; falling back to CPU:', gpuErr);
+        if (typeof onProgress === 'function') onProgress('FALLBACK_CPU');
+        try {
+          landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: '/models/face_landmarker.task',
+              delegate: 'CPU'
             },
             outputFaceBlendshapes: true,
             runningMode: 'VIDEO',
             numFaces: 2
           });
-        } catch (localModelErr) {
-          console.warn(`Local model load with ${delegate} failed, trying CDN fallback:`, localModelErr);
-          return await FaceLandmarker.createFromOptions(filesetResolver, {
+        } catch (cpuErr) {
+          console.warn('Local model CPU load failed; trying pinned CDN model fallback:', cpuErr);
+          landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
             baseOptions: {
               modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-              delegate
+              delegate: 'CPU'
             },
             outputFaceBlendshapes: true,
             runningMode: 'VIDEO',
             numFaces: 2
           });
         }
-      };
-
-      let landmarker;
-      try {
-        landmarker = await createLandmarker('GPU');
-      } catch (gpuErr) {
-        console.warn('GPU delegate failed for FaceLandmarker, falling back to CPU:', gpuErr);
-        landmarker = await createLandmarker('CPU');
       }
 
       landmarkerInstance = landmarker;
+      if (typeof onProgress === 'function') onProgress('READY');
       return landmarker;
     } catch (err) {
       console.error('Failed to initialize FaceLandmarker:', err);
@@ -197,15 +222,35 @@ export async function getFaceLandmarker() {
 }
 
 /**
+ * Silently warms up and caches the FaceLandmarker in the background
+ * during browser idle time or right when the student begins QR scanning,
+ * making attendance verification instantaneous (0ms wait) when camera opens.
+ */
+export function prewarmFaceLandmarker() {
+  if (landmarkerInstance || landmarkerLoadingPromise) return;
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(() => {
+      getFaceLandmarker().catch((err) => console.debug('[Prewarm] Background FaceLandmarker load deferred:', err));
+    }, { timeout: 3500 });
+  } else {
+    setTimeout(() => {
+      getFaceLandmarker().catch((err) => console.debug('[Prewarm] Background FaceLandmarker load deferred:', err));
+    }, 1000);
+  }
+}
+
+/**
  * Analyzes a single video frame for face presence, positioning, and eye blink status.
+ * Maps coordinates between camera sensor space, visible container (object-fit: cover),
+ * and horizontal mirroring so the on-screen oval guide matches face evaluation.
  *
  * @param {FaceLandmarker} landmarker
  * @param {HTMLVideoElement} videoElement
  * @param {number} timestampMs
  * @param {number} baselineEAR
- * @param {object} config
+ * @param {Object} options { containerAspect: number, isMirrored: boolean, config: Object }
  */
-export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baselineEAR = 0.28, config = DEFAULT_LIVENESS_CONFIG) {
+export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baselineEAR = 0.28, options = {}) {
   if (!landmarker || !videoElement || videoElement.readyState < 2) {
     return {
       success: false,
@@ -247,31 +292,68 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
   // Exactly one face detected
   const landmarks = results.faceLandmarks[0];
 
-  // Calculate face bounding box & center from landmarks
-  let minX = 1, maxX = 0, minY = 1, maxY = 0;
-  for (let i = 0; i < landmarks.length; i++) {
-    const pt = landmarks[i];
-    if (pt.x < minX) minX = pt.x;
-    if (pt.x > maxX) maxX = pt.x;
-    if (pt.y < minY) minY = pt.y;
-    if (pt.y > maxY) maxY = pt.y;
+  // Sensor dimensions
+  const videoWidth = videoElement.videoWidth || 640;
+  const videoHeight = videoElement.videoHeight || 480;
+  const videoAspect = videoWidth / videoHeight;
+
+  // Container preview aspect ratio (width / height). Default 0.75 for portrait (3:4)
+  const containerAspect = options.containerAspect || 0.75;
+  const isMirrored = options.isMirrored !== false;
+
+  // Calculate visible region in normalized sensor space [0, 1] due to CSS object-fit: cover
+  let cropX = 0;
+  let cropY = 0;
+  let visibleVideoWidth = 1.0;
+  let visibleVideoHeight = 1.0;
+
+  if (videoAspect > containerAspect) {
+    // Video wider than container: height fits, left/right cropped
+    visibleVideoWidth = containerAspect / videoAspect;
+    cropX = (1.0 - visibleVideoWidth) / 2.0;
+  } else {
+    // Video taller than container: width fits, top/bottom cropped
+    visibleVideoHeight = videoAspect / containerAspect;
+    cropY = (1.0 - visibleVideoHeight) / 2.0;
   }
 
-  const faceWidth = maxX - minX;
-  const faceHeight = maxY - minY;
-  const faceCenterX = (minX + maxX) / 2;
-  const faceCenterY = (minY + maxY) / 2;
+  // Map landmarks to visible preview coordinates [0, 1] accounting for crop & mirror
+  let minPrevX = 1, maxPrevX = 0, minPrevY = 1, maxPrevY = 0;
+  let rawMinX = 1, rawMaxX = 0, rawMinY = 1, rawMaxY = 0;
 
-  // Flexible mobile-friendly center alignment check
-  const isCentered = Math.abs(faceCenterX - 0.5) < 0.28 && Math.abs(faceCenterY - 0.5) < 0.30;
+  for (let i = 0; i < landmarks.length; i++) {
+    const pt = landmarks[i];
+    if (pt.x < rawMinX) rawMinX = pt.x;
+    if (pt.x > rawMaxX) rawMaxX = pt.x;
+    if (pt.y < rawMinY) rawMinY = pt.y;
+    if (pt.y > rawMaxY) rawMaxY = pt.y;
+
+    // Normalizing relative to visible container viewport
+    const visX = (pt.x - cropX) / visibleVideoWidth;
+    const visY = (pt.y - cropY) / visibleVideoHeight;
+    const prevX = isMirrored ? (1.0 - visX) : visX;
+    const prevY = visY;
+
+    if (prevX < minPrevX) minPrevX = prevX;
+    if (prevX > maxPrevX) maxPrevX = prevX;
+    if (prevY < minPrevY) minPrevY = prevY;
+    if (prevY > maxPrevY) maxPrevY = prevY;
+  }
+
+  const faceWidth = maxPrevX - minPrevX;
+  const faceHeight = maxPrevY - minPrevY;
+  const faceCenterX = (minPrevX + maxPrevX) / 2.0;
+  const faceCenterY = (minPrevY + maxPrevY) / 2.0;
+
+  // Face alignment evaluation relative to on-screen oval guide (centered at 0.5, 0.5)
+  // Generous, natural tolerances so normal hand-held selfie posture aligns smoothly
+  const isAlignedX = Math.abs(faceCenterX - 0.5) < 0.28;
+  const isAlignedY = Math.abs(faceCenterY - 0.5) < 0.30;
+  const isCentered = isAlignedX && isAlignedY;
   const isTooSmall = faceWidth < 0.12 || faceHeight < 0.14;
   const isTooClose = faceWidth > 0.94 || faceHeight > 0.94;
 
-  // Camera resolution for unskewed pixel-space EAR calculation
-  const videoWidth = videoElement.videoWidth || 640;
-  const videoHeight = videoElement.videoHeight || 480;
-
-  // Extract Bilateral Eye Aspect Ratio in pixel space
+  // Unskewed Euclidean distance EAR in true camera sensor pixel space
   const leftEAR = calculateEAR(landmarks, LEFT_EYE_LANDMARKS, videoWidth, videoHeight);
   const rightEAR = calculateEAR(landmarks, RIGHT_EYE_LANDMARKS, videoWidth, videoHeight);
   const avgEAR = (leftEAR + rightEAR) / 2;
@@ -300,7 +382,7 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
     avgBlinkScore,
     hasBlendshapes,
     baselineEAR,
-    config
+    config: options.config || DEFAULT_LIVENESS_CONFIG
   });
 
   // Position guidance
@@ -309,7 +391,7 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
 
   if (!isCentered) {
     positionStatus = 'OFF_CENTER';
-    message = 'Please center your face inside the circular guide.';
+    message = 'Please center your face inside the guide.';
   } else if (isTooSmall) {
     positionStatus = 'TOO_FAR';
     message = 'Move slightly closer to the camera.';
@@ -338,7 +420,24 @@ export function analyzeFaceFrame(landmarker, videoElement, timestampMs, baseline
     earOpenThreshold: eyeState.earOpenThreshold,
     hasBlendshapes,
     landmarks,
-    faceBox: { minX, maxX, minY, maxY, width: faceWidth, height: faceHeight }
+    faceBox: {
+      minX: rawMinX,
+      maxX: rawMaxX,
+      minY: rawMinY,
+      maxY: rawMaxY,
+      width: rawMaxX - rawMinX,
+      height: rawMaxY - rawMinY
+    },
+    previewBox: {
+      minX: minPrevX,
+      maxX: maxPrevX,
+      minY: minPrevY,
+      maxY: maxPrevY,
+      centerX: faceCenterX,
+      centerY: faceCenterY,
+      width: faceWidth,
+      height: faceHeight
+    }
   };
 }
 
@@ -360,6 +459,7 @@ export function createBlinkStateMachine(customConfig = {}) {
   let transitionReason = 'INIT';
   let rejectionReason = null;
   let captureFired = false;
+  let offCenterFrames = 0;
 
   return {
     reset() {
@@ -371,6 +471,7 @@ export function createBlinkStateMachine(customConfig = {}) {
       rejectionReason = null;
       transitionReason = 'RESET';
       captureFired = false;
+      offCenterFrames = 0;
     },
     getState() {
       return {
@@ -399,6 +500,7 @@ export function createBlinkStateMachine(customConfig = {}) {
         blinkStartTime = null;
         rejectionReason = 'NO_FACE';
         transitionReason = 'FACE_LOST';
+        offCenterFrames = 0;
         return {
           state,
           status: 'NO_FACE',
@@ -417,6 +519,7 @@ export function createBlinkStateMachine(customConfig = {}) {
         blinkStartTime = null;
         rejectionReason = 'MULTIPLE_FACES';
         transitionReason = 'MULTIPLE_FACES_DETECTED';
+        offCenterFrames = 0;
         return {
           state,
           status: 'MULTIPLE_FACES',
@@ -426,17 +529,17 @@ export function createBlinkStateMachine(customConfig = {}) {
         };
       }
 
-      // 3. Face position alignment
+      // 3. Face position alignment with micro-jitter debounce
       if (!analysis.isCentered) {
-        // If eyes were actively closing, allow a brief 1-frame grace unless completely lost
-        if (state !== 'CLOSING') {
+        offCenterFrames++;
+        if (offCenterFrames >= 3) {
           state = 'WAITING_OPEN';
           steadyOpenFrames = 0;
           eyesClosedFrames = 0;
           reopenedFrames = 0;
           blinkStartTime = null;
+          rejectionReason = 'OFF_CENTER';
         }
-        rejectionReason = 'OFF_CENTER';
         return {
           state,
           status: 'ALIGNING',
@@ -445,6 +548,8 @@ export function createBlinkStateMachine(customConfig = {}) {
           captured: false
         };
       }
+
+      offCenterFrames = 0;
 
       // Exactly 1 centered face: calibrate / adapt baseline EAR
       if (!baselineCalibrated) {
@@ -670,4 +775,3 @@ export function createBlinkStateMachine(customConfig = {}) {
     }
   };
 }
-

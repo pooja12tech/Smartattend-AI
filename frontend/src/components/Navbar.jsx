@@ -1,7 +1,27 @@
-import React from 'react';
-import { ShieldCheck, LogOut, Smartphone, User, Sparkles, Radio } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, LogOut, Smartphone, User, Sparkles, Radio, Download } from 'lucide-react';
+import { isAppInstalled, isInstallPromptAvailable, promptPwaInstall } from '../pwa/pwaManager';
 
 export default function Navbar({ currentUser, onLogout, onQuickSwitchRole, backendOnline }) {
+  const [canInstall, setCanInstall] = useState(false);
+
+  useEffect(() => {
+    const updateInstallState = () => {
+      setCanInstall(isInstallPromptAvailable() && !isAppInstalled());
+    };
+
+    updateInstallState();
+    window.addEventListener('pwa-installable-changed', updateInstallState);
+    return () => window.removeEventListener('pwa-installable-changed', updateInstallState);
+  }, []);
+
+  const handleInstallClick = async () => {
+    const result = await promptPwaInstall();
+    if (result && result.outcome === 'accepted') {
+      setCanInstall(false);
+    }
+  };
+
   const getRoleBadge = (role) => {
     switch (role) {
       case 'admin':
@@ -83,30 +103,44 @@ export default function Navbar({ currentUser, onLogout, onQuickSwitchRole, backe
           )}
         </div>
 
-        {/* Right: User Profile & Logout */}
-        {currentUser ? (
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex flex-col text-right">
-              <span className="text-xs font-semibold text-slate-200">{currentUser.name}</span>
-              <span className="text-[11px] text-slate-400 font-mono">
-                {currentUser.roll_no || currentUser.faculty_id || currentUser.admin_id}
-              </span>
-            </div>
-
-            {getRoleBadge(currentUser.role)}
-
+        {/* Right: Install App Button, User Profile & Logout */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* PWA Install Button (subtle, shown when browser supports install and not yet standalone) */}
+          {canInstall && (
             <button
-              onClick={onLogout}
-              title="Logout"
-              className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition shadow-sm flex items-center gap-1.5 text-xs font-medium"
+              onClick={handleInstallClick}
+              title="Install SmartAttend as Progressive Web App"
+              className="px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm animate-pulse"
             >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden md:inline">Logout</span>
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Install App</span>
             </button>
-          </div>
-        ) : (
-          <div className="text-xs text-slate-400 font-medium">Please sign in to continue</div>
-        )}
+          )}
+
+          {currentUser ? (
+            <>
+              <div className="hidden sm:flex flex-col text-right">
+                <span className="text-xs font-semibold text-slate-200">{currentUser.name}</span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {currentUser.roll_no || currentUser.faculty_id || currentUser.admin_id}
+                </span>
+              </div>
+
+              {getRoleBadge(currentUser.role)}
+
+              <button
+                onClick={onLogout}
+                title="Logout"
+                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition shadow-sm flex items-center gap-1.5 text-xs font-medium"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden md:inline">Logout</span>
+              </button>
+            </>
+          ) : (
+            <div className="text-xs text-slate-400 font-medium">Please sign in to continue</div>
+          )}
+        </div>
 
       </div>
     </header>

@@ -4,6 +4,9 @@ import LoginView from './components/LoginView';
 import StudentPortal from './components/StudentPortal';
 import FacultyPortal from './components/FacultyPortal';
 import AdminPortal from './components/AdminPortal';
+import OfflineBanner from './components/OfflineBanner';
+import PwaUpdateToast from './components/PwaUpdateToast';
+import IosInstallBanner from './components/IosInstallBanner';
 import { api, getDeviceId } from './api';
 
 export default function App() {
@@ -110,6 +113,15 @@ export default function App() {
         onQuickSwitchRole={handleQuickSwitchRole}
         backendOnline={backendOnline}
       />
+
+      {/* Network Offline Status Banner */}
+      <OfflineBanner />
+
+      {/* PWA Update Notification Toast */}
+      <PwaUpdateToast />
+
+      {/* iOS Safari Add to Home Screen Instructions */}
+      <IosInstallBanner />
 
       {/* Main Portal View */}
       <main className="flex-1">

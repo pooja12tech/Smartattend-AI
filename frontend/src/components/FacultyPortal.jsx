@@ -14,6 +14,7 @@ export default function FacultyPortal({ user }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
   const [subject, setSubject] = useState('CS301 - Operating Systems');
   const [activeSession, setActiveSession] = useState(null);
+  const isSessionActive = Boolean(activeSession && activeSession.status !== 'ENDED');
   const [qrData, setQrData] = useState(null);
   const [liveData, setLiveData] = useState(null);
   const [starting, setStarting] = useState(false);
@@ -21,6 +22,7 @@ export default function FacultyPortal({ user }) {
   const [searchRoster, setSearchRoster] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [manualSuccessMsg, setManualSuccessMsg] = useState(null);
+  const [qrProjectorOpen, setQrProjectorOpen] = useState(false);
 
   // Live Classroom Wall (Projector Mode) State
   const [viewMode, setViewMode] = useState('wall'); // 'wall' | 'table'
@@ -103,7 +105,7 @@ export default function FacultyPortal({ user }) {
 
   // Category 2: Ultrasonic Acoustic Inaudible Beacon
   useEffect(() => {
-    if (activeSession && ultrasonicBeaconActive) {
+    if (isSessionActive && ultrasonicBeaconActive) {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = audioCtx.createOscillator();
@@ -134,7 +136,7 @@ export default function FacultyPortal({ user }) {
         ultrasonicAudioRef.current = null;
       }
     };
-  }, [activeSession, ultrasonicBeaconActive]);
+  }, [isSessionActive, ultrasonicBeaconActive]);
 
   // Category 2: Panoramic Photo Upload Handler
   const handleUploadPanoramicPhoto = (e) => {
@@ -400,8 +402,9 @@ export default function FacultyPortal({ user }) {
   };
 
   // Start lecture session with dynamic teacher GPS anchoring (150m radius)
+  // Start lecture session with dynamic teacher GPS anchoring (150m radius)
   const handleStartSession = async (overrideSubject = null) => {
-    if (activeSession) {
+    if (isSessionActive) {
       alert(`A lecture session is already active (${activeSession.session_code || activeSession.subject_name}). Please end the current session before starting a new one.`);
       setPortalTab('live');
       return;
@@ -477,98 +480,173 @@ export default function FacultyPortal({ user }) {
     if (!activeSession) return;
     if (!confirm('Are you sure you want to end this lecture session? Attendance will be closed.')) return;
     setEnding(true);
+    const sid = activeSession.session_id;
     try {
-      await api.endSession(activeSession.session_id);
+      await api.endSession(sid);
       setActiveSession(null);
       setQrData(null);
-      setRoster([]);
       setManualSuccessMsg('Lecture session ended successfully. Attendance is now closed.');
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
-      alert('Error ending session: ' + err.message);
+      const errMsg = String(err.message || err.detail || '');
+      const isAlreadyEnded = err.status === 400 && (
+        errMsg.includes('ENDED') || errMsg.includes('closed') || errMsg.includes('not active')
+      );
+      if (isAlreadyEnded) {
+        setActiveSession(null);
+        setQrData(null);
+        setManualSuccessMsg('Lecture session is closed.');
+        setTimeout(() => setManualSuccessMsg(null), 4000);
+      } else {
+        alert('Error ending session: ' + err.message);
+      }
     } finally {
       setEnding(false);
     }
   };
 
-  // Poll dynamic rotating QR code and roster data
+  // Poll dynamic rotating QR code, live status, and roster data during active sessions
   useEffect(() => {
-    let timer;
-    if (activeSession?.session_id) {
-      const fetchQR = async () => {
-        try {
-          const lat = facultyGpsRef.current.lat;
-          const lng = facultyGpsRef.current.lng;
-          const data = await api.getSessionQR(activeSession.session_id, lat, lng);
+    let timer = null;
+    let isCancelled = false;
+
+    // Only poll when on the live console tab and session is actively running
+    if (!isSessionActive || !activeSession?.session_id || portalTab !== 'live') {
+      if (!isSessionActive) {
+        setQrData(null);
+      }
+      return;
+    }
+
+    const sessionId = activeSession.session_id;
+
+    // Helper to immediately cease recurring polls when backend detects session is closed
+    const stopSessionPolling = (noticeMsg) => {
+      isCancelled = true;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      setQrData(null);
+      setActiveSession(prev => (prev?.session_id === sessionId ? { ...prev, status: 'ENDED' } : prev));
+      if (noticeMsg) {
+        setManualSuccessMsg(noticeMsg);
+        setTimeout(() => setManualSuccessMsg(null), 4000);
+      }
+    };
+
+    const fetchQR = async () => {
+      if (isCancelled) return;
+      try {
+        const lat = facultyGpsRef.current.lat;
+        const lng = facultyGpsRef.current.lng;
+        const data = await api.getSessionQR(sessionId, lat, lng);
+        if (!isCancelled) {
           setQrData(data);
-        } catch (err) {
-          console.error('Error polling QR:', err);
         }
-      };
+      } catch (err) {
+        if (isCancelled) return;
+        const errMsg = String(err.message || err.detail || '');
+        // Backend returns 400 when session is not ACTIVE (e.g., status is ENDED)
+        const isSessionEnded = err.status === 400 && (
+          errMsg.includes('ENDED') ||
+          errMsg.includes('Attendance is closed') ||
+          errMsg.includes('not active') ||
+          errMsg.includes('is currently')
+        );
+        if (isSessionEnded || err.status === 404) {
+          console.warn(`[FacultyPortal] QR polling halted: session ${sessionId} is inactive/ended (${errMsg}).`);
+          stopSessionPolling('Lecture session ended. QR rotation stopped.');
+          return;
+        }
+        console.error('Error polling QR:', err);
+      }
+    };
 
-      const fetchLiveStatus = async () => {
-        try {
-          const live = await api.getFacultyLiveSession(activeSession.session_id);
+    const fetchLiveStatus = async () => {
+      if (isCancelled) return;
+      try {
+        const live = await api.getFacultyLiveSession(sessionId);
+        if (!isCancelled && live) {
           setLiveData(live);
-        } catch (err) {
-          console.error('Error fetching live session data:', err);
-        }
-      };
-
-      const fetchRoster = async () => {
-        try {
-          const rData = await api.getSessionRoster(activeSession.session_id);
-          if (rData && rData.roster) {
-            const currentPresentRolls = new Set(
-              rData.roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').map(s => s.roll_no)
-            );
-
-            // Detect newly verified arrivals
-            const newArrivals = rData.roster.filter(
-              s => (s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT') && !prevPresentRollsRef.current.has(s.roll_no)
-            );
-
-            if (prevPresentRollsRef.current.size > 0 && newArrivals.length > 0) {
-              const newest = newArrivals[0];
-              setLatestArrival({
-                name: newest.name,
-                roll_no: newest.roll_no,
-                distance: newest.distance_meters,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              });
-              setTimeout(() => setLatestArrival(null), 4500);
-
-              if (soundEnabled) {
-                playArrivalChime();
-              }
-              confetti({
-                particleCount: 55,
-                spread: 75,
-                origin: { y: 0.35 }
-              });
-            }
-
-            prevPresentRollsRef.current = currentPresentRolls;
-            setRoster(rData.roster);
+          if (live.session?.status && live.session.status !== 'ACTIVE') {
+            console.warn(`[FacultyPortal] Live status indicates session is ${live.session.status}. Halting polling.`);
+            stopSessionPolling(`Session status is ${live.session.status}. Attendance is closed.`);
           }
-        } catch (err) {
-          console.error('Error fetching roster:', err);
         }
-      };
+      } catch (err) {
+        if (isCancelled) return;
+        if (err.status === 404) {
+          stopSessionPolling('Session not found.');
+          return;
+        }
+        console.error('Error fetching live session data:', err);
+      }
+    };
 
+    const fetchRoster = async () => {
+      if (isCancelled) return;
+      try {
+        const rData = await api.getSessionRoster(sessionId);
+        if (!isCancelled && rData && rData.roster) {
+          const currentPresentRolls = new Set(
+            rData.roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').map(s => s.roll_no)
+          );
+
+          // Detect newly verified arrivals
+          const newArrivals = rData.roster.filter(
+            s => (s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT') && !prevPresentRollsRef.current.has(s.roll_no)
+          );
+
+          if (prevPresentRollsRef.current.size > 0 && newArrivals.length > 0) {
+            const newest = newArrivals[0];
+            setLatestArrival({
+              name: newest.name,
+              roll_no: newest.roll_no,
+              distance: newest.distance_meters,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+            setTimeout(() => setLatestArrival(null), 4500);
+
+            if (soundEnabled) {
+              playArrivalChime();
+            }
+            confetti({
+              particleCount: 55,
+              spread: 75,
+              origin: { y: 0.35 }
+            });
+          }
+
+          prevPresentRollsRef.current = currentPresentRolls;
+          setRoster(rData.roster);
+        }
+      } catch (err) {
+        if (isCancelled) return;
+        console.error('Error fetching roster:', err);
+      }
+    };
+
+    // Initial immediate fetch
+    fetchQR();
+    fetchLiveStatus();
+    fetchRoster();
+
+    // Regular 2000ms polling while lecture is active
+    timer = setInterval(() => {
       fetchQR();
       fetchLiveStatus();
       fetchRoster();
-      timer = setInterval(() => {
-        fetchQR();
-        fetchLiveStatus();
-        fetchRoster();
-      }, 2000);
-    } else {
-      setRoster([]);
-    }
-    return () => clearInterval(timer);
-  }, [activeSession?.session_id]);
+    }, 2000);
+
+    return () => {
+      isCancelled = true;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+  }, [isSessionActive, activeSession?.session_id, portalTab]);
 
   // Handle Faculty Manual Override (Phone Dead / Malfunction)
   const handleManualOverride = async (rollNo, studentName) => {
@@ -662,7 +740,7 @@ export default function FacultyPortal({ user }) {
         >
           <Activity className="w-3.5 h-3.5" />
           <span>Live Attendance & Console</span>
-          {activeSession && (
+          {isSessionActive && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-400 text-slate-950 font-black animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-950"></span>
               ACTIVE
@@ -733,7 +811,7 @@ export default function FacultyPortal({ user }) {
           <select
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            disabled={Boolean(activeSession)}
+            disabled={isSessionActive}
             className="bg-slate-900 border border-slate-700 text-xs text-white rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-brand-500 disabled:opacity-60"
           >
             <option value="CS301 - Operating Systems">CS301 - Operating Systems</option>
@@ -741,7 +819,7 @@ export default function FacultyPortal({ user }) {
             <option value="CS305 - Database Systems">CS305 - Database Systems</option>
           </select>
 
-          {!activeSession ? (
+          {!isSessionActive ? (
             <button
               onClick={handleStartSession}
               disabled={starting}
@@ -819,7 +897,19 @@ export default function FacultyPortal({ user }) {
             <Clock className="w-3.5 h-3.5 text-brand-400" /> Rotating Token
           </div>
 
-          {activeSession && qrData ? (
+          {isSessionActive && qrData && (
+            <button
+              type="button"
+              onClick={() => setQrProjectorOpen(true)}
+              title="Open Fullscreen Projector View"
+              className="absolute top-2.5 right-3 p-1.5 rounded-lg bg-slate-900/90 border border-slate-700 hover:border-brand-500 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-[11px] font-semibold shadow-sm"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-brand-400" />
+              <span className="hidden sm:inline">Projector View</span>
+            </button>
+          )}
+
+          {isSessionActive && qrData ? (
             <div className="space-y-4 pt-4 w-full flex flex-col items-center">
               {/* QR Code Container */}
               <div className="p-4 rounded-2xl bg-white shadow-2xl shadow-brand-500/10 border-4 border-slate-800">
@@ -1103,7 +1193,7 @@ export default function FacultyPortal({ user }) {
                   <div className="py-12 text-center text-slate-500 space-y-2">
                     <Users className="w-10 h-10 mx-auto text-slate-600 stroke-1" />
                     <p className="text-xs font-medium">
-                      {activeSession
+                      {isSessionActive
                         ? 'No students found matching current filter.'
                         : 'Start a lecture session to load enrolled students onto the Live Wall.'}
                     </p>
@@ -1759,6 +1849,67 @@ export default function FacultyPortal({ user }) {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated High-Contrast Fullscreen Projector Modal for Lecture Halls */}
+      {qrProjectorOpen && qrData && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="max-w-2xl w-full flex flex-col items-center text-center space-y-6">
+            <div className="flex items-center justify-between w-full border-b border-slate-800 pb-4">
+              <div className="text-left">
+                <h2 className="text-xl font-black text-white tracking-wide">
+                  {subject || 'Live Lecture Session'}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Scan using SmartAttend-AI PWA on mobile &bull; Session {activeSession?.session_id || 'Active'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrProjectorOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              >
+                <Minimize2 className="w-4 h-4" />
+                <span>Exit Projector</span>
+              </button>
+            </div>
+
+            {/* Giant QR Code Display */}
+            <div className="p-6 sm:p-8 rounded-3xl bg-white shadow-2xl shadow-indigo-500/20 border-8 border-slate-800">
+              <QRCodeSVG
+                value={qrData.qr_token}
+                size={340}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+
+            {/* Live Progress Bar and Timer */}
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex items-center justify-between text-sm font-bold">
+                <span className="text-slate-400">Next Cryptographic Refresh:</span>
+                <span className="text-indigo-400 font-mono text-lg">{qrData.expires_in_seconds}s</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 via-brand-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
+                  style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Attendance count */}
+            <div className="flex items-center gap-3 text-xs font-semibold text-slate-300">
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                Present: {liveData?.counters?.present_count ?? 0} Students
+              </span>
+              <span className="text-slate-500">&bull;</span>
+              <span className="text-slate-400 font-mono text-[11px] truncate max-w-xs">
+                Token: {qrData.qr_token.slice(0, 24)}...
+              </span>
+            </div>
           </div>
         </div>
       )}

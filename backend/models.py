@@ -164,6 +164,7 @@ class AttendanceRecord(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="PRESENT")  # 'PRESENT', 'ABSENT', 'PENDING_APPROVAL', 'REJECTED'
     liveness_status: Mapped[str] = mapped_column(String(32), default="NOT_CHECKED", nullable=False)
+    challenge_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     marked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -192,6 +193,7 @@ class AttendanceRecord(Base):
             "face_match_score": self.face_match_score,
             "face_status": self.face_status,
             "liveness_status": self.liveness_status,
+            "challenge_id": self.challenge_id,
             "is_exception_mode": self.is_exception_mode,
             "is_manual_override": self.is_manual_override,
             "manual_by": self.manual_by,
@@ -502,5 +504,39 @@ class TimetableEntry(Base):
         }
 
 
+# ==============================================================================
+# 12. Server-Issued Liveness Challenges (Phase 4B Single-Use Replay Protection)
+# ==============================================================================
+class LivenessChallenge(Base):
+    __tablename__ = "liveness_challenges"
 
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    challenge_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("lecture_sessions.session_id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_consumed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
+    __table_args__ = (
+        Index("idx_challenge_lookup", "challenge_id", "roll_no", "session_id", "is_consumed"),
+        Index("idx_challenge_expiry", "expires_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "challenge_id": self.challenge_id,
+            "session_id": self.session_id,
+            "roll_no": self.roll_no,
+            "is_consumed": self.is_consumed,
+            "consumed_at": self.consumed_at.isoformat() if self.consumed_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
