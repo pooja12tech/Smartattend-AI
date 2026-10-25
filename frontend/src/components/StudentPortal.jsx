@@ -11,7 +11,7 @@ import { api, getDeviceId } from '../api';
 import BunkSimulator from './BunkSimulator';
 import StudentTimetable from './StudentTimetable';
 import StudentNotificationCenter from './StudentNotificationCenter';
-import { getFaceLandmarker, analyzeFaceFrame } from '../utils/faceLiveness';
+import { getFaceLandmarker, analyzeFaceFrame, createBlinkStateMachine, DEFAULT_LIVENESS_CONFIG } from '../utils/faceLiveness';
 
 export default function StudentPortal({ user }) {
   const [dashboard, setDashboard] = useState(null);
@@ -40,7 +40,7 @@ export default function StudentPortal({ user }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [blinkStatus, setBlinkStatus] = useState('NO_FACE'); // 'INIT' | 'NO_FACE' | 'MULTIPLE_FACES' | 'ALIGNING' | 'WAITING_BLINK' | 'BLINKING' | 'BLINK_DETECTED'
+  const [blinkStatus, setBlinkStatus] = useState('NO_FACE'); // 'INIT' | 'NO_FACE' | 'MULTIPLE_FACES' | 'ALIGNING' | 'WAITING_BLINK' | 'BLINKING' | 'BLINK_DETECTED' | 'CAPTURING'
   const [facePromptMessage, setFacePromptMessage] = useState('Position your face inside the camera frame');
   const [blinkFlash, setBlinkFlash] = useState(false);
   const [eyeClosingFeedback, setEyeClosingFeedback] = useState(false);
@@ -52,6 +52,7 @@ export default function StudentPortal({ user }) {
   const isStartingFrontCameraRef = useRef(false);
   const frontCameraTimeoutRef = useRef(null);
   const captureTriggeredRef = useRef(false);
+  const captureTimerRef = useRef(null);
   const diagnosticsRef = useRef({
     leftEAR: 0,
     rightEAR: 0,
@@ -235,6 +236,11 @@ export default function StudentPortal({ user }) {
       frontCameraTimeoutRef.current = null;
     }
 
+    if (captureTimerRef.current) {
+      clearTimeout(captureTimerRef.current);
+      captureTimerRef.current = null;
+    }
+
     if (blinkAnalysisRef.current) {
       if (typeof blinkAnalysisRef.current === 'number') {
         cancelAnimationFrame(blinkAnalysisRef.current);
@@ -273,6 +279,11 @@ export default function StudentPortal({ user }) {
     if (frontCameraTimeoutRef.current) {
       clearTimeout(frontCameraTimeoutRef.current);
       frontCameraTimeoutRef.current = null;
+    }
+
+    if (captureTimerRef.current) {
+      clearTimeout(captureTimerRef.current);
+      captureTimerRef.current = null;
     }
 
     await stopQRScanner();
@@ -544,6 +555,13 @@ export default function StudentPortal({ user }) {
 
     // Unique attempt ID for attempt-scoped cancellation
     const currentAttempt = ++attemptIdRef.current;
+    captureTriggeredRef.current = false;
+
+    // Clean up any pending capture timers
+    if (captureTimerRef.current) {
+      clearTimeout(captureTimerRef.current);
+      captureTimerRef.current = null;
+    }
 
     // Explicitly clean up any previous animation frame loops and streams before starting fresh
     if (blinkAnalysisRef.current) {
@@ -571,7 +589,7 @@ export default function StudentPortal({ user }) {
 
     setCameraError(null);
     setBlinkStatus('INIT');
-    setFacePromptMessage('Starting AI face & eye-blink detector...');
+    setFacePromptMessage('Initializing camera & AI face detector...');
     setBlinkFlash(false);
     setEyeClosingFeedback(false);
 
@@ -619,7 +637,6 @@ export default function StudentPortal({ user }) {
           landmarkerRef.current = landmarker;
         } catch (mErr) {
           console.error('MediaPipe initialization failure:', mErr);
-          // Explicitly clean up resources and show useful error instead of running endless loop
           stream.getTracks().forEach(t => t.stop());
           activeStreamRef.current = null;
           if (videoRef.current) videoRef.current.srcObject = null;
@@ -649,264 +666,143 @@ export default function StudentPortal({ user }) {
       // Camera stream and landmarker are fully ready
       isStartingFrontCameraRef.current = false;
 
-      // Deterministic Blink State Machine:
-      // 'WAITING_OPEN' -> User must establish consecutive valid open-eye frames
-      // 'READY'        -> Baseline established, ready for bilateral closure
-      // 'CLOSING'      -> Valid bilateral closure in progress (tracking duration and frames)
-      // 'REOPENING'    -> Closure ended within valid human blink bounds, waiting for consecutive open frames
-      // 'CONFIRMED'    -> Reopening confirmed; capture executed synchronously from fresh frame
-      let machineState = 'WAITING_OPEN';
-      let steadyOpenFrames = 0;
-      let eyesClosedFrames = 0;
-      let reopenedFrames = 0;
-      let blinkStartTime = null;
-      let faceSteadyFrames = 0;
+      // Create deterministic blink state machine
+      const machine = createBlinkStateMachine({
+        autoCaptureDelayMs: 400
+      });
+
+      let isFrameProcessing = false;
       let lastVideoTime = -1;
       let lastFrameTime = -1;
-      let baselineEAR = 0.28;
+      const blinkConfirmedTime = { current: 0 };
 
       const triggerVerifiedCapture = () => {
         if (captureTriggeredRef.current || attemptIdRef.current !== currentAttempt) return;
         captureTriggeredRef.current = true;
+        blinkConfirmedTime.current = performance.now();
 
+        // 1. Immediate visual confirmation (Blink detected + shutter flash)
         setBlinkStatus('BLINK_DETECTED');
-        setFacePromptMessage('✨ Blink Verified! Auto-capturing live photo now...');
+        setFacePromptMessage('✨ Blink detected! Capturing selfie...');
         setBlinkFlash(true);
 
+        // Stop continuous frame analysis loop so no subsequent state transitions occur
         if (blinkAnalysisRef.current) {
-          cancelAnimationFrame(blinkAnalysisRef.current);
+          if (typeof blinkAnalysisRef.current === 'number') {
+            cancelAnimationFrame(blinkAnalysisRef.current);
+          } else {
+            clearInterval(blinkAnalysisRef.current);
+          }
           blinkAnalysisRef.current = null;
         }
 
-        // Synchronous capture right from this verified, open-eyed frame! No blind 90ms timeout!
-        captureSelfieAndProceed(tokenOverride, sessionOverride);
+        // 2. Smooth visual transition: flash settles, state shows CAPTURING
+        captureTimerRef.current = setTimeout(() => {
+          if (attemptIdRef.current !== currentAttempt) return;
+          setBlinkFlash(false);
+          setBlinkStatus('CAPTURING');
+          setFacePromptMessage('📸 Capturing selfie...');
+
+          // 3. Fast automatic selfie capture at ~400ms (within 300-700ms window)
+          // Allows user eyes to comfortably reopen, ensuring a high-quality face photo
+          captureTimerRef.current = setTimeout(() => {
+            captureTimerRef.current = null;
+            if (attemptIdRef.current !== currentAttempt) return;
+            const captureLatency = Math.round(performance.now() - blinkConfirmedTime.current);
+            diagnosticsRef.current.captureLatencyMs = captureLatency;
+            captureSelfieAndProceed(tokenOverride, sessionOverride);
+          }, 200);
+        }, 200);
       };
 
       const processFrame = () => {
         if (captureTriggeredRef.current || attemptIdRef.current !== currentAttempt) return;
         const video = videoRef.current;
-        if (!video || video.readyState < 2) {
+        if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
           blinkAnalysisRef.current = requestAnimationFrame(processFrame);
           return;
         }
 
-        if (video.currentTime !== lastVideoTime) {
-          lastVideoTime = video.currentTime;
-          const now = performance.now();
-
-          // Dropped frames / tab inactive check: gap > 600ms resets blink candidate
-          if (lastFrameTime > 0 && (now - lastFrameTime) > 600) {
-            machineState = 'WAITING_OPEN';
-            steadyOpenFrames = 0;
-            eyesClosedFrames = 0;
-            reopenedFrames = 0;
-            blinkStartTime = null;
-            diagnosticsRef.current.rejectionReason = 'STALE_FRAME_GAP';
-          }
-          lastFrameTime = now;
-
-          if (landmarker) {
-            try {
-              const analysis = analyzeFaceFrame(landmarker, video, now, baselineEAR);
-
-              // Update diagnostics for development and test assertions
-              diagnosticsRef.current = {
-                leftEAR: analysis.leftEAR || 0,
-                rightEAR: analysis.rightEAR || 0,
-                avgEAR: analysis.ear || 0,
-                earClosedThreshold: analysis.earClosedThreshold || 0,
-                earOpenThreshold: analysis.earOpenThreshold || 0,
-                blinkScoreLeft: analysis.blinkScoreLeft || 0,
-                blinkScoreRight: analysis.blinkScoreRight || 0,
-                hasBlendshapes: Boolean(analysis.hasBlendshapes),
-                machineState,
-                steadyOpenFrames,
-                eyesClosedFrames,
-                reopenedFrames,
-                closureDurationMs: blinkStartTime ? Math.round(now - blinkStartTime) : 0,
-                isCentered: Boolean(analysis.isCentered),
-                isEyesClosed: Boolean(analysis.isEyesClosed),
-                isEyesOpen: Boolean(analysis.isEyesOpen),
-                isAmbiguous: Boolean(analysis.isAmbiguous),
-                rejectionReason: diagnosticsRef.current.rejectionReason,
-                transitionReason: diagnosticsRef.current.transitionReason,
-                captureTriggered: captureTriggeredRef.current,
-                captureOutcome: diagnosticsRef.current.captureOutcome
-              };
-
-              if (typeof window !== 'undefined') {
-                window.__SMARTATTEND_DIAGNOSTICS__ = diagnosticsRef.current;
-              }
-
-              // 1. Revalidate Face Presence and Alignment on Every Frame
-              if (!analysis.faceCount || analysis.faceCount === 0) {
-                machineState = 'WAITING_OPEN';
-                faceSteadyFrames = 0;
-                eyesClosedFrames = 0;
-                steadyOpenFrames = 0;
-                reopenedFrames = 0;
-                blinkStartTime = null;
-                setBlinkStatus('NO_FACE');
-                setFacePromptMessage('Looking for your face... Please face the camera.');
-                setEyeClosingFeedback(false);
-                diagnosticsRef.current.rejectionReason = 'NO_FACE';
-              } else if (analysis.faceCount > 1) {
-                machineState = 'WAITING_OPEN';
-                faceSteadyFrames = 0;
-                eyesClosedFrames = 0;
-                steadyOpenFrames = 0;
-                reopenedFrames = 0;
-                blinkStartTime = null;
-                setBlinkStatus('MULTIPLE_FACES');
-                setFacePromptMessage(`Multiple faces detected (${analysis.faceCount}). Only 1 student permitted.`);
-                setEyeClosingFeedback(false);
-                diagnosticsRef.current.rejectionReason = 'MULTIPLE_FACES';
-              } else if (!analysis.isCentered) {
-                // Off-center, too far, or too close resets candidate sequence
-                machineState = 'WAITING_OPEN';
-                steadyOpenFrames = 0;
-                eyesClosedFrames = 0;
-                reopenedFrames = 0;
-                blinkStartTime = null;
-                setBlinkStatus('ALIGNING');
-                setFacePromptMessage(analysis.message);
-                setEyeClosingFeedback(false);
-                diagnosticsRef.current.rejectionReason = 'OFF_CENTER';
-              } else {
-                // Exactly 1 centered human face verified!
-                faceSteadyFrames++;
-
-                // Adapt running baseline only during clear open-eye frames
-                if (analysis.isEyesOpen && analysis.ear > 0.18) {
-                  baselineEAR = baselineEAR * 0.90 + analysis.ear * 0.10;
-                  baselineEAR = Math.max(0.18, Math.min(0.42, baselineEAR));
-                }
-
-                // Deterministic Blink State Machine
-                switch (machineState) {
-                  case 'WAITING_OPEN':
-                    if (analysis.isEyesOpen) {
-                      steadyOpenFrames++;
-                      if (steadyOpenFrames >= 4) {
-                        machineState = 'READY';
-                        setBlinkStatus('WAITING_BLINK');
-                        setFacePromptMessage('Face centered! Blink both eyes naturally 😉');
-                        diagnosticsRef.current.transitionReason = 'STEADY_OPEN_ACHIEVED';
-                      }
-                    } else {
-                      // Ambiguous or closed: do not increment steady open
-                      steadyOpenFrames = 0;
-                    }
-                    break;
-
-                  case 'READY':
-                    if (analysis.isEyesOpen) {
-                      steadyOpenFrames++;
-                      // Remain ready
-                    } else if (analysis.isEyesClosed) {
-                      // Candidate bilateral closure initiated
-                      machineState = 'CLOSING';
-                      blinkStartTime = now;
-                      eyesClosedFrames = 1;
-                      setBlinkStatus('BLINKING');
-                      setEyeClosingFeedback(true);
-                      setFacePromptMessage('Blink detected! Open eyes to capture 📸');
-                      diagnosticsRef.current.transitionReason = 'BILATERAL_CLOSURE_START';
-                    }
-                    // If ambiguous: do not change state, keep waiting
-                    break;
-
-                  case 'CLOSING':
-                    if (analysis.isEyesClosed) {
-                      eyesClosedFrames++;
-                      const duration = now - blinkStartTime;
-                      if (duration > 650) {
-                        // Closure was too long (sleeping, deliberate squint, photo proxy)
-                        machineState = 'WAITING_OPEN';
-                        eyesClosedFrames = 0;
-                        blinkStartTime = null;
-                        steadyOpenFrames = 0;
-                        setEyeClosingFeedback(false);
-                        setBlinkStatus('WAITING_BLINK');
-                        setFacePromptMessage('Blink was too long. Please blink naturally 😉');
-                        diagnosticsRef.current.rejectionReason = 'CLOSURE_TOO_LONG (>650ms)';
-                      }
-                    } else {
-                      // Eyes have started opening (either isEyesOpen or ambiguous)
-                      const closedDurationMs = now - blinkStartTime;
-                      // Valid human closure candidate:
-                      // Duration between 100ms and 550ms with at least 2 consecutive closed frames
-                      if (closedDurationMs >= 100 && closedDurationMs <= 550 && eyesClosedFrames >= 2) {
-                        machineState = 'REOPENING';
-                        reopenedFrames = analysis.isEyesOpen ? 1 : 0;
-                        diagnosticsRef.current.closureDurationMs = closedDurationMs;
-                        diagnosticsRef.current.transitionReason = 'VALID_CLOSURE_AWAITING_REOPEN';
-                      } else {
-                        // Flicker / single-frame glitch (< 100ms or 1 frame)
-                        machineState = 'WAITING_OPEN';
-                        eyesClosedFrames = 0;
-                        blinkStartTime = null;
-                        steadyOpenFrames = 0;
-                        setEyeClosingFeedback(false);
-                        setBlinkStatus('WAITING_BLINK');
-                        const reason = closedDurationMs < 100 ? 'Camera flicker filtered. Please blink naturally 😉' : 'Blink was too brief. Please blink naturally 😉';
-                        setFacePromptMessage(reason);
-                        diagnosticsRef.current.rejectionReason = closedDurationMs < 100 ? 'CAMERA_FLICKER_FILTERED' : 'CLOSURE_TOO_BRIEF';
-                      }
-                    }
-                    break;
-
-                  case 'REOPENING':
-                    if (analysis.isEyesOpen) {
-                      reopenedFrames++;
-                      // Explicit confirmation that both eyes reopened across consecutive valid frames
-                      if (reopenedFrames >= 2) {
-                        machineState = 'CONFIRMED';
-                        setEyeClosingFeedback(false);
-                        diagnosticsRef.current.transitionReason = 'REOPEN_CONFIRMED_CAPTURING';
-
-                        // Synchronous capture directly from this fresh, confirmed open-eyed frame
-                        triggerVerifiedCapture();
-                        return;
-                      }
-                    } else if (analysis.isEyesClosed) {
-                      // Eyes immediately closed again (flutter / rapid squint)
-                      machineState = 'WAITING_OPEN';
-                      eyesClosedFrames = 0;
-                      blinkStartTime = null;
-                      reopenedFrames = 0;
-                      steadyOpenFrames = 0;
-                      setEyeClosingFeedback(false);
-                      setBlinkStatus('WAITING_BLINK');
-                      diagnosticsRef.current.rejectionReason = 'EYES_RECLOSED_DURING_REOPEN';
-                    } else {
-                      // Ambiguous in-between state: do not count as reopened!
-                      // If stuck in ambiguous state for > 500ms after closing, reset:
-                      if (now - blinkStartTime > 900) {
-                        machineState = 'WAITING_OPEN';
-                        eyesClosedFrames = 0;
-                        blinkStartTime = null;
-                        reopenedFrames = 0;
-                        steadyOpenFrames = 0;
-                        setEyeClosingFeedback(false);
-                        setBlinkStatus('WAITING_BLINK');
-                        diagnosticsRef.current.rejectionReason = 'AMBIGUOUS_REOPEN_TIMEOUT';
-                      }
-                    }
-                    break;
-
-                  default:
-                    machineState = 'WAITING_OPEN';
-                    break;
-                }
-              }
-            } catch (frameErr) {
-              console.warn('Frame processing note:', frameErr);
-            }
-          }
+        // Concurrency guard: Ensure only one frame-processing operation runs at a time
+        if (isFrameProcessing) {
+          blinkAnalysisRef.current = requestAnimationFrame(processFrame);
+          return;
         }
 
-        blinkAnalysisRef.current = requestAnimationFrame(processFrame);
+        const now = performance.now();
+
+        // Avoid re-processing unchanged video frames
+        if (video.currentTime > 0 && video.currentTime === lastVideoTime) {
+          blinkAnalysisRef.current = requestAnimationFrame(processFrame);
+          return;
+        }
+        lastVideoTime = video.currentTime;
+
+        // Dropped frames / tab inactive check: gap > 700ms resets blink candidate
+        if (lastFrameTime > 0 && (now - lastFrameTime) > 700) {
+          machine.reset();
+        }
+        lastFrameTime = now;
+
+        isFrameProcessing = true;
+        const frameStart = performance.now();
+
+        try {
+          const analysis = analyzeFaceFrame(landmarker, video, now, machine.getBaselineEAR());
+          const result = machine.processFrame(analysis, now);
+          const machineState = machine.getState();
+
+          // Reflect UI states and messages
+          setBlinkStatus(result.status);
+          setFacePromptMessage(result.prompt);
+          setEyeClosingFeedback(Boolean(result.eyeClosing));
+
+          // Update diagnostics for development and test assertion
+          diagnosticsRef.current = {
+            leftEAR: Math.round((analysis.leftEAR || 0) * 1000) / 1000,
+            rightEAR: Math.round((analysis.rightEAR || 0) * 1000) / 1000,
+            avgEAR: Math.round((analysis.ear || 0) * 1000) / 1000,
+            baselineEAR: Math.round(machine.getBaselineEAR() * 1000) / 1000,
+            earClosedThreshold: Math.round((analysis.earClosedThreshold || 0) * 1000) / 1000,
+            earOpenThreshold: Math.round((analysis.earOpenThreshold || 0) * 1000) / 1000,
+            blinkScoreLeft: Math.round((analysis.blinkScoreLeft || 0) * 100) / 100,
+            blinkScoreRight: Math.round((analysis.blinkScoreRight || 0) * 100) / 100,
+            hasBlendshapes: Boolean(analysis.hasBlendshapes),
+            machineState: machineState.state,
+            steadyOpenFrames: machineState.steadyOpenFrames,
+            eyesClosedFrames: machineState.eyesClosedFrames,
+            reopenedFrames: machineState.reopenedFrames,
+            frameDurationMs: Math.round(performance.now() - frameStart),
+            closureDurationMs: machineState.lastClosureDurationMs,
+            isCentered: Boolean(analysis.isCentered),
+            isEyesClosed: Boolean(analysis.isEyesClosed),
+            isEyesOpen: Boolean(analysis.isEyesOpen),
+            isAmbiguous: Boolean(analysis.isAmbiguous),
+            rejectionReason: machineState.rejectionReason,
+            transitionReason: machineState.transitionReason,
+            captureTriggered: captureTriggeredRef.current,
+            captureOutcome: diagnosticsRef.current.captureOutcome
+          };
+
+          if (typeof window !== 'undefined') {
+            window.__SMARTATTEND_DIAGNOSTICS__ = diagnosticsRef.current;
+          }
+
+          if (result.captured) {
+            triggerVerifiedCapture();
+            return;
+          }
+        } catch (frameErr) {
+          if (import.meta.env.DEV) {
+            console.warn('Frame processing note:', frameErr);
+          }
+        } finally {
+          isFrameProcessing = false;
+        }
+
+        if (!captureTriggeredRef.current && attemptIdRef.current === currentAttempt) {
+          blinkAnalysisRef.current = requestAnimationFrame(processFrame);
+        }
       };
 
       blinkAnalysisRef.current = requestAnimationFrame(processFrame);
@@ -922,9 +818,11 @@ export default function StudentPortal({ user }) {
       let errorMsg = 'Failed to access front camera.';
       const msg = err?.message || String(err);
       if (msg.includes('NotAllowedError') || msg.includes('Permission') || msg.includes('denied')) {
-        errorMsg = 'Front camera permission denied. Please allow camera access.';
+        errorMsg = 'Front camera permission denied. Please allow camera access in browser settings.';
       } else if (msg.includes('NotFoundError')) {
         errorMsg = 'No front camera found on this device.';
+      } else if (msg.includes('NotReadableError') || msg.includes('TrackStartError')) {
+        errorMsg = 'Camera is in use by another application. Please close other camera tabs.';
       } else {
         errorMsg = `Front camera error: ${msg}`;
       }
@@ -946,6 +844,11 @@ export default function StudentPortal({ user }) {
 
   // Capture selfie frame onto canvas and transition to Step 3
   const captureSelfieAndProceed = (tokenOverride, sessionOverride) => {
+    if (captureTimerRef.current) {
+      clearTimeout(captureTimerRef.current);
+      captureTimerRef.current = null;
+    }
+
     if (blinkAnalysisRef.current) {
       if (typeof blinkAnalysisRef.current === 'number') {
         cancelAnimationFrame(blinkAnalysisRef.current);
@@ -957,8 +860,8 @@ export default function StudentPortal({ user }) {
 
     try {
       let capturedBase64 = null;
-      if (videoRef.current && videoRef.current.srcObject) {
-        const video = videoRef.current;
+      const video = videoRef.current;
+      if (video && video.srcObject && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         const canvas = document.createElement('canvas');
         canvas.width = 480;
         canvas.height = 480;
@@ -983,7 +886,7 @@ export default function StudentPortal({ user }) {
             stream.getTracks().forEach(track => track.stop());
           } catch (e) {}
         }
-        videoRef.current.srcObject = null;
+        video.srcObject = null;
         setCameraActive(false);
       } else if (import.meta.env.VITE_DEMO_MODE === 'true') {
         capturedBase64 = generateSyntheticSelfie(simFaceMismatch ? '#ef4444' : '#6366f1');
@@ -1937,7 +1840,7 @@ export default function StudentPortal({ user }) {
 
                   {/* Circular / Oval Face Alignment Guide */}
                   <div className={`absolute inset-4 rounded-full border-2 pointer-events-none transition-all duration-300 ${
-                    blinkStatus === 'BLINK_DETECTED'
+                    blinkStatus === 'BLINK_DETECTED' || blinkStatus === 'CAPTURING'
                       ? 'border-emerald-400 scale-105 shadow-[0_0_30px_rgba(52,211,153,0.9)]'
                       : blinkStatus === 'BLINKING'
                       ? 'border-emerald-400 border-dashed animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.6)]'
@@ -1961,6 +1864,8 @@ export default function StudentPortal({ user }) {
                   <div className={`px-4 py-1.5 rounded-full backdrop-blur-md border text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
                     blinkStatus === 'BLINK_DETECTED'
                       ? 'bg-emerald-500/95 border-emerald-400 text-white animate-bounce'
+                      : blinkStatus === 'CAPTURING'
+                      ? 'bg-emerald-600 border-emerald-400 text-white animate-pulse'
                       : blinkStatus === 'BLINKING'
                       ? 'bg-emerald-600/90 border-emerald-400 text-white animate-pulse'
                       : blinkStatus === 'WAITING_BLINK'
@@ -1974,13 +1879,13 @@ export default function StudentPortal({ user }) {
                     {blinkStatus === 'INIT' && (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                        <span>Initializing AI Liveness...</span>
+                        <span>Initializing AI Camera...</span>
                       </>
                     )}
                     {blinkStatus === 'NO_FACE' && (
                       <>
                         <User className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Looking for Face</span>
+                        <span>Position Your Face</span>
                       </>
                     )}
                     {blinkStatus === 'MULTIPLE_FACES' && (
@@ -1998,7 +1903,7 @@ export default function StudentPortal({ user }) {
                     {blinkStatus === 'WAITING_BLINK' && (
                       <>
                         <span className="text-base">😉</span>
-                        <span>Blink Eyes to Auto-Snap!</span>
+                        <span>Blink Once Naturally</span>
                       </>
                     )}
                     {blinkStatus === 'BLINKING' && (
@@ -2009,8 +1914,14 @@ export default function StudentPortal({ user }) {
                     )}
                     {blinkStatus === 'BLINK_DETECTED' && (
                       <>
-                        <Camera className="w-3.5 h-3.5 text-white" />
+                        <Sparkles className="w-3.5 h-3.5 text-white animate-spin" />
                         <span>Blink Verified! Capturing...</span>
+                      </>
+                    )}
+                    {blinkStatus === 'CAPTURING' && (
+                      <>
+                        <Camera className="w-3.5 h-3.5 text-white animate-pulse" />
+                        <span>Capturing Selfie...</span>
                       </>
                     )}
                   </div>
@@ -2019,13 +1930,29 @@ export default function StudentPortal({ user }) {
                 {cameraError && (
                   <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2.5">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                    <div>
+                    <div className="flex-1 space-y-2">
                       <p className="font-semibold">{cameraError}</p>
+                      <button
+                        type="button"
+                        onClick={() => startFrontCameraWithBlinkDetection(scannedToken, sessionId)}
+                        className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition inline-flex items-center gap-1.5 shadow"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Retry Camera
+                      </button>
                     </div>
                   </div>
                 )}
 
                 <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => startFrontCameraWithBlinkDetection(scannedToken, sessionId)}
+                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition flex items-center justify-center gap-1.5 border border-slate-700 active:scale-95"
+                    title="Restart camera stream and blink detector"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Retry Camera</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => captureSelfieAndProceed(scannedToken, sessionId)}
