@@ -9,6 +9,8 @@ import PwaUpdateToast from './components/PwaUpdateToast';
 import IosInstallBanner from './components/IosInstallBanner';
 import { api, getDeviceId } from './api';
 
+import { getCleanPath, replacePath, parsePath } from './router';
+
 // Feature flag for new desktop experience (1-line toggle to revert)
 export const USE_NEW_DESKTOP_LAYOUT = true;
 
@@ -42,14 +44,13 @@ export default function App() {
     setCurrentUser(user);
     localStorage.setItem('smartattend_current_user', JSON.stringify(user));
 
-    // Preserve bookmarkable hash URL if it matches user's role, otherwise route to role default
-    const hash = window.location.hash || '';
-    const role = user?.role;
-    const expectedPrefix = `#/${role}/`;
-    if (!hash.startsWith(expectedPrefix)) {
-      if (role === 'admin') window.location.hash = '#/admin/overview';
-      else if (role === 'faculty') window.location.hash = '#/faculty/home';
-      else if (role === 'student') window.location.hash = '#/student/home';
+    // Preserve bookmarkable clean path if it matches user's role, otherwise route to role default
+    const { role: pathRole } = parsePath();
+    const userRole = user?.role;
+    if (pathRole !== userRole) {
+      if (userRole === 'admin') replacePath('/admin/overview');
+      else if (userRole === 'faculty') replacePath('/faculty/home');
+      else if (userRole === 'student') replacePath('/student/home');
     }
   };
 
@@ -57,23 +58,22 @@ export default function App() {
     api.logout();
     setCurrentUser(null);
     localStorage.removeItem('smartattend_current_user');
-    window.location.hash = '#/login';
+    replacePath('/login');
   };
 
-  // Synchronize top-level hash with user session on mount
+  // Synchronize clean URL path with user session on mount
   useEffect(() => {
-    const hash = window.location.hash || '';
+    const { fullPath, role: pathRole } = parsePath();
     if (!currentUser) {
-      if (!hash || hash === '#/') {
-        window.location.hash = '#/login';
+      if (!fullPath || fullPath === '/' || fullPath.startsWith('/student') || fullPath.startsWith('/faculty') || fullPath.startsWith('/admin')) {
+        replacePath('/login');
       }
     } else {
-      const role = currentUser.role;
-      const expectedPrefix = `#/${role}`;
-      if (!hash || hash === '#/' || hash === '#/login' || !hash.startsWith(expectedPrefix)) {
-        if (role === 'admin') window.location.hash = '#/admin/overview';
-        else if (role === 'faculty') window.location.hash = '#/faculty/home';
-        else if (role === 'student') window.location.hash = '#/student/home';
+      const userRole = currentUser.role;
+      if (!fullPath || fullPath === '/' || fullPath === '/login' || pathRole !== userRole) {
+        if (userRole === 'admin') replacePath('/admin/overview');
+        else if (userRole === 'faculty') replacePath('/faculty/home');
+        else if (userRole === 'student') replacePath('/student/home');
       }
     }
   }, [currentUser]);

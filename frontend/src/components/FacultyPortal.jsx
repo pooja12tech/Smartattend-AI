@@ -21,6 +21,7 @@ import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 import { USE_NEW_DESKTOP_LAYOUT } from '../App';
 import DesktopLayout from '../desktop/DesktopLayout';
 import DesktopFacultyHome from '../desktop/faculty/DesktopFacultyHome';
+import { navigateToPath, parsePath } from '../router';
 
 export default function FacultyPortal({ user, onLogout }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
@@ -64,13 +65,11 @@ export default function FacultyPortal({ user, onLogout }) {
 
   // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'profile')
   const getInitialFacultyTab = () => {
-    if (typeof window === 'undefined') return 'home';
-    const hash = window.location.hash || '';
-    const match = hash.match(/^#\/faculty(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
-    if (match && match[1]) {
-      const tab = match[1].toLowerCase();
-      if (['home', 'classes', 'live', 'students', 'reports', 'profile'].includes(tab)) {
-        return tab;
+    const { role, tab } = parsePath();
+    if (role === 'faculty' && tab) {
+      const cleanTab = tab.toLowerCase();
+      if (['home', 'classes', 'live', 'students', 'reports', 'profile'].includes(cleanTab)) {
+        return cleanTab;
       }
     }
     return 'home';
@@ -82,14 +81,14 @@ export default function FacultyPortal({ user, onLogout }) {
     mobileTabRef.current = mobileTab;
   }, [mobileTab]);
 
-  // Synchronize mobileTab with window.location.hash
+  // Synchronize mobileTab with clean URL path on navigation
   useEffect(() => {
-    const handleHash = () => {
+    const handlePopState = () => {
       const tab = getInitialFacultyTab();
       setMobileTab(tab);
     };
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   const [facultyTodaySchedule, setFacultyTodaySchedule] = useState([]);
@@ -124,9 +123,7 @@ export default function FacultyPortal({ user, onLogout }) {
   const navigateToMobileTab = (targetTab) => {
     setSetupSlot(null);
     setMobileTab(targetTab);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#/faculty/${targetTab}`;
-    }
+    navigateToPath(`/faculty/${targetTab}`);
   };
 
   const handleInAppBack = () => {
@@ -1384,9 +1381,7 @@ export default function FacultyPortal({ user, onLogout }) {
               ending={ending}
               onOpenProjector={() => setQrProjectorOpen(true)}
               onViewAllClasses={() => {
-                if (typeof window !== 'undefined') {
-                  window.location.hash = '#/faculty/classes';
-                }
+                navigateToPath('/faculty/classes');
               }}
             />
           </DesktopLayout>

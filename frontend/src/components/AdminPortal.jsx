@@ -298,15 +298,7 @@ export default function AdminPortal({ user, onLogout }) {
     fetchPendingReviews();
   }, []);
 
-  // Initialize PWA root history state so Android hardware back button cannot immediately close the app
-  useEffect(() => {
-    try {
-      if (!window.history.state || !window.history.state.smartattend) {
-        window.history.replaceState({ smartattend: true, role: 'admin', initial: true }, '');
-        window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
-      }
-    } catch {}
-  }, []);
+
 
   // Unified popstate listener handling Android system Back gestures & hardware back buttons
   useEffect(() => {

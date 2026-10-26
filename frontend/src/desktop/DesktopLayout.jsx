@@ -6,6 +6,8 @@ import DesktopFacultyStudents from './faculty/DesktopFacultyStudents';
 import DesktopFacultyReports from './faculty/DesktopFacultyReports';
 import DesktopFacultyProfile from './faculty/DesktopFacultyProfile';
 
+import { navigateToPath, replacePath, parsePath } from '../router';
+
 export default function DesktopLayout({
   user,
   todayFormattedDate,
@@ -17,15 +19,13 @@ export default function DesktopLayout({
   onStartSession,
   children
 }) {
-  // Hash URL Synchronization for bookmarkable desktop URLs (e.g. #/faculty/home, #/faculty/classes)
+  // Clean Path Synchronization for bookmarkable desktop URLs (e.g. /faculty/home, /faculty/classes)
   const getInitialTab = () => {
-    if (typeof window === 'undefined') return 'home';
-    const hash = window.location.hash || '';
-    const match = hash.match(/^#\/faculty(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
-    if (match && match[1]) {
-      const tab = match[1].toLowerCase();
-      if (['home', 'classes', 'students', 'reports', 'profile'].includes(tab)) {
-        return tab;
+    const { role, tab } = parsePath();
+    if (role === 'faculty' && tab) {
+      const cleanTab = tab.toLowerCase();
+      if (['home', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
+        return cleanTab;
       }
     }
     return 'home';
@@ -34,30 +34,26 @@ export default function DesktopLayout({
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Sync hash state with activeTab
+  // Sync path state with activeTab
   const handleTabChange = useCallback((tabId) => {
     setActiveTab(tabId);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#/faculty/${tabId}`;
-    }
+    navigateToPath(`/faculty/${tabId}`);
   }, []);
 
-  // Listen for browser forward/backward hash changes
+  // Listen for browser forward/backward navigation
   useEffect(() => {
-    const handleHashChange = () => {
+    const handlePopState = () => {
       const newTab = getInitialTab();
       setActiveTab(newTab);
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    // Initialize initial hash if empty or pointing outside faculty
-    const hash = window.location.hash || '';
-    if (!hash.startsWith('#/faculty/')) {
-      const tab = getInitialTab();
-      window.location.hash = `#/faculty/${tab}`;
+    window.addEventListener('popstate', handlePopState);
+    const { role, tab } = parsePath();
+    if (role !== 'faculty' || !tab) {
+      replacePath(`/faculty/${getInitialTab()}`);
     }
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   return (

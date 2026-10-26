@@ -8,6 +8,7 @@ import DesktopAdminFaculty from './DesktopAdminFaculty';
 import DesktopAdminSubjects from './DesktopAdminSubjects';
 import DesktopAdminAudit from './DesktopAdminAudit';
 import AdminTimetableManagement from '../../components/AdminTimetableManagement';
+import { navigateToPath, replacePath, parsePath } from '../../router';
 
 export default function DesktopAdminLayout({
   user,
@@ -32,13 +33,11 @@ export default function DesktopAdminLayout({
   onLogout
 }) {
   const getInitialTab = () => {
-    if (typeof window === 'undefined') return 'overview';
-    const hash = window.location.hash || '';
-    const match = hash.match(/^#\/admin(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
-    if (match && match[1]) {
-      const tab = match[1].toLowerCase();
-      if (['overview', 'sessions', 'students', 'faculty', 'subjects', 'timetable', 'audit'].includes(tab)) {
-        return tab;
+    const { role, tab } = parsePath();
+    if (role === 'admin' && tab) {
+      const cleanTab = tab.toLowerCase();
+      if (['overview', 'sessions', 'students', 'faculty', 'subjects', 'timetable', 'audit'].includes(cleanTab)) {
+        return cleanTab;
       }
     }
     return 'overview';
@@ -49,25 +48,22 @@ export default function DesktopAdminLayout({
 
   const handleTabChange = useCallback((tabId) => {
     setActiveTab(tabId);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#/admin/${tabId}`;
-    }
+    navigateToPath(`/admin/${tabId}`);
   }, []);
 
   useEffect(() => {
-    const handleHashChange = () => {
+    const handlePopState = () => {
       const newTab = getInitialTab();
       setActiveTab(newTab);
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    const hash = window.location.hash || '';
-    if (!hash.startsWith('#/admin/')) {
-      const tab = getInitialTab();
-      window.location.hash = `#/admin/${tab}`;
+    window.addEventListener('popstate', handlePopState);
+    const { role, tab } = parsePath();
+    if (role !== 'admin' || !tab) {
+      replacePath(`/admin/${getInitialTab()}`);
     }
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   const activeSessionsCount = (overview?.sessions || []).filter(s => s.status === 'ACTIVE').length;

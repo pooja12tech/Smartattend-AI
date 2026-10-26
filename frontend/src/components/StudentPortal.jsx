@@ -33,6 +33,7 @@ import DesktopStudentClasses from '../desktop/student/DesktopStudentClasses';
 import DesktopStudentAttendance from '../desktop/student/DesktopStudentAttendance';
 import DesktopStudentHistory from '../desktop/student/DesktopStudentHistory';
 import DesktopStudentProfile from '../desktop/student/DesktopStudentProfile';
+import { navigateToPath, replacePath, parsePath } from '../router';
 
 export default function StudentPortal({ user, onLogout }) {
   const [dashboard, setDashboard] = useState(null);
@@ -43,11 +44,9 @@ export default function StudentPortal({ user, onLogout }) {
   // Navigation View State
   // 'home' | 'classes' | 'active-session' | 'attendance' | 'subject-attendance' | 'history' | 'profile' | 'personal-info' | 'academic-details' | 'settings' | 'notifications'
   const getInitialStudentView = () => {
-    if (typeof window === 'undefined') return 'home';
-    const hash = window.location.hash || '';
-    const match = hash.match(/^#\/student(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
-    if (match && match[1]) {
-      const v = match[1].toLowerCase();
+    const { role, tab } = parsePath();
+    if (role === 'student' && tab) {
+      const v = tab.toLowerCase();
       if (['home', 'classes', 'active-session', 'attendance', 'subject-attendance', 'history', 'profile', 'personal-info', 'academic-details', 'settings', 'notifications'].includes(v)) {
         return v;
       }
@@ -188,29 +187,26 @@ export default function StudentPortal({ user, onLogout }) {
   // PHASE 3: ANDROID BACK-BUTTON NAVIGATION
   // ==========================================
 
-  // Synchronize history state on navigation
+  // Synchronize clean URL path on navigation
   const navigateTo = (targetView) => {
     setCurrentView(targetView);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#/student/${targetView}`;
-    }
+    navigateToPath(`/student/${targetView}`);
   };
 
-  // Synchronize currentView with window.location.hash
+  // Synchronize currentView with clean path on navigation
   useEffect(() => {
-    const handleHash = () => {
+    const handlePopState = () => {
       const v = getInitialStudentView();
       setCurrentView(v);
     };
-    window.addEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handlePopState);
 
-    const hash = window.location.hash || '';
-    if (!hash.startsWith('#/student/')) {
-      const v = getInitialStudentView();
-      window.location.hash = `#/student/${v}`;
+    const { role, tab } = parsePath();
+    if (role !== 'student' || !tab) {
+      replacePath(`/student/${getInitialStudentView()}`);
     }
 
-    return () => window.removeEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // In-app Back button handler (< button)

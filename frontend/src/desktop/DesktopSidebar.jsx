@@ -11,11 +11,11 @@ export default function DesktopSidebar({
   onToggleCollapse
 }) {
   const navItems = [
-    { id: 'home', label: 'Home', icon: Home, hash: '#/faculty/home' },
-    { id: 'classes', label: 'Classes', icon: CalendarDays, hash: '#/faculty/classes' },
-    { id: 'students', label: 'Students', icon: Users, hash: '#/faculty/students' },
-    { id: 'reports', label: 'Reports', icon: BarChart3, hash: '#/faculty/reports' },
-    { id: 'profile', label: 'Profile', icon: User, hash: '#/faculty/profile' },
+    { id: 'home', label: 'Home', icon: Home, path: '/faculty/home' },
+    { id: 'classes', label: 'Classes', icon: CalendarDays, path: '/faculty/classes' },
+    { id: 'students', label: 'Students', icon: Users, path: '/faculty/students' },
+    { id: 'reports', label: 'Reports', icon: BarChart3, path: '/faculty/reports' },
+    { id: 'profile', label: 'Profile', icon: User, path: '/faculty/profile' },
   ];
 
   return (
@@ -54,7 +54,7 @@ export default function DesktopSidebar({
             return (
               <a
                 key={item.id}
-                href={item.hash}
+                href={item.path}
                 onClick={(e) => {
                   e.preventDefault();
                   onTabChange(item.id);

@@ -14,13 +14,13 @@ export default function DesktopAdminSidebar({
   pendingReviewsCount = 0
 }) {
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard, hash: '#/admin/overview' },
-    { id: 'sessions', label: 'Live Sessions', icon: Radio, hash: '#/admin/sessions', badge: activeSessionsCount },
-    { id: 'students', label: 'Students & Biometrics', icon: Users, hash: '#/admin/students', badge: pendingReviewsCount },
-    { id: 'faculty', label: 'Faculty Directory', icon: GraduationCap, hash: '#/admin/faculty' },
-    { id: 'subjects', label: 'Curriculum & Subjects', icon: BookOpen, hash: '#/admin/subjects' },
-    { id: 'timetable', label: 'Timetable Schedules', icon: Calendar, hash: '#/admin/timetable' },
-    { id: 'audit', label: 'Audit Trail Logs', icon: History, hash: '#/admin/audit' },
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard, path: '/admin/overview' },
+    { id: 'sessions', label: 'Live Sessions', icon: Radio, path: '/admin/sessions', badge: activeSessionsCount },
+    { id: 'students', label: 'Students & Biometrics', icon: Users, path: '/admin/students', badge: pendingReviewsCount },
+    { id: 'faculty', label: 'Faculty Directory', icon: GraduationCap, path: '/admin/faculty' },
+    { id: 'subjects', label: 'Curriculum & Subjects', icon: BookOpen, path: '/admin/subjects' },
+    { id: 'timetable', label: 'Timetable Schedules', icon: Calendar, path: '/admin/timetable' },
+    { id: 'audit', label: 'Audit Trail Logs', icon: History, path: '/admin/audit' },
   ];
 
   return (
@@ -42,7 +42,7 @@ export default function DesktopAdminSidebar({
                 <span className="text-sm font-extrabold text-[#111827] tracking-tight block">
                   SmartAttend
                 </span>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
                   Admin Console
                 </span>
               </div>
@@ -59,7 +59,7 @@ export default function DesktopAdminSidebar({
             return (
               <a
                 key={item.id}
-                href={item.hash}
+                href={item.path}
                 onClick={(e) => {
                   e.preventDefault();
                   onTabChange(item.id);
