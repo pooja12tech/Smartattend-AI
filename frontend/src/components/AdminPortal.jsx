@@ -3,7 +3,7 @@ import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
   BookOpen, History, Camera, Lock, Unlock, FileText, Check, Trash2, GraduationCap, Building2,
-  Calendar
+  Calendar, LogOut
 } from 'lucide-react';
 import { api } from '../api';
 import AdminTimetableManagement from './AdminTimetableManagement';
@@ -20,7 +20,8 @@ import AdminTimetableMobileView from './admin/AdminTimetableMobileView';
 import AdminReportsView from './admin/AdminReportsView';
 import AdminSettingsView from './admin/AdminSettingsView';
 
-export default function AdminPortal({ user }) {
+export default function AdminPortal({ user, onLogout, onQuickSwitchRole }) {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Navigation tabs: 'overview' | 'teachers' | 'students' | 'subjects' | 'audit'
   const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
@@ -756,8 +757,8 @@ export default function AdminPortal({ user }) {
 
   return (
     <>
-      {/* MOBILE APPLICATION (< 768px): Polished Forest Green & Warm White 14-Screen UI */}
-      <div className="block md:hidden min-h-screen bg-[#F8FAF9] text-[#111827] px-3.5 pt-3 pb-24">
+      {/* SmartAttend Mobile-First Admin Experience (Unified Phone & Laptop) */}
+      <div className="admin-mobile-app min-h-screen bg-[#F8FAF9] text-[#111827] px-3.5 pt-3 pb-24 max-w-md mx-auto sm:border-x sm:border-slate-200/80 sm:shadow-2xl">
         {mobileScreen === 'dashboard' && (
           <AdminDashboardView
             user={user}
@@ -911,6 +912,7 @@ export default function AdminPortal({ user }) {
             }}
             onOpenAuditLogs={() => fetchAuditLogs()}
             onLogout={handleOpenLogoutConfirm}
+            onQuickSwitchRole={onQuickSwitchRole}
           />
         )}
 
@@ -918,6 +920,42 @@ export default function AdminPortal({ user }) {
         {exitToast && (
           <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
             Press back again to exit SmartAttend
+          </div>
+        )}
+
+        {/* Logout Confirmation Modal */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white text-[#111827] w-full max-w-sm rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-4">
+              <div className="flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-rose-600" />
+                <h3 className="text-base font-extrabold text-[#111827]">
+                  Log Out of SmartAttend?
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You will be returned to the login screen.
+              </p>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    onLogout?.();
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-md shadow-rose-600/20"
+                >
+                  Yes, Log Out
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -930,8 +968,8 @@ export default function AdminPortal({ user }) {
         />
       </div>
 
-      {/* DESKTOP EXPERIENCE (>= 768px): Full-Featured Admin Control Center Console */}
-      <div className="hidden md:block max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+      {/* DESKTOP EXPERIENCE: Fully replaced by Modern Mobile-First Admin Architecture */}
+      <div className="hidden max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">

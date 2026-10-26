@@ -107,37 +107,16 @@ export default function App() {
   const isStudent = currentUser?.role === 'student';
   const isFaculty = currentUser?.role === 'faculty';
   const isAdmin = currentUser?.role === 'admin';
-  const isDarkPortal = isAdmin || isFaculty;
-
-  // Dynamically sync Android status bar theme-color
+  // Dynamically sync status bar theme-color
   useEffect(() => {
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      const isMobileWidth = typeof window !== 'undefined' && window.innerWidth < 768;
-      if (isAdmin) {
-        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
-      } else if (isFaculty) {
-        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
-      } else {
-        metaThemeColor.setAttribute('content', '#F8FAF9');
-      }
+      metaThemeColor.setAttribute('content', '#F8FAF9');
     }
-  }, [isAdmin, isFaculty]);
+  }, []);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${isAdmin ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : isFaculty ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
-      {/* Top Navbar for Desktop Admin & Desktop Faculty */}
-      {isDarkPortal && (
-        <div className="hidden md:block">
-          <Navbar
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            onQuickSwitchRole={handleQuickSwitchRole}
-            backendOnline={backendOnline}
-          />
-        </div>
-      )}
-
+    <div className="min-h-screen flex flex-col font-sans bg-[#EEF2EF] text-[#111827]">
       {/* Network Offline Status Banner */}
       <OfflineBanner />
 
@@ -148,7 +127,7 @@ export default function App() {
       <IosInstallBanner />
 
       {/* Main Portal View */}
-      <main className="flex-1">
+      <main className="flex-1 w-full">
         {!currentUser ? (
           <LoginView onLoginSuccess={handleLoginSuccess} />
         ) : currentUser.role === 'student' ? (
@@ -158,20 +137,21 @@ export default function App() {
             onQuickSwitchRole={handleQuickSwitchRole}
           />
         ) : currentUser.role === 'faculty' ? (
-          <FacultyPortal user={currentUser} onLogout={handleLogout} />
+          <FacultyPortal
+            user={currentUser}
+            onLogout={handleLogout}
+            onQuickSwitchRole={handleQuickSwitchRole}
+          />
         ) : currentUser.role === 'admin' ? (
-          <AdminPortal user={currentUser} />
+          <AdminPortal
+            user={currentUser}
+            onLogout={handleLogout}
+            onQuickSwitchRole={handleQuickSwitchRole}
+          />
         ) : (
           <LoginView onLoginSuccess={handleLoginSuccess} />
         )}
       </main>
-
-      {/* Persistent Global Footer (for Desktop Admin & Desktop Faculty) */}
-      {isDarkPortal && (
-        <footer className="hidden md:block py-4 border-t border-slate-900 text-center text-xs text-slate-500">
-          SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
-        </footer>
-      )}
     </div>
   );
 }
