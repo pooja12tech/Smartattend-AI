@@ -4,9 +4,20 @@ import { applyPwaUpdate, isInAttendanceFlow } from '../pwa/pwaManager';
 
 export default function PwaUpdateToast() {
   const [updateWorker, setUpdateWorker] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('pwa_update_toast_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
+    // In local development (Vite HMR), don't show the update prompt toast
+    if (import.meta.env.DEV) {
+      return;
+    }
+
     const handleUpdate = (e) => {
       // If currently taking attendance, do not present disruptive toast
       if (!isInAttendanceFlow()) {
@@ -18,7 +29,21 @@ export default function PwaUpdateToast() {
     return () => window.removeEventListener('pwa-update-available', handleUpdate);
   }, []);
 
-  if (!updateWorker || dismissed) return null;
+  const handleDismiss = () => {
+    setDismissed(true);
+    try {
+      sessionStorage.setItem('pwa_update_toast_dismissed', 'true');
+    } catch {}
+  };
+
+  const handleUpdateClick = () => {
+    try {
+      sessionStorage.removeItem('pwa_update_toast_dismissed');
+    } catch {}
+    applyPwaUpdate();
+  };
+
+  if (!updateWorker || dismissed || import.meta.env.DEV) return null;
 
   return (
     <div className="fixed top-18 right-4 z-50 max-w-sm animate-bounce-subtle">
@@ -32,14 +57,14 @@ export default function PwaUpdateToast() {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button
-            onClick={() => applyPwaUpdate()}
+            onClick={handleUpdateClick}
             className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 transition shadow-sm"
           >
             <RefreshCw className="w-3 h-3" />
             <span>Update</span>
           </button>
           <button
-            onClick={() => setDismissed(true)}
+            onClick={handleDismiss}
             className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
             title="Dismiss"
           >

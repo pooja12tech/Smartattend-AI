@@ -71,7 +71,7 @@ def get_engine(override_url: Optional[str] = None):
         if "sqlite" in target_url:
             engine_args["connect_args"] = {"check_same_thread": False}
         else:
-            connect_args: Dict[str, Any] = {"connect_timeout": 8}
+            connect_args: Dict[str, Any] = {"connect_timeout": 30}
             # Windows/network optimization: resolve IPv4 directly to prevent stalling on unreachable IPv6 routes
             try:
                 from urllib.parse import urlparse

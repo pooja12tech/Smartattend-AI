@@ -2183,14 +2183,25 @@ export default function StudentPortal({ user }) {
                     <div className="flex flex-col gap-2 pt-1 text-left">
                       {/* Biometric Decryption Failure / Key Mismatch */}
                       {(submissionResult?.code === 'BIOMETRIC_DECRYPTION_FAILED' || submissionResult?.failed_gate === 'GATE_4_BIOMETRIC_TEMPLATE' || submissionResult?.reason?.includes('decrypted') || submissionResult?.reason?.includes('encryption key')) && (
-                        <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-200 space-y-1">
+                        <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5">
                           <p className="font-bold text-amber-300 flex items-center gap-1.5">
                             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                             Biometric Security Key Mismatch
                           </p>
                           <p className="text-slate-300 text-[10px] leading-relaxed">
-                            Your enrolled biometric template was encrypted under a different system key and cannot be securely decrypted. Please contact the Administrator or Registrar to reset and re-enroll your reference photo.
+                            Your enrolled biometric template was encrypted under a different system key and cannot be securely decrypted. Please re-enroll your reference photo to update it to the current security key.
                           </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCloseScannerModal();
+                              setShowFaceEnrollModal(true);
+                            }}
+                            className="mt-1 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-[11px] transition flex items-center gap-1.5 shadow-sm"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Re-Enroll Face Reference</span>
+                          </button>
                         </div>
                       )}
 

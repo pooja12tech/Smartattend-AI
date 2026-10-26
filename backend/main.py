@@ -64,6 +64,19 @@ def login_rate_limit_key(request: Request) -> str:
 
 limiter = Limiter(key_func=login_rate_limit_key)
 
+def check_face_enrolled_and_valid(db: Session, user_id) -> bool:
+    """Verifies that an enrolled face exists AND can be successfully decrypted with the active system key."""
+    if not user_id:
+        return False
+    fe = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == user_id).first()
+    if not fe or not fe.embedding:
+        return False
+    try:
+        dec = face_service.decrypt_embedding(bytes(fe.embedding))
+        return dec is not None and len(dec) == 512
+    except Exception:
+        return False
+
 app = FastAPI(
     title="SmartAttend-AI API",
     description="Anti-Proxy & AI-Driven Smart Attendance System Backend with RBAC (Admin, Faculty, Student) - PostgreSQL Edition",
@@ -1484,7 +1497,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_pg_db))
             "department": user.department or "CSE",
             "semester": user.semester or 6,
             "bound_device_id": bound_device,
-            "has_registered_face": bool(db.query(FaceEnrollment).filter(FaceEnrollment.user_id == user.id).first() is not None)
+            "has_registered_face": check_face_enrolled_and_valid(db, user.id)
         }
     }
 
@@ -2387,25 +2400,28 @@ def enroll_face(
     now = datetime.now(timezone.utc)
     retention_expires = now + timedelta(days=365)
 
-    # Prevent duplicate biometric enrollment without admin reset
+    # Update existing biometric template or create new enrollment
     existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
     if existing_enrollment:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Biometric face template is already enrolled for this student. Contact an administrator to reset."
+        existing_enrollment.embedding = encrypted_emb
+        existing_enrollment.model_name = "buffalo_sc"
+        existing_enrollment.model_version = "insightface-2.1"
+        existing_enrollment.consent_given_at = now
+        existing_enrollment.consent_text_version = req.consent_text_version or "v1.0"
+        existing_enrollment.created_at = now
+        existing_enrollment.retention_expires_at = retention_expires
+    else:
+        enrollment = FaceEnrollment(
+            user_id=current_user.id,
+            embedding=encrypted_emb,
+            model_name="buffalo_sc",
+            model_version="insightface-2.1",
+            consent_given_at=now,
+            consent_text_version=req.consent_text_version or "v1.0",
+            created_at=now,
+            retention_expires_at=retention_expires
         )
-
-    enrollment = FaceEnrollment(
-        user_id=current_user.id,
-        embedding=encrypted_emb,
-        model_name="buffalo_sc",
-        model_version="insightface-2.1",
-        consent_given_at=now,
-        consent_text_version=req.consent_text_version or "v1.0",
-        created_at=now,
-        retention_expires_at=retention_expires
-    )
-    db.add(enrollment)
+        db.add(enrollment)
     current_user.updated_at = now
     db.commit()
 
@@ -2996,7 +3012,7 @@ def student_dashboard(
             "department": student.department or "CSE",
             "semester": student.semester or 6,
             "bound_device_id": student.bound_device_id or student.registered_device_id,
-            "has_registered_face": bool(db.query(FaceEnrollment).filter(FaceEnrollment.user_id == student.id).first() is not None)
+            "has_registered_face": check_face_enrolled_and_valid(db, student.id)
         },
         "attendance": {
             "current_pct": current_att,

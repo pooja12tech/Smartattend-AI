@@ -6,6 +6,7 @@ import path from 'path';
 
 function pwaVersionPlugin() {
   const buildVersion = `b${Date.now().toString(36)}`;
+  const devVersion = `dev-${Date.now().toString(36)}`;
   return {
     name: 'pwa-version-injector',
     configureServer(server) {
@@ -14,7 +15,7 @@ function pwaVersionPlugin() {
           const swPath = path.resolve(__dirname, 'public/sw.js');
           if (fs.existsSync(swPath)) {
             let content = fs.readFileSync(swPath, 'utf-8');
-            content = content.replace(/__SW_BUILD_VERSION__/g, `dev-${Date.now()}`);
+            content = content.replace(/__SW_BUILD_VERSION__/g, devVersion);
             res.setHeader('Content-Type', 'application/javascript');
             res.setHeader('Cache-Control', 'no-cache');
             return res.end(content);
