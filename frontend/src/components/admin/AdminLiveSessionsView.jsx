@@ -8,11 +8,25 @@ import { api } from '../../api';
 export default function AdminLiveSessionsView({
   overview,
   onBack,
-  onSelectStudent
+  onSelectStudent,
+  selectedSession: externalSelectedSession,
+  onSelectSession: externalOnSelectSession,
+  onClearSelectedSession: externalOnClearSelectedSession
 }) {
   const [activeTab, setActiveTab] = useState('ongoing'); // 'ongoing' | 'completed'
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSession, setSelectedSession] = useState(null);
+  const [internalSelectedSession, setInternalSelectedSession] = useState(null);
+
+  const selectedSession = externalSelectedSession !== undefined ? externalSelectedSession : internalSelectedSession;
+  const setSelectedSession = (val) => {
+    const nextVal = typeof val === 'function' ? val(selectedSession) : val;
+    setInternalSelectedSession(nextVal);
+    if (nextVal) {
+      if (externalOnSelectSession) externalOnSelectSession(nextVal);
+    } else {
+      if (externalOnClearSelectedSession) externalOnClearSelectedSession();
+    }
+  };
   const [sessionDetailTab, setSessionDetailTab] = useState('students'); // 'students' | 'analytics'
   const [roster, setRoster] = useState([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
@@ -107,12 +121,12 @@ export default function AdminLiveSessionsView({
             </div>
             <div>
               <span className="text-slate-400 font-semibold block text-[10px]">Location</span>
-              <span className="font-bold text-slate-800">CSE Block, Room 304</span>
+              <span className="font-bold text-slate-800">{selectedSession.room || 'Room not assigned'}</span>
             </div>
             <div>
-              <span className="text-slate-400 font-semibold block text-[10px]">Time Window</span>
+              <span className="text-slate-400 font-semibold block text-[10px]">Started At</span>
               <span className="font-bold text-slate-800">
-                {selectedSession.start_time ? new Date(selectedSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'} - 11:00 AM
+                {selectedSession.start_time ? new Date(selectedSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not available'}
               </span>
             </div>
             <div>
@@ -272,15 +286,23 @@ export default function AdminLiveSessionsView({
               <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-600">
                 <div className="flex justify-between">
                   <span>Geofence Compliance:</span>
-                  <span className="font-bold text-emerald-700">98% within 150m</span>
+                  <span className="font-bold text-emerald-700">
+                    {roster.filter(r => r.distance_meters !== null && r.distance_meters <= 150).length > 0
+                      ? `${roster.filter(r => r.distance_meters !== null && r.distance_meters <= 150).length} verified within 150m`
+                      : 'Not available'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Face Liveness Score:</span>
-                  <span className="font-bold text-emerald-700">96.4% avg</span>
+                  <span>Biometric Verification:</span>
+                  <span className="font-bold text-emerald-700">
+                    {roster.filter(r => r.face_status === 'VERIFIED').length > 0
+                      ? `${roster.filter(r => r.face_status === 'VERIFIED').length} verified faces`
+                      : 'Not available'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Anti-Spoof Status:</span>
-                  <span className="font-bold text-slate-800">Blink & Pose Active</span>
+                  <span>Anti-Spoof Policy:</span>
+                  <span className="font-bold text-slate-800">Passive Eye-Blink Challenge</span>
                 </div>
               </div>
             </div>
@@ -359,7 +381,7 @@ export default function AdminLiveSessionsView({
           {displayedSessions.map((session) => {
             const isLive = session.status === 'ACTIVE';
             const present = session.present_count || 0;
-            const total = session.total_students || 50;
+            const total = session.total_students || 0;
 
             return (
               <div
@@ -376,10 +398,10 @@ export default function AdminLiveSessionsView({
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-[#111827] leading-tight">
-                        {session.subject || 'Operating Systems'}
+                        {session.subject || 'Lecture Session'}
                       </h3>
                       <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
-                        {session.section ? `CSE ${session.section}` : 'CSE 5A'} &bull; {session.faculty_name || 'Prof. Sharma'}
+                        {session.section ? `Section ${session.section}` : 'General'} &bull; {session.faculty_name || 'Assigned Faculty'}
                       </p>
                     </div>
                   </div>
@@ -395,18 +417,20 @@ export default function AdminLiveSessionsView({
                 <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
                   <div className="flex items-center gap-1.5 text-slate-500 font-medium">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>10:00 AM - 11:00 AM</span>
+                    <span>
+                      {session.start_time ? new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Time not specified'}
+                    </span>
                   </div>
                   {isLive && (
-                    <span className="text-[10px] font-extrabold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
-                      24:18 remaining
+                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                      Active Lecture
                     </span>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between pt-0.5">
                   <span className="text-xs font-bold text-slate-700">
-                    <span className="text-emerald-700 font-extrabold">{present}</span> / {total} present
+                    <span className="text-emerald-700 font-extrabold">{present}</span> {total > 0 ? `/ ${total} present` : 'present'}
                   </span>
                   <div className="flex items-center text-xs font-bold text-[#1A4731] hover:underline">
                     <span>Details</span>

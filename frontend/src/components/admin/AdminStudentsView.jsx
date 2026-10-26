@@ -11,17 +11,31 @@ export default function AdminStudentsView({
   onBack,
   onRefreshUsers,
   onOpenAddStudentModal,
-  selectedStudentRoll = null
+  selectedStudentRoll = null,
+  selectedStudent: externalSelectedStudent,
+  onSelectStudent: externalOnSelectStudent,
+  onClearSelectedStudent: externalOnClearSelectedStudent
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'dept' | 'inactive'
   const [selectedDept, setSelectedDept] = useState('ALL');
-  const [selectedStudent, setSelectedStudent] = useState(() => {
+  const [internalSelectedStudent, setInternalSelectedStudent] = useState(() => {
     if (selectedStudentRoll) {
       return usersList.find(u => u.roll_no === selectedStudentRoll) || null;
     }
     return null;
   });
+
+  const selectedStudent = externalSelectedStudent !== undefined ? externalSelectedStudent : internalSelectedStudent;
+  const setSelectedStudent = (val) => {
+    const nextVal = typeof val === 'function' ? val(selectedStudent) : val;
+    setInternalSelectedStudent(nextVal);
+    if (nextVal) {
+      if (externalOnSelectStudent) externalOnSelectStudent(nextVal);
+    } else {
+      if (externalOnClearSelectedStudent) externalOnClearSelectedStudent();
+    }
+  };
   const [detailTab, setDetailTab] = useState('overview'); // 'overview' | 'attendance' | 'biometric' | 'device'
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -194,21 +208,23 @@ export default function AdminStudentsView({
               <span className="text-slate-400 font-semibold flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" /> Institutional Email
               </span>
-              <span className="font-bold text-slate-900 truncate max-w-[180px]">{student.email || `${student.roll_no.toLowerCase()}@hmritm.ac.in`}</span>
+              <span className="font-bold text-slate-900 truncate max-w-[180px]">{student.email || 'Not available'}</span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-slate-100">
               <span className="text-slate-400 font-semibold flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5" /> Contact Phone
               </span>
-              <span className="font-bold text-slate-900">+91 98xxxxxxx</span>
+              <span className="font-bold text-slate-900">{student.phone || 'Not available'}</span>
             </div>
 
             <div className="flex items-center justify-between py-1">
               <span className="text-slate-400 font-semibold flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" /> Enrollment Date
               </span>
-              <span className="font-bold text-slate-900">12 Aug 2024</span>
+              <span className="font-bold text-slate-900">
+                {student.created_at ? new Date(student.created_at).toLocaleDateString() : 'Not available'}
+              </span>
             </div>
           </div>
         )}
@@ -218,29 +234,28 @@ export default function AdminStudentsView({
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-4">
             <div className="text-center p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100">
               <span className="text-2xl font-black text-emerald-700 block">
-                {student.attendance_pct ? `${student.attendance_pct}%` : '85.4%'}
+                {student.attendance_pct != null ? `${student.attendance_pct}%` : 'Not available'}
               </span>
               <span className="text-[11px] font-bold text-emerald-800">
-                Institutional Attendance Average
+                Recorded Attendance Average
               </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl">
-                <span className="text-slate-400 block text-[10px]">Lectures Attended</span>
-                <span className="text-sm font-black text-slate-800">142</span>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl">
-                <span className="text-slate-400 block text-[10px]">Total Scheduled</span>
-                <span className="text-sm font-black text-slate-800">166</span>
-              </div>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
-              <span className="text-slate-400 block text-[10px]">ML Defaulter Risk Category</span>
-              <span className="font-extrabold text-emerald-700 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" /> Low Risk (Above 75% Criteria)
-              </span>
+              <span className="text-slate-400 block text-[10px]">Defaulter Status</span>
+              {student.attendance_pct != null ? (
+                student.attendance_pct >= 75 ? (
+                  <span className="font-extrabold text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" /> Good Standing (Above 75% Criteria)
+                  </span>
+                ) : (
+                  <span className="font-extrabold text-red-600 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4" /> Attendance Defaulter (Below 75%)
+                  </span>
+                )
+              ) : (
+                <span className="font-semibold text-slate-500">Not available</span>
+              )}
             </div>
           </div>
         )}
@@ -251,25 +266,29 @@ export default function AdminStudentsView({
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
               <div>
                 <span className="font-bold text-slate-800 block">Face Biometric Status</span>
-                <span className="text-[11px] text-slate-400">Official encrypted template</span>
+                <span className="text-[11px] text-slate-400">Institutional biometric enrollment</span>
               </div>
-              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                ENROLLED
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
+                student.face_enrolled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {student.face_enrolled ? 'ENROLLED' : 'NOT ENROLLED'}
               </span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-600">
               <div className="flex justify-between">
-                <span>Vector Dimension:</span>
-                <span className="font-bold text-slate-800">512-D InsightFace ArcFace</span>
+                <span>Model Architecture:</span>
+                <span className="font-bold text-slate-800">InsightFace ArcFace</span>
               </div>
               <div className="flex justify-between">
-                <span>Verification Threshold:</span>
-                <span className="font-bold text-slate-800">0.65 Cosine Sim</span>
+                <span>Verification State:</span>
+                <span className="font-bold text-slate-800">
+                  {student.face_enrolled ? 'Active Biometric Template' : 'Enrollment Required'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span>Passive Blink Anti-Spoof:</span>
-                <span className="font-bold text-emerald-700">ACTIVE</span>
+                <span>Liveness Challenge:</span>
+                <span className="font-bold text-emerald-700">Eye-Blink Passive Check</span>
               </div>
             </div>
           </div>
@@ -281,25 +300,24 @@ export default function AdminStudentsView({
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
               <div>
                 <span className="font-bold text-slate-800 block">Hardware Lock</span>
-                <span className="text-[11px] text-slate-400">1 Student - 1 Smartphone Rule</span>
+                <span className="text-[11px] text-slate-400">1 Student - 1 Smartphone Binding</span>
               </div>
-              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
-                <Lock className="w-3 h-3" /> BOUND
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
+                student.device_id ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                <Lock className="w-3 h-3" />
+                {student.device_id ? 'BOUND' : 'UNBOUND'}
               </span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-600">
               <div className="flex justify-between">
                 <span>Device Fingerprint:</span>
-                <span className="font-mono font-bold text-slate-800">{student.device_id || 'DEV-MOB-9F2B81'}</span>
+                <span className="font-mono font-bold text-slate-800">{student.device_id || 'Not bound'}</span>
               </div>
               <div className="flex justify-between">
-                <span>Binding Time:</span>
-                <span className="font-bold text-slate-800">Aug 2024</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Proxy Attack Protection:</span>
-                <span className="font-bold text-emerald-700">STRICT ENFORCEMENT</span>
+                <span>Hardware Binding Policy:</span>
+                <span className="font-bold text-emerald-700">Single Device Policy Active</span>
               </div>
             </div>
           </div>

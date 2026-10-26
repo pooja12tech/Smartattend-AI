@@ -145,6 +145,10 @@ export default function AdminSettingsView({
             System Settings
           </h1>
         </div>
+
+        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-extrabold tracking-wide uppercase">
+          Policy (Read-Only)
+        </span>
       </div>
 
       {/* Settings List (Reference Screen 14) */}
@@ -209,8 +213,11 @@ export default function AdminSettingsView({
                 <span className="font-bold text-[#1A4731]">{selectedSettingModal.value}</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                {selectedSettingModal.description}. Managed by institutional administrators under ISO/IEC attendance compliance standards.
+                {selectedSettingModal.description}.
               </p>
+              <div className="pt-1 border-t border-slate-200/60 text-[10px] text-slate-400 font-semibold">
+                🔒 Parameter is read-only and enforced by server environment configuration.
+              </div>
             </div>
 
             <button

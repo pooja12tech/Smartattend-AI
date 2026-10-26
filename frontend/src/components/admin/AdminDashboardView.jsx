@@ -68,7 +68,7 @@ export default function AdminDashboardView({
             <span className="text-base">👋</span>
           </div>
           <p className="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
-            <span className="text-[#1A4731] font-bold">&gt; HMRITM</span>
+            <span className="text-[#1A4731] font-bold">&gt; SmartAttend Campus</span>
             <span>&bull;</span>
             <span>{formattedDate}</span>
           </p>

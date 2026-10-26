@@ -34,21 +34,26 @@ export default function AdminPendingReviewView({
   }, []);
 
   const handleAction = async (review, action) => {
+    if (!review?.session_id || !review?.roll_no) {
+      alert('Cannot perform review action: missing session ID or student roll number.');
+      return;
+    }
+    const normalizedAction = action.toUpperCase().startsWith('APP') ? 'APPROVE' : 'REJECT';
     setActionLoading(review.id);
     try {
       await api.facultyApprove({
         session_id: review.session_id,
         roll_no: review.roll_no,
-        action: action, // 'APPROVED' or 'REJECTED'
-        remarks: remarks || `Administrative review decision: ${action}`
+        action: normalizedAction, // strictly 'APPROVE' or 'REJECT' as expected by backend
+        remarks: remarks.trim() || `Administrative review decision: ${normalizedAction === 'APPROVE' ? 'Approved by Admin' : 'Rejected by Admin'}`
       });
-      // Remove from local list
+      // Remove from local list only on verified success
       setReviews(prev => prev.filter(r => r.id !== review.id));
       setSelectedReviewModal(null);
       setRemarks('');
       if (onStudentReviewed) onStudentReviewed();
     } catch (err) {
-      alert(`Review action failed: ${err.message}`);
+      alert(`Review action failed: ${err.message || 'Server error occurred during verification'}`);
     } finally {
       setActionLoading(null);
     }

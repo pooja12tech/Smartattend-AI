@@ -197,7 +197,8 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
     // Initialize root history state if missing
     try {
       if (!window.history.state || !window.history.state.smartattend) {
-        window.history.replaceState({ smartattend: true, view: 'home', scanner: false }, '');
+        window.history.replaceState({ smartattend: true, view: 'root', initial: true }, '');
+        window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
       }
     } catch (e) {}
 
@@ -205,6 +206,9 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       // 1. If scanner or face verification modal is open: close it safely
       if (isScannerOpenRef.current) {
         handleCloseScannerModal();
+        try {
+          window.history.pushState({ smartattend: true, view: currentViewRef.current, scanner: false }, '');
+        } catch (err) {}
         return;
       }
 
@@ -215,6 +219,9 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
         }
         setEnrollCameraActive(false);
+        try {
+          window.history.pushState({ smartattend: true, view: currentViewRef.current, scanner: false }, '');
+        } catch (err) {}
         return;
       }
 
@@ -222,10 +229,16 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       const cur = currentViewRef.current;
       if (['personal-info', 'academic-details', 'settings'].includes(cur)) {
         setCurrentView('profile');
+        try {
+          window.history.pushState({ smartattend: true, view: 'profile', scanner: false }, '');
+        } catch (err) {}
         return;
       }
       if (['classes', 'attendance', 'subject-attendance', 'history', 'profile', 'active-session', 'notifications'].includes(cur)) {
         setCurrentView('home');
+        try {
+          window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
+        } catch (err) {}
         return;
       }
 

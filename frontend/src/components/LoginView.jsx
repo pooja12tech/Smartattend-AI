@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   GraduationCap, Lock, User, Eye, EyeOff, ArrowRight,
   AlertTriangle, RefreshCw, Smartphone, Sparkles, Fingerprint
@@ -24,6 +24,42 @@ export default function LoginView({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [infoMessage, setInfoMessage] = useState(null);
+
+  const [exitToast, setExitToast] = useState(false);
+  const lastBackPressRef = useRef(0);
+  const exitTimeoutRef = useRef(null);
+
+  // Initialize PWA root history state on login view
+  useEffect(() => {
+    try {
+      if (!window.history.state || !window.history.state.smartattend) {
+        window.history.replaceState({ smartattend: true, view: 'login_root' }, '');
+        window.history.pushState({ smartattend: true, view: 'login' }, '');
+      }
+    } catch (e) {}
+
+    const handlePopState = () => {
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        setExitToast(false);
+        window.history.back();
+      } else {
+        lastBackPressRef.current = now;
+        setExitToast(true);
+        if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+        exitTimeoutRef.current = setTimeout(() => setExitToast(false), 2000);
+        try {
+          window.history.pushState({ smartattend: true, view: 'login' }, '');
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    };
+  }, []);
 
   // Splash auto-dismiss timer
   useEffect(() => {
@@ -371,6 +407,13 @@ export default function LoginView({ onLoginSuccess }) {
           New here? Contact your administration.
         </p>
       </div>
+
+      {/* Android Exit Confirmation Toast */}
+      {exitToast && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
+          Press back again to exit SmartAttend
+        </div>
+      )}
     </div>
   );
 }

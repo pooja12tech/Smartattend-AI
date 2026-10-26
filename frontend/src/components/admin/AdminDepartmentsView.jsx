@@ -74,8 +74,8 @@ export default function AdminDepartmentsView({
         {baseDepartments.map((dept) => {
           const Icon = dept.icon;
           const stats = deptStats[dept.code] || { students: 0, faculty: 0 };
-          const studentCount = stats.students || (dept.code === 'CSE' ? 240 : dept.code === 'ECE' ? 180 : dept.code === 'IT' ? 120 : dept.code === 'ME' ? 100 : dept.code === 'CE' ? 90 : 80);
-          const facultyCount = stats.faculty || (dept.code === 'CSE' ? 18 : dept.code === 'ECE' ? 14 : dept.code === 'IT' ? 10 : dept.code === 'ME' ? 12 : dept.code === 'CE' ? 8 : 9);
+          const studentCount = stats.students || 0;
+          const facultyCount = stats.faculty || 0;
 
           // Associated subjects from database
           const deptSubjects = subjectsList.filter(s =>

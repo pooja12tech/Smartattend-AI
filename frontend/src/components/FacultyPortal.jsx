@@ -146,18 +146,30 @@ export default function FacultyPortal({ user, onLogout }) {
       // 1. If any modal is open, close it first
       if (showPanoramicModal) {
         setShowPanoramicModal(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
+        } catch (err) {}
         return;
       }
       if (showSyndicateModal) {
         setShowSyndicateModal(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
+        } catch (err) {}
         return;
       }
       if (qrProjectorOpen) {
         setQrProjectorOpen(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
+        } catch (err) {}
         return;
       }
       if (showLogoutConfirm) {
         setShowLogoutConfirm(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
+        } catch (err) {}
         return;
       }
 
@@ -165,18 +177,27 @@ export default function FacultyPortal({ user, onLogout }) {
       if (sessionSummaryRef.current) {
         setSessionSummary(null);
         setMobileTab('home');
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
+        } catch (err) {}
         return;
       }
 
       // 2. If in stepped session setup, return to dashboard
       if (setupSlotRef.current) {
         setSetupSlot(null);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
+        } catch (err) {}
         return;
       }
 
       // 3. If on secondary tab, return to 'home'
       if (mobileTabRef.current !== 'home') {
         setMobileTab('home');
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
+        } catch (err) {}
         return;
       }
 
@@ -197,7 +218,10 @@ export default function FacultyPortal({ user, onLogout }) {
 
     window.addEventListener('popstate', handlePopState);
     try {
-      window.history.replaceState({ smartattend: true, role: 'faculty', root: true }, '');
+      if (!window.history.state || !window.history.state.smartattend) {
+        window.history.replaceState({ smartattend: true, role: 'faculty', initial: true }, '');
+        window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
+      }
     } catch (err) {}
 
     return () => window.removeEventListener('popstate', handlePopState);

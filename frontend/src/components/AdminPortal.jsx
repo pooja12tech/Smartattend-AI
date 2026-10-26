@@ -82,6 +82,54 @@ export default function AdminPortal({ user }) {
   const [mobileSelectedStudentRoll, setMobileSelectedStudentRoll] = useState(null);
   const [pendingReviewsList, setPendingReviewsList] = useState([]);
 
+  // Detail views state
+  const [selectedStudentForDetails, setSelectedStudentForDetails] = useState(null);
+  const selectedStudentForDetailsRef = useRef(selectedStudentForDetails);
+  useEffect(() => {
+    selectedStudentForDetailsRef.current = selectedStudentForDetails;
+  }, [selectedStudentForDetails]);
+
+  const [selectedSessionForDetails, setSelectedSessionForDetails] = useState(null);
+  const selectedSessionForDetailsRef = useRef(selectedSessionForDetails);
+  useEffect(() => {
+    selectedSessionForDetailsRef.current = selectedSessionForDetails;
+  }, [selectedSessionForDetails]);
+
+  // Synchronous refs for popstate listener to avoid stale closure traps
+  const mobileTabRef = useRef(mobileTab);
+  useEffect(() => {
+    mobileTabRef.current = mobileTab;
+  }, [mobileTab]);
+
+  const mobileScreenRef = useRef(mobileScreen);
+  useEffect(() => {
+    mobileScreenRef.current = mobileScreen;
+  }, [mobileScreen]);
+
+  const showAddModalRef = useRef(showAddModal);
+  useEffect(() => {
+    showAddModalRef.current = showAddModal;
+  }, [showAddModal]);
+
+  const showAddSubjectModalRef = useRef(showAddSubjectModal);
+  useEffect(() => {
+    showAddSubjectModalRef.current = showAddSubjectModal;
+  }, [showAddSubjectModal]);
+
+  const showFaceCaptureModalRef = useRef(showFaceCaptureModal);
+  useEffect(() => {
+    showFaceCaptureModalRef.current = showFaceCaptureModal;
+  }, [showFaceCaptureModal]);
+
+  const showLogoutConfirmRef = useRef(showLogoutConfirm);
+  useEffect(() => {
+    showLogoutConfirmRef.current = showLogoutConfirm;
+  }, [showLogoutConfirm]);
+
+  const [exitToast, setExitToast] = useState(false);
+  const lastBackPressRef = useRef(0);
+  const exitTimeoutRef = useRef(null);
+
   const fetchPendingReviews = async () => {
     try {
       const data = await api.getAdminPendingReviews();
@@ -92,62 +140,101 @@ export default function AdminPortal({ user }) {
   };
 
   const handleMobileTabChange = (tabId, subScreen = null) => {
+    const targetScreen = subScreen || (
+      tabId === 'home' ? 'dashboard' :
+      tabId === 'users' ? 'students' :
+      tabId === 'academics' ? 'departments' :
+      tabId === 'attendance' ? 'live_sessions' : 'settings'
+    );
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', tab: tabId, screen: targetScreen }, '');
+    } catch {}
     setMobileTab(tabId);
-    if (subScreen) {
-      setMobileScreen(subScreen);
-      return;
-    }
-    if (tabId === 'home') setMobileScreen('dashboard');
-    else if (tabId === 'users') setMobileScreen('students');
-    else if (tabId === 'academics') setMobileScreen('departments');
-    else if (tabId === 'attendance') setMobileScreen('live_sessions');
-    else if (tabId === 'more') setMobileScreen('settings');
+    setMobileScreen(targetScreen);
   };
 
   const handleOpenLiveSessions = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'live_sessions', tab: 'attendance' }, '');
+    } catch {}
     setMobileTab('attendance');
     setMobileScreen('live_sessions');
   };
 
   const handleOpenPendingReviews = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'pending_reviews', tab: 'attendance' }, '');
+    } catch {}
     setMobileTab('attendance');
     setMobileScreen('pending_reviews');
   };
 
   const handleOpenManualMark = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'manual_mark', tab: 'attendance' }, '');
+    } catch {}
     setMobileTab('attendance');
     setMobileScreen('manual_mark');
   };
 
   const handleOpenStudents = (studentRoll = null) => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'students', tab: 'users' }, '');
+    } catch {}
     setMobileTab('users');
     setMobileSelectedStudentRoll(studentRoll);
+    if (studentRoll) {
+      const match = usersList.find(u => u.roll_no === studentRoll);
+      if (match) setSelectedStudentForDetails(match);
+    }
     setMobileScreen('students');
   };
 
   const handleOpenFaculty = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'faculty', tab: 'users' }, '');
+    } catch {}
     setMobileTab('users');
     setMobileScreen('faculty');
   };
 
   const handleOpenDepartments = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'departments', tab: 'academics' }, '');
+    } catch {}
     setMobileTab('academics');
     setMobileScreen('departments');
   };
 
   const handleOpenTimetable = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'timetable', tab: 'academics' }, '');
+    } catch {}
     setMobileTab('academics');
     setMobileScreen('timetable');
   };
 
   const handleOpenReports = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'reports', tab: 'more' }, '');
+    } catch {}
     setMobileTab('more');
     setMobileScreen('reports');
   };
 
   const handleOpenSettings = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', screen: 'settings', tab: 'more' }, '');
+    } catch {}
     setMobileTab('more');
     setMobileScreen('settings');
+  };
+
+  const handleOpenLogoutConfirm = () => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', modal: 'logout_confirm' }, '');
+    } catch {}
+    setShowLogoutConfirm(true);
   };
 
   const fetchOverview = async () => {
@@ -202,17 +289,118 @@ export default function AdminPortal({ user }) {
     fetchPendingReviews();
   }, []);
 
-  // Popstate handler for Android back button navigation
+  // Initialize PWA root history state so Android hardware back button cannot immediately close the app
+  useEffect(() => {
+    try {
+      if (!window.history.state || !window.history.state.smartattend) {
+        window.history.replaceState({ smartattend: true, role: 'admin', initial: true }, '');
+        window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
+      }
+    } catch {}
+  }, []);
+
+  // Unified popstate listener handling Android system Back gestures & hardware back buttons
   useEffect(() => {
     const handlePopState = () => {
-      if (mobileScreen !== 'dashboard') {
+      // 1. If any modal is open, close it first and keep user inside current view
+      if (showFaceCaptureModalRef.current) {
+        if (adminStreamRef.current) {
+          adminStreamRef.current.getTracks().forEach((track) => track.stop());
+          adminStreamRef.current = null;
+        }
+        setAdminCameraActive(false);
+        setShowFaceCaptureModal(false);
+        setTargetStudentForFace(null);
+        setCapturedFacePhoto(null);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
+        } catch {}
+        return;
+      }
+
+      if (showAddModalRef.current) {
+        setShowAddModal(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
+        } catch {}
+        return;
+      }
+
+      if (showAddSubjectModalRef.current) {
+        setShowAddSubjectModal(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
+        } catch {}
+        return;
+      }
+
+      if (showLogoutConfirmRef.current) {
+        setShowLogoutConfirm(false);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
+        } catch {}
+        return;
+      }
+
+      // 2. Nested detail views: close student details or session student list
+      if (selectedStudentForDetailsRef.current) {
+        setSelectedStudentForDetails(null);
+        setMobileSelectedStudentRoll(null);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: 'students', tab: 'users' }, '');
+        } catch {}
+        return;
+      }
+
+      if (selectedSessionForDetailsRef.current) {
+        setSelectedSessionForDetails(null);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: 'live_sessions', tab: 'attendance' }, '');
+        } catch {}
+        return;
+      }
+
+      // 3. Sub-screens: if viewing sub-screen, return to dashboard
+      if (mobileScreenRef.current !== 'dashboard') {
         setMobileScreen('dashboard');
         setMobileTab('home');
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
+        } catch {}
+        return;
+      }
+
+      // 4. Secondary tab on dashboard: switch to 'home' tab
+      if (mobileTabRef.current !== 'home') {
+        setMobileTab('home');
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
+        } catch {}
+        return;
+      }
+
+      // 5. At root dashboard 'home': double-press back to exit confirmation
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        setExitToast(false);
+        window.history.back();
+      } else {
+        lastBackPressRef.current = now;
+        setExitToast(true);
+        if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+        exitTimeoutRef.current = setTimeout(() => setExitToast(false), 2000);
+        try {
+          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
+        } catch {}
       }
     };
+
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [mobileScreen]);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    };
+  }, []);
 
   // 1-Click Hardware Device Reset with Mandatory Reason
   const handleResetDevice = async (rollNo) => {
@@ -454,6 +642,9 @@ export default function AdminPortal({ user }) {
 
   // Open Add Modal for specific role
   const openAddModalForRole = (role) => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'admin', modal: 'add_user' }, '');
+    } catch {}
     setNewRole(role);
     if (role === 'student') {
       setNewPassword('studentpassword');
@@ -584,14 +775,32 @@ export default function AdminPortal({ user }) {
         {mobileScreen === 'live_sessions' && (
           <AdminLiveSessionsView
             overview={overview}
-            onBack={() => setMobileScreen('dashboard')}
+            selectedSession={selectedSessionForDetails}
+            onSelectSession={(session) => {
+              setSelectedSessionForDetails(session);
+              try {
+                window.history.pushState({ smartattend: true, role: 'admin', screen: 'live_sessions', session: session?.id }, '');
+              } catch {}
+            }}
+            onClearSelectedSession={() => setSelectedSessionForDetails(null)}
+            onBack={() => {
+              if (selectedSessionForDetails) {
+                setSelectedSessionForDetails(null);
+              } else {
+                setMobileScreen('dashboard');
+                setMobileTab('home');
+              }
+            }}
             onSelectStudent={(roll) => handleOpenStudents(roll)}
           />
         )}
 
         {mobileScreen === 'pending_reviews' && (
           <AdminPendingReviewView
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
             onStudentReviewed={() => {
               fetchPendingReviews();
               fetchOverview();
@@ -603,7 +812,10 @@ export default function AdminPortal({ user }) {
           <AdminManualMarkView
             overview={overview}
             usersList={usersList}
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
             onSuccess={() => {
               fetchOverview();
             }}
@@ -614,7 +826,26 @@ export default function AdminPortal({ user }) {
           <AdminStudentsView
             usersList={usersList}
             selectedStudentRoll={mobileSelectedStudentRoll}
-            onBack={() => setMobileScreen('dashboard')}
+            selectedStudent={selectedStudentForDetails}
+            onSelectStudent={(student) => {
+              setSelectedStudentForDetails(student);
+              try {
+                window.history.pushState({ smartattend: true, role: 'admin', screen: 'students', roll: student?.roll_no }, '');
+              } catch {}
+            }}
+            onClearSelectedStudent={() => {
+              setSelectedStudentForDetails(null);
+              setMobileSelectedStudentRoll(null);
+            }}
+            onBack={() => {
+              if (selectedStudentForDetails) {
+                setSelectedStudentForDetails(null);
+                setMobileSelectedStudentRoll(null);
+              } else {
+                setMobileScreen('dashboard');
+                setMobileTab('home');
+              }
+            }}
             onRefreshUsers={fetchUsers}
             onOpenAddStudentModal={() => openAddModalForRole('student')}
           />
@@ -623,7 +854,10 @@ export default function AdminPortal({ user }) {
         {mobileScreen === 'faculty' && (
           <AdminFacultyView
             usersList={usersList}
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
             onRefreshUsers={fetchUsers}
             onOpenAddFacultyModal={() => openAddModalForRole('faculty')}
           />
@@ -634,14 +868,25 @@ export default function AdminPortal({ user }) {
             overview={overview}
             usersList={usersList}
             subjectsList={subjectsList}
-            onBack={() => setMobileScreen('dashboard')}
-            onOpenAddSubjectModal={() => setShowAddSubjectModal(true)}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
+            onOpenAddSubjectModal={() => {
+              try {
+                window.history.pushState({ smartattend: true, role: 'admin', modal: 'add_subject' }, '');
+              } catch {}
+              setShowAddSubjectModal(true);
+            }}
           />
         )}
 
         {mobileScreen === 'timetable' && (
           <AdminTimetableMobileView
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
             onOpenFullManagement={() => {
               setActiveTab('timetable');
             }}
@@ -651,15 +896,29 @@ export default function AdminPortal({ user }) {
         {mobileScreen === 'reports' && (
           <AdminReportsView
             overview={overview}
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
           />
         )}
 
         {mobileScreen === 'settings' && (
           <AdminSettingsView
-            onBack={() => setMobileScreen('dashboard')}
+            onBack={() => {
+              setMobileScreen('dashboard');
+              setMobileTab('home');
+            }}
             onOpenAuditLogs={() => fetchAuditLogs()}
+            onLogout={handleOpenLogoutConfirm}
           />
+        )}
+
+        {/* Android Exit Confirmation Toast */}
+        {exitToast && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
+            Press back again to exit SmartAttend
+          </div>
         )}
 
         {/* Curved Mobile Bottom Navigation */}
