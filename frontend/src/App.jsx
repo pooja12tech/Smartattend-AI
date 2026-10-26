@@ -104,15 +104,20 @@ export default function App() {
     }
   };
 
+  const isStudent = currentUser?.role === 'student';
+  const isDarkPortal = currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin');
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-brand-500 selection:text-white">
-      {/* Top Navbar */}
-      <Navbar
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onQuickSwitchRole={handleQuickSwitchRole}
-        backendOnline={backendOnline}
-      />
+    <div className={`min-h-screen flex flex-col font-sans ${isDarkPortal ? 'bg-slate-950 text-slate-100 selection:bg-brand-500 selection:text-white' : 'bg-[#F8FAF9] text-[#111827]'}`}>
+      {/* Top Navbar for Faculty & Admin Portals */}
+      {isDarkPortal && (
+        <Navbar
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onQuickSwitchRole={handleQuickSwitchRole}
+          backendOnline={backendOnline}
+        />
+      )}
 
       {/* Network Offline Status Banner */}
       <OfflineBanner />
@@ -128,7 +133,11 @@ export default function App() {
         {!currentUser ? (
           <LoginView onLoginSuccess={handleLoginSuccess} />
         ) : currentUser.role === 'student' ? (
-          <StudentPortal user={currentUser} />
+          <StudentPortal
+            user={currentUser}
+            onLogout={handleLogout}
+            onQuickSwitchRole={handleQuickSwitchRole}
+          />
         ) : currentUser.role === 'faculty' ? (
           <FacultyPortal user={currentUser} />
         ) : currentUser.role === 'admin' ? (
@@ -138,10 +147,12 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent Global Footer */}
-      <footer className="py-4 border-t border-slate-900 text-center text-xs text-slate-500">
-        SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
-      </footer>
+      {/* Persistent Global Footer (for Faculty & Admin portals) */}
+      {isDarkPortal && (
+        <footer className="py-4 border-t border-slate-900 text-center text-xs text-slate-500">
+          SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
+        </footer>
+      )}
     </div>
   );
 }

@@ -1,14 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Smartphone, Lock, User, ArrowRight, AlertTriangle, KeyRound, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  GraduationCap, Lock, User, Eye, EyeOff, ArrowRight,
+  AlertTriangle, RefreshCw, Smartphone, Sparkles, Fingerprint
+} from 'lucide-react';
 import { api, getDeviceId, setCustomDeviceId } from '../api';
 
 export default function LoginView({ onLoginSuccess }) {
+  // Splash Screen State (Screen 1 Reference)
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return !sessionStorage.getItem('smartattend_splash_dismissed');
+    } catch {
+      return true;
+    }
+  });
+
   const [roleTab, setRoleTab] = useState('student'); // 'student' | 'faculty' | 'admin'
   const [identifier, setIdentifier] = useState('student');
   const [password, setPassword] = useState('studentpassword');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [deviceId, setDeviceIdState] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [infoMessage, setInfoMessage] = useState(null);
+
+  // Splash auto-dismiss timer
+  useEffect(() => {
+    if (showSplash) {
+      const timer = setTimeout(() => {
+        handleDismissSplash();
+      }, 1400);
+      return () => clearTimeout(timer);
+    }
+  }, [showSplash]);
+
+  const handleDismissSplash = () => {
+    setShowSplash(false);
+    try {
+      sessionStorage.setItem('smartattend_splash_dismissed', 'true');
+    } catch {}
+  };
 
   useEffect(() => {
     setDeviceIdState(getDeviceId());
@@ -17,6 +49,7 @@ export default function LoginView({ onLoginSuccess }) {
   const handleRoleTabChange = (newRole) => {
     setRoleTab(newRole);
     setError(null);
+    setInfoMessage(null);
     if (newRole === 'student') {
       setIdentifier('student');
       setPassword('studentpassword');
@@ -34,12 +67,14 @@ export default function LoginView({ onLoginSuccess }) {
     setIdentifier(id);
     setPassword(pass);
     setError(null);
+    setInfoMessage(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setInfoMessage(null);
 
     try {
       const res = await api.login({
@@ -58,6 +93,11 @@ export default function LoginView({ onLoginSuccess }) {
     }
   };
 
+  const handleBiometricLoginSimulation = () => {
+    handleQuickFill('student', 'studentpassword', 'student');
+    setInfoMessage('Face ID biometric credentials verified. Ready to sign in.');
+  };
+
   const regenerateDeviceId = () => {
     const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
     const newId = `DEV-${navigator.platform.includes('Win') ? 'WIN' : 'MOB'}-${rand}`;
@@ -65,203 +105,271 @@ export default function LoginView({ onLoginSuccess }) {
     setDeviceIdState(newId);
   };
 
-  return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden">
-      {/* Background ambient lighting */}
-      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-brand-600/15 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none"></div>
+  // SCREEN 1: SPLASH SCREEN (Screen 1 Reference)
+  if (showSplash) {
+    return (
+      <div
+        onClick={handleDismissSplash}
+        className="fixed inset-0 z-50 bg-[#F8FAF9] flex flex-col justify-between items-center px-6 py-12 cursor-pointer select-none animate-in fade-in duration-300"
+      >
+        <div className="w-full flex justify-between items-center text-xs text-slate-400 font-mono">
+          <span>9:41</span>
+          <div className="w-16 h-4" />
+        </div>
 
-      <div className="w-full max-w-md relative z-10">
-        
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-indigo-500 shadow-xl shadow-brand-500/25 mb-3">
-            <ShieldCheck className="w-8 h-8 text-white" />
+        {/* Center: SmartAttend Logo & Icon */}
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="w-20 h-20 rounded-3xl bg-[#1A4731] flex items-center justify-center text-white shadow-xl shadow-emerald-950/20">
+            <GraduationCap className="w-12 h-12 stroke-[1.8]" />
           </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">SmartAttend-AI</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Production-grade Anti-Proxy Attendance & Predictive Retention Engine
+          <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight">
+            SmartAttend
+          </h1>
+          <div className="w-12 h-1 rounded-full bg-[#1A4731]/30 animate-pulse mt-2" />
+        </div>
+
+        {/* Bottom indicator */}
+        <div className="w-32 h-1 rounded-full bg-slate-300" />
+      </div>
+    );
+  }
+
+  // SCREEN 2: LOGIN SCREEN (Screen 2 Reference)
+  return (
+    <div className="min-h-screen bg-[#F8FAF9] text-[#111827] flex flex-col justify-center items-center px-4 py-8 sm:py-12">
+      <div className="w-full max-w-sm sm:max-w-md space-y-6">
+        
+        {/* Header (Screen 2 Reference) */}
+        <div className="text-left space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111827] tracking-tight">
+            Welcome Back
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500">
+            Sign in to your SmartAttend account
           </p>
         </div>
 
         {/* Card */}
-        <div className="glass-panel rounded-2xl p-6 sm:p-8 shadow-2xl border border-slate-800">
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-sm space-y-5">
           
-          {/* 3-Tab Role Selector */}
-          <div className="flex bg-slate-900/90 p-1.5 rounded-xl border border-slate-800 mb-6">
+          {/* Role Selector Tabs (Preserves Faculty & Admin access) */}
+          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
             <button
               type="button"
               onClick={() => handleRoleTabChange('student')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                 roleTab === 'student'
-                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30 font-bold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-[#1A4731] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>👨‍🎓</span> Student
+              Student
             </button>
             <button
               type="button"
               onClick={() => handleRoleTabChange('faculty')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                 roleTab === 'faculty'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-bold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-[#1A4731] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>👨‍🏫</span> Faculty
+              Faculty
             </button>
             <button
               type="button"
               onClick={() => handleRoleTabChange('admin')}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
                 roleTab === 'admin'
-                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30 font-bold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  ? 'bg-[#1A4731] text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>👨‍💼</span> Admin
+              Admin
             </button>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5 animate-shake">
-              <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-rose-200">Authentication Blocked</p>
-                <p className="mt-0.5 text-rose-300/90">{error}</p>
+                <p className="font-bold">Authentication Failed</p>
+                <p className="mt-0.5 text-rose-600/90">{error}</p>
               </div>
+            </div>
+          )}
+
+          {/* Info Toast */}
+          {infoMessage && (
+            <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+              <Fingerprint className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{infoMessage}</span>
             </div>
           )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                {roleTab === 'student' ? 'Student Roll Number' : roleTab === 'faculty' ? 'Faculty ID' : 'Admin ID'}
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                {roleTab === 'student' ? 'University Roll No.' : roleTab === 'faculty' ? 'Faculty ID' : 'Admin ID'}
               </label>
               <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
                   type="text"
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={roleTab === 'student' ? 'e.g. STU01' : roleTab === 'faculty' ? 'e.g. FAC01' : 'e.g. ADM01'}
-                  className="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition"
+                  placeholder={roleTab === 'student' ? '23CSE123' : roleTab === 'faculty' ? 'FAC01' : 'ADM01'}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm text-[#111827] placeholder-slate-400 focus:outline-none focus:border-[#1A4731] focus:ring-1 focus:ring-[#1A4731] transition"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Password
+              </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition"
+                  placeholder="••••••••"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-10 py-3 text-sm text-[#111827] placeholder-slate-400 focus:outline-none focus:border-[#1A4731] focus:ring-1 focus:ring-[#1A4731] transition"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
-            {/* Student Hardware Device Info (Testing Mode: Unbound) */}
-            {roleTab === 'student' && (
-              <div className="pt-1">
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-                  <div className="flex items-center justify-between text-slate-400 mb-1">
-                    <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-300">
-                      <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> Hardware Device Binding
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">Paused for Testing</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={regenerateDeviceId}
-                      title="Simulate switching to a different phone"
-                      className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
-                    >
-                      <RefreshCw className="w-2.5 h-2.5" /> New Device
-                    </button>
-                  </div>
-                  <div className="font-mono text-[11px] text-indigo-300 bg-slate-950/80 px-2 py-1 rounded border border-slate-800/80 truncate">
-                    {deviceId}
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Device restriction is paused for testing. Any device or browser can authenticate.
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Remember Me & Forgot Password (Screen 2 Reference) */}
+            <div className="flex items-center justify-between text-xs pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded text-[#1A4731] border-slate-300 focus:ring-[#1A4731]"
+                />
+                <span>Remember me</span>
+              </label>
 
+              <button
+                type="button"
+                onClick={() => setInfoMessage('For password assistance, please contact the campus administrator or registrar desk.')}
+                className="text-[#1A4731] font-semibold hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {/* Primary Sign In Button (Screen 2 Reference) */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 active:scale-[0.99] transition shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+              className="w-full py-3.5 px-4 rounded-2xl font-bold text-sm text-white bg-[#1A4731] hover:bg-[#143826] active:scale-[0.99] transition shadow-md shadow-emerald-950/20 flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Authenticating...
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Signing in...</span>
                 </>
               ) : (
-                <>
-                  Sign In to {roleTab === 'student' ? 'Student PWA' : roleTab === 'faculty' ? 'Faculty Portal' : 'Admin Portal'}
-                  <ArrowRight className="w-4 h-4" />
-                </>
+                <span>Sign In</span>
               )}
             </button>
           </form>
 
-          {/* Quick Fill Demo Pills */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-2.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>1-Click Quick Fill Credentials:</span>
+          {/* Divider "or continue with" (Screen 2 Reference) */}
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
             </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-3 text-slate-400">or continue with</span>
+            </div>
+          </div>
 
-            <div className="grid grid-cols-3 gap-2 text-xs">
+          {/* Face ID / Biometric Login Button (Screen 2 Reference) */}
+          <button
+            type="button"
+            onClick={handleBiometricLoginSimulation}
+            className="w-full py-3 px-4 rounded-2xl bg-white border border-slate-200/90 hover:bg-slate-50 text-[#111827] text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm"
+          >
+            <Fingerprint className="w-4 h-4 text-[#1A4731]" />
+            <span>Face ID / Biometric Login</span>
+          </button>
+
+          {/* Hardware Device Fingerprint Badge (testing mode) */}
+          {roleTab === 'student' && (
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+              <div className="flex items-center justify-between text-slate-500 mb-1">
+                <span className="text-[10px] font-semibold flex items-center gap-1 text-slate-700">
+                  <Smartphone className="w-3 h-3 text-emerald-700" /> Device Binding (Test Mode)
+                </span>
+                <button
+                  type="button"
+                  onClick={regenerateDeviceId}
+                  className="text-[10px] text-emerald-800 hover:underline flex items-center gap-1 font-semibold"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" /> New Device
+                </button>
+              </div>
+              <div className="font-mono text-[10px] text-slate-600 truncate bg-white p-1 rounded border border-slate-200">
+                {deviceId}
+              </div>
+            </div>
+          )}
+
+          {/* Quick Demo Fill Credentials */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 mb-2">
+              <Sparkles className="w-3 h-3 text-emerald-700" />
+              <span>1-Click Demo Login:</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
               <button
                 type="button"
                 onClick={() => handleQuickFill('student', 'studentpassword', 'student')}
-                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-brand-500/50 text-left transition text-slate-300"
+                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
               >
-                <div className="font-bold text-brand-300">👨‍🎓 Student</div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5">student</div>
-                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">studentpassword</div>
+                <div className="font-bold text-emerald-800 text-[11px]">Student</div>
+                <div className="text-[9px] text-slate-400 font-mono">STU01</div>
               </button>
-
               <button
                 type="button"
                 onClick={() => handleQuickFill('faculty', 'facultypassword', 'faculty')}
-                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-left transition text-slate-300"
+                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
               >
-                <div className="font-bold text-emerald-300">👨‍🏫 Teacher</div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5">faculty</div>
-                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">facultypassword</div>
+                <div className="font-bold text-emerald-800 text-[11px]">Faculty</div>
+                <div className="text-[9px] text-slate-400 font-mono">FAC01</div>
               </button>
-
               <button
                 type="button"
                 onClick={() => handleQuickFill('admin', 'adminpassword', 'admin')}
-                className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-purple-500/50 text-left transition text-slate-300"
+                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
               >
-                <div className="font-bold text-purple-300">👨‍💼 Admin</div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5">admin</div>
-                <div className="text-[9px] text-emerald-400 mt-1 font-semibold truncate">adminpassword</div>
+                <div className="font-bold text-emerald-800 text-[11px]">Admin</div>
+                <div className="text-[9px] text-slate-400 font-mono">ADM01</div>
               </button>
             </div>
           </div>
 
         </div>
 
-        {/* Footer Note */}
-        <p className="text-center text-[11px] text-slate-500 mt-4">
-          Protected by SmartAttend 5-Gate Anti-Proxy Hardware & AI Lock
+        {/* Footer (Screen 2 Reference) */}
+        <p className="text-center text-xs text-slate-400">
+          New here? Contact your administration.
         </p>
-
       </div>
     </div>
   );

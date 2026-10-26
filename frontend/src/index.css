@@ -81,3 +81,27 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Student Mobile UI Design System Tokens */
+.student-mobile-app {
+  --student-primary: #1A4731;
+  --student-primary-dark: #123323;
+  --student-primary-light: #EBF4EE;
+  --student-accent-green: #10B981;
+  --student-bg-warm: #F8FAF9;
+  --student-card-border: #E5E7EB;
+  --student-text-dark: #111827;
+  --student-text-muted: #6B7280;
+  background-color: #F8FAF9;
+  color: #111827;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Safe area utilities for mobile navigation */
+.pb-bottom-nav {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.75rem);
+}
+.bottom-nav-fixed {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
