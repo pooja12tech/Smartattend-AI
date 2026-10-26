@@ -66,6 +66,18 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   const qrProcessingRef = useRef(false);
   const qrStartTimeoutRef = useRef(null);
 
+  // Sync Android status bar color: dark #000000 during camera scanning, #F8FAF9 on student dashboard
+  useEffect(() => {
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', isScannerOpen ? '#000000' : '#F8FAF9');
+    }
+    return () => {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', '#F8FAF9');
+    };
+  }, [isScannerOpen]);
+
   // Sync PWA attendance lock to prevent any service-worker reloads during active flow
   useEffect(() => {
     setInAttendanceFlow(isScannerOpen && attendanceStep !== 'RESULT');

@@ -100,10 +100,16 @@ body {
 
 /* Safe area utilities for mobile navigation */
 .pb-bottom-nav {
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4.75rem);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5.25rem);
 }
 .bottom-nav-fixed {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+/* Ensure smooth native momentum scrolling on mobile */
+.student-mobile-app {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 /* Polish Html5Qrcode Reader Preview */

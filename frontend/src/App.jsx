@@ -107,6 +107,14 @@ export default function App() {
   const isStudent = currentUser?.role === 'student';
   const isDarkPortal = currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin');
 
+  // Dynamically sync Android status bar theme-color
+  useEffect(() => {
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', isDarkPortal ? '#020617' : '#F8FAF9');
+    }
+  }, [isDarkPortal]);
+
   return (
     <div className={`min-h-screen flex flex-col font-sans ${isDarkPortal ? 'bg-slate-950 text-slate-100 selection:bg-brand-500 selection:text-white' : 'bg-[#F8FAF9] text-[#111827]'}`}>
       {/* Top Navbar for Faculty & Admin Portals */}

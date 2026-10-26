@@ -8,8 +8,8 @@
   "lang": "en",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui", "browser"],
-  "background_color": "#020617",
-  "theme_color": "#4f46e5",
+  "background_color": "#F8FAF9",
+  "theme_color": "#F8FAF9",
   "categories": ["education", "productivity"],
   "icons": [
     {

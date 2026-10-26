@@ -31,7 +31,7 @@ const OFFLINE_FALLBACK_HTML = `<!doctype html>
     .card { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 32px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
     h1 { font-size: 20px; font-weight: 800; margin: 0 0 12px; color: #e2e8f0; }
     p { font-size: 13px; line-height: 1.6; color: #94a3b8; margin: 0 0 24px; }
-    .btn { display: inline-block; background: #4f46e5; color: #ffffff; padding: 12px 24px; border-radius: 12px; font-size: 13px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; transition: background 0.2s; }
+    .btn { display: inline-block; background: #1A4731; color: #ffffff; padding: 12px 24px; border-radius: 12px; font-size: 13px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; transition: background 0.2s; }
     .btn:hover { background: #4338ca; }
     .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; background: rgba(244, 63, 94, 0.15); color: #fb7185; font-size: 11px; font-weight: 700; margin-bottom: 16px; border: 1px solid rgba(244, 63, 94, 0.3); }
   </style>

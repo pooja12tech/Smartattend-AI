@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   ChevronRight, BookOpen, Clock, MapPin, Sparkles, Flame,
-  Radio, CheckCircle2, AlertTriangle, ShieldCheck, User, QrCode
+  Radio, CheckCircle2, AlertTriangle, ShieldCheck, User, QrCode, History
 } from 'lucide-react';
 
 export default function StudentHomeView({
@@ -276,6 +276,62 @@ export default function StudentHomeView({
           <QrCode className="w-5 h-5" />
           <span>Quick Scan Attendance</span>
         </button>
+      </div>
+
+      {/* Recent Attendance Activity */}
+      <div className="space-y-2.5 pt-1">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-[#111827] tracking-tight flex items-center gap-1.5">
+            <History className="w-4 h-4 text-[#1A4731]" />
+            <span>Recent Activity</span>
+          </h3>
+          <button
+            type="button"
+            onClick={onOpenSubjectAttendance}
+            className="text-xs font-semibold text-[#1A4731] hover:underline flex items-center gap-0.5"
+          >
+            <span>Full History</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {dashboard?.recent_logs && dashboard.recent_logs.length > 0 ? (
+          <div className="space-y-2">
+            {dashboard.recent_logs.slice(0, 3).map((log, idx) => (
+              <div
+                key={log.id || idx}
+                className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-[#111827] truncate">
+                      {log.subject_name || log.subject_code || 'Lecture Session'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                      {log.marked_at ? new Date(log.marked_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Verified session'}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Present
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-sm flex items-center gap-3 text-slate-500">
+            <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+              <History className="w-4 h-4 text-slate-400" />
+            </div>
+            <div className="text-xs">
+              <p className="font-semibold text-slate-700">No attendance records yet</p>
+              <p className="text-[11px] text-slate-400">Scanned lectures will appear here automatically.</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
