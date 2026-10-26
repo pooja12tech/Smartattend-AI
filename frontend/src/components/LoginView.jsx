@@ -145,7 +145,7 @@ export default function LoginView({ onLoginSuccess }) {
           <img
             src="/smartattend_logo.png"
             alt="SmartAttend Logo"
-            className="w-36 h-36 sm:w-44 sm:h-44 object-contain animate-in zoom-in-95 duration-500"
+            className="w-36 h-36 sm:w-44 sm:h-44 object-contain animate-ambient-float"
           />
           <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight">
             SmartAttend

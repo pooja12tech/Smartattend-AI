@@ -80,37 +80,46 @@ export default function StudentHomeView({
       </div>
 
       {/* Active Session Notification Card (if ongoing lecture session) */}
+      {/* Active Session Notification Card (if ongoing lecture session) */}
       {activeSession ? (
         <div
           onClick={() => onOpenActiveSession(activeSession)}
-          className="cursor-pointer bg-gradient-to-r from-emerald-900 to-[#1A4731] text-white rounded-2xl p-4 shadow-md shadow-emerald-950/20 relative overflow-hidden transition transform hover:scale-[1.01] active:scale-[0.99]"
+          className="cursor-pointer bg-gradient-to-r from-emerald-950 via-[#1A4731] to-emerald-900 text-white rounded-2xl p-4 shadow-lg shadow-emerald-950/25 relative overflow-hidden touch-card-interactive border border-emerald-400/20"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              Live Attendance Active
-            </span>
-            <span className="text-xs text-emerald-200 font-mono flex items-center gap-1">
-              Tap to Scan <ChevronRight className="w-3.5 h-3.5" />
-            </span>
+          {/* Subtle light sweep shimmer */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer-sweep pointer-events-none" />
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 flex items-center gap-1.5 shadow-xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
+                Live Attendance Active
+              </span>
+              <span className="text-xs text-emerald-200 font-mono flex items-center gap-1 font-semibold">
+                Tap to Scan <ChevronRight className="w-3.5 h-3.5 translate-x-0 group-hover:translate-x-0.5 transition-transform" />
+              </span>
+            </div>
+            <h3 className="font-extrabold text-base text-white tracking-tight">{activeSession.subject_name || 'Class Attendance'}</h3>
+            <p className="text-xs text-emerald-100/90 mt-0.5">
+              {activeSession.room_no ? `Room ${activeSession.room_no} &bull; ` : ''}Faculty: {activeSession.faculty_name || 'Faculty in room'}
+            </p>
           </div>
-          <h3 className="font-bold text-base text-white">{activeSession.subject_name || 'Class Attendance'}</h3>
-          <p className="text-xs text-emerald-100/90 mt-0.5">
-            {activeSession.room_no ? `Room ${activeSession.room_no} &bull; ` : ''}Faculty: {activeSession.faculty_name || 'Faculty in room'}
-          </p>
         </div>
       ) : null}
 
       {/* Overall Attendance Card (Screen 3 Reference) */}
       <div
         onClick={onOpenSubjectAttendance}
-        className="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm hover:shadow-md transition-all group"
+        className="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm hover:shadow-md touch-card-interactive group relative overflow-hidden"
       >
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-600 tracking-wide">
             Overall Attendance
           </span>
-          <div className="flex items-center text-slate-400 group-hover:text-[#1A4731] transition">
+          <div className="flex items-center text-slate-400 group-hover:text-[#1A4731] group-hover:translate-x-0.5 transition-all">
             <ChevronRight className="w-5 h-5" />
           </div>
         </div>
@@ -124,11 +133,11 @@ export default function StudentHomeView({
           </span>
         </div>
 
-        {/* Progress bar */}
-        <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden mb-2">
+        {/* Progress bar with smooth glow */}
+        <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden mb-2 relative">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              currentPct >= 75 ? 'bg-[#10B981]' : currentPct >= 65 ? 'bg-amber-500' : 'bg-rose-500'
+            className={`h-full rounded-full transition-all duration-700 ease-out ${
+              currentPct >= 75 ? 'bg-[#10B981] shadow-[0_0_8px_rgba(16,185,129,0.5)]' : currentPct >= 65 ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
             }`}
             style={{ width: `${Math.min(100, currentPct)}%` }}
           />
@@ -148,9 +157,9 @@ export default function StudentHomeView({
 
       {/* Quick Metrics Pills: Active Streak & Defaulter Radar */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200">
-            <Flame className="w-5 h-5" />
+        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 touch-card-interactive">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200 shadow-xs">
+            <Flame className="w-5 h-5 text-amber-500 animate-flame-flicker" />
           </div>
           <div className="min-w-0">
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Streak</span>
@@ -160,9 +169,9 @@ export default function StudentHomeView({
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-            <ShieldCheck className="w-5 h-5" />
+        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 touch-card-interactive">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200 shadow-xs">
+            <ShieldCheck className="w-5 h-5 text-emerald-600" />
           </div>
           <div className="min-w-0">
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Exam Eligibility</span>

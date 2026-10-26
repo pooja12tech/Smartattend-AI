@@ -145,3 +145,139 @@ body {
 #smartattend-qr-reader img[alt="Info icon"] {
   display: none !important;
 }
+
+/* =========================================================================
+   PWA PHONE APP ULTRA-SMOOTH ANIMATIONS & MICRO-EFFECTS
+   ========================================================================= */
+
+@keyframes pwa-scan-beam {
+  0% {
+    top: 6%;
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0.35;
+  }
+}
+
+@keyframes pwa-radar-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.75;
+  }
+  70% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes pwa-shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes pwa-ambient-float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+    filter: drop-shadow(0 8px 16px rgba(16, 185, 129, 0.2));
+  }
+  50% {
+    transform: translateY(-4px) scale(1.02);
+    filter: drop-shadow(0 14px 24px rgba(16, 185, 129, 0.32));
+  }
+}
+
+@keyframes pwa-flame-flicker {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.14) rotate(-3deg);
+  }
+  75% {
+    transform: scale(1.08) rotate(3deg);
+  }
+}
+
+@keyframes pwa-success-check-pop {
+  0% {
+    transform: scale(0.6) rotate(-10deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) rotate(3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes pwa-ring-expand {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-scan-beam {
+  animation: pwa-scan-beam 2.2s ease-in-out infinite alternate;
+}
+
+.animate-radar-pulse {
+  animation: pwa-radar-pulse 2.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
+
+.animate-shimmer-sweep {
+  animation: pwa-shimmer-sweep 2.8s infinite;
+}
+
+.animate-ambient-float {
+  animation: pwa-ambient-float 4s ease-in-out infinite;
+}
+
+.animate-flame-flicker {
+  animation: pwa-flame-flicker 1.8s ease-in-out infinite;
+}
+
+.animate-success-pop {
+  animation: pwa-success-check-pop 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-ring-expand {
+  animation: pwa-ring-expand 1.8s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+/* Glassmorphism panel for mobile */
+.mobile-glass-card {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(229, 231, 235, 0.85);
+}
+
+/* Touch feedback for cards and interactive pills */
+.touch-card-interactive {
+  transition: transform 0.16s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.16s ease, background-color 0.16s ease;
+  will-change: transform;
+}
+.touch-card-interactive:active {
+  transform: scale(0.975);
+}

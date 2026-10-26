@@ -134,9 +134,11 @@ export default function StudentAttendanceFlow({
                 {/* Bottom-right corner */}
                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[3.5px] border-r-[3.5px] border-emerald-400 rounded-br-xl" />
 
-                {/* Animated Green Laser Scanline (Active only while scanning) */}
+                {/* Animated Green Laser Scanline with dynamic trailing glow */}
                 {scannerStage === 'SCANNING' && (
-                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent absolute top-0 animate-[bounce_2.5s_infinite_ease-in-out] shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
+                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-beam shadow-[0_0_18px_rgba(52,211,153,0.95)] z-10 pointer-events-none">
+                    <div className="w-full h-8 bg-gradient-to-b from-emerald-400/20 to-transparent pointer-events-none" />
+                  </div>
                 )}
               </div>
             </div>
@@ -390,9 +392,12 @@ export default function StudentAttendanceFlow({
           {submissionResult?.success ? (
             /* ATTENDANCE SUCCESS (Screen 12 Reference) */
             <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-xl text-center space-y-5 animate-in zoom-in-95">
-              {/* Green checkmark circle */}
-              <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
-                <Check className="w-9 h-9 stroke-[3]" />
+              {/* Celebratory Checkmark with Expanding Halo Ring */}
+              <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-emerald-400/35 animate-ring-expand pointer-events-none" />
+                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center shadow-xl shadow-emerald-500/40 animate-success-pop relative z-10">
+                  <Check className="w-9 h-9 stroke-[3]" />
+                </div>
               </div>
 
               <div>

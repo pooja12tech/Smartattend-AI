@@ -1231,8 +1231,8 @@ export default function StudentPortal({ user, onLogout }) {
       {/* 1. MOBILE PHONE VIEW (< 768px): 100% PRESERVED EXACT PWA */}
       {/* ======================================================== */}
       <div className="md:hidden student-mobile-app min-h-screen pb-bottom-nav">
-        {/* Mobile Screen Container */}
-        <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
+        {/* Mobile Screen Container with smooth native view transition */}
+        <div key={currentView} className="max-w-md mx-auto px-4 py-4 sm:py-6 animate-in fade-in slide-in-from-bottom-2 duration-200">
 
           {/* SCREEN 3: HOME DASHBOARD */}
           {currentView === 'home' && (

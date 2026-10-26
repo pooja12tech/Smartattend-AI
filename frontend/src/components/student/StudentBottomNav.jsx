@@ -120,16 +120,21 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
           if (tab.isAction) {
             return (
               <div key={tab.id} className="flex flex-col items-center justify-end h-full relative">
+                {/* Ambient breathing aura behind elevated Scan button */}
+                <div className="absolute -top-4 w-[52px] h-[52px] rounded-full bg-emerald-500/25 animate-ring-expand pointer-events-none" />
+
                 {/* Elevated Central Scan Button */}
                 <button
                   type="button"
                   id="nav-scan-button"
                   onClick={onScanClick}
-                  className="absolute -top-4 w-[52px] h-[52px] rounded-full bg-gradient-to-b from-[#1A4731] to-[#143826] active:scale-95 text-white flex items-center justify-center shadow-[0_6px_16px_rgba(26,71,49,0.36)] ring-[3.5px] ring-[#F8FAF9] transition-transform duration-150 focus:outline-none focus:ring-[#1A4731]/40 cursor-pointer"
+                  className="group absolute -top-4 w-[52px] h-[52px] rounded-full bg-gradient-to-b from-[#1A4731] via-[#163f2b] to-[#102c1e] active:scale-90 hover:scale-105 text-white flex items-center justify-center shadow-[0_8px_20px_rgba(26,71,49,0.38)] ring-[3.5px] ring-[#F8FAF9] transition-all duration-200 focus:outline-none focus:ring-[#1A4731]/40 cursor-pointer overflow-hidden"
                   title="Scan Attendance QR"
                   aria-label="Scan Attendance QR"
                 >
-                  <QrCode className="w-6 h-6 stroke-[2.2] text-white" />
+                  {/* Subtle glass reflection sheen */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <QrCode className="w-6 h-6 stroke-[2.2] text-white group-active:rotate-12 transition-transform duration-200" />
                 </button>
 
                 {/* Harmonized Label matching adjacent baselines */}
@@ -149,18 +154,18 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
               type="button"
               id={`nav-tab-${tab.id}`}
               onClick={() => onTabChange(tab.id)}
-              className={`flex flex-col items-center justify-end h-full pb-0.5 transition-colors duration-150 focus:outline-none cursor-pointer ${
+              className={`flex flex-col items-center justify-end h-full pb-0.5 transition-all duration-200 focus:outline-none cursor-pointer active:scale-90 ${
                 isActive ? 'text-[#1A4731]' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <div className="relative flex flex-col items-center">
                 <Icon
-                  className={`w-5 h-5 transition-transform duration-150 ${
-                    isActive ? 'stroke-[2.4] scale-105' : 'stroke-[1.8]'
+                  className={`w-5 h-5 transition-all duration-200 ${
+                    isActive ? 'stroke-[2.5] scale-110 drop-shadow-[0_2px_4px_rgba(26,71,49,0.18)]' : 'stroke-[1.8]'
                   }`}
                 />
                 {isActive && (
-                  <span className="absolute -bottom-1 w-1 h-1 rounded-full bg-[#1A4731]" />
+                  <span className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-[#1A4731] animate-in zoom-in-50 duration-200 shadow-xs" />
                 )}
               </div>
               <span
