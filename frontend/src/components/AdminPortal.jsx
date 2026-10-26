@@ -8,6 +8,18 @@ import {
 import { api } from '../api';
 import AdminTimetableManagement from './AdminTimetableManagement';
 
+import AdminBottomNav from './admin/AdminBottomNav';
+import AdminDashboardView from './admin/AdminDashboardView';
+import AdminLiveSessionsView from './admin/AdminLiveSessionsView';
+import AdminPendingReviewView from './admin/AdminPendingReviewView';
+import AdminManualMarkView from './admin/AdminManualMarkView';
+import AdminStudentsView from './admin/AdminStudentsView';
+import AdminFacultyView from './admin/AdminFacultyView';
+import AdminDepartmentsView from './admin/AdminDepartmentsView';
+import AdminTimetableMobileView from './admin/AdminTimetableMobileView';
+import AdminReportsView from './admin/AdminReportsView';
+import AdminSettingsView from './admin/AdminSettingsView';
+
 export default function AdminPortal({ user }) {
   // Navigation tabs: 'overview' | 'teachers' | 'students' | 'subjects' | 'audit'
   const [activeTab, setActiveTab] = useState('overview');
@@ -64,6 +76,80 @@ export default function AdminPortal({ user }) {
   const adminCanvasRef = useRef(null);
   const adminStreamRef = useRef(null);
 
+  // Mobile App Navigation State (Reference Screens 1-14)
+  const [mobileTab, setMobileTab] = useState('home'); // 'home' | 'users' | 'academics' | 'attendance' | 'more'
+  const [mobileScreen, setMobileScreen] = useState('dashboard'); // 'dashboard' | 'live_sessions' | 'pending_reviews' | 'manual_mark' | 'students' | 'faculty' | 'departments' | 'timetable' | 'reports' | 'settings'
+  const [mobileSelectedStudentRoll, setMobileSelectedStudentRoll] = useState(null);
+  const [pendingReviewsList, setPendingReviewsList] = useState([]);
+
+  const fetchPendingReviews = async () => {
+    try {
+      const data = await api.getAdminPendingReviews();
+      setPendingReviewsList(data.pending_reviews || []);
+    } catch (e) {
+      console.error('Failed to load pending reviews list:', e);
+    }
+  };
+
+  const handleMobileTabChange = (tabId, subScreen = null) => {
+    setMobileTab(tabId);
+    if (subScreen) {
+      setMobileScreen(subScreen);
+      return;
+    }
+    if (tabId === 'home') setMobileScreen('dashboard');
+    else if (tabId === 'users') setMobileScreen('students');
+    else if (tabId === 'academics') setMobileScreen('departments');
+    else if (tabId === 'attendance') setMobileScreen('live_sessions');
+    else if (tabId === 'more') setMobileScreen('settings');
+  };
+
+  const handleOpenLiveSessions = () => {
+    setMobileTab('attendance');
+    setMobileScreen('live_sessions');
+  };
+
+  const handleOpenPendingReviews = () => {
+    setMobileTab('attendance');
+    setMobileScreen('pending_reviews');
+  };
+
+  const handleOpenManualMark = () => {
+    setMobileTab('attendance');
+    setMobileScreen('manual_mark');
+  };
+
+  const handleOpenStudents = (studentRoll = null) => {
+    setMobileTab('users');
+    setMobileSelectedStudentRoll(studentRoll);
+    setMobileScreen('students');
+  };
+
+  const handleOpenFaculty = () => {
+    setMobileTab('users');
+    setMobileScreen('faculty');
+  };
+
+  const handleOpenDepartments = () => {
+    setMobileTab('academics');
+    setMobileScreen('departments');
+  };
+
+  const handleOpenTimetable = () => {
+    setMobileTab('academics');
+    setMobileScreen('timetable');
+  };
+
+  const handleOpenReports = () => {
+    setMobileTab('more');
+    setMobileScreen('reports');
+  };
+
+  const handleOpenSettings = () => {
+    setMobileTab('more');
+    setMobileScreen('settings');
+  };
+
   const fetchOverview = async () => {
     try {
       const data = await api.getAdminOverview();
@@ -113,7 +199,20 @@ export default function AdminPortal({ user }) {
     fetchUsers();
     fetchSubjects();
     fetchAuditLogs();
+    fetchPendingReviews();
   }, []);
+
+  // Popstate handler for Android back button navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      if (mobileScreen !== 'dashboard') {
+        setMobileScreen('dashboard');
+        setMobileTab('home');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [mobileScreen]);
 
   // 1-Click Hardware Device Reset with Mandatory Reason
   const handleResetDevice = async (rollNo) => {
@@ -465,7 +564,115 @@ export default function AdminPortal({ user }) {
   const allSemesters = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+    <>
+      {/* MOBILE APPLICATION (< 768px): Polished Forest Green & Warm White 14-Screen UI */}
+      <div className="block md:hidden min-h-screen bg-[#F8FAF9] text-[#111827] px-3.5 pt-3 pb-24">
+        {mobileScreen === 'dashboard' && (
+          <AdminDashboardView
+            user={user}
+            overview={overview}
+            subjectsCount={subjectsList.length}
+            pendingCount={pendingReviewsList.length}
+            onNavigateTab={handleMobileTabChange}
+            onOpenLiveSessions={handleOpenLiveSessions}
+            onOpenPendingReviews={handleOpenPendingReviews}
+            onOpenSettings={handleOpenSettings}
+            onOpenProfile={() => handleOpenSettings()}
+          />
+        )}
+
+        {mobileScreen === 'live_sessions' && (
+          <AdminLiveSessionsView
+            overview={overview}
+            onBack={() => setMobileScreen('dashboard')}
+            onSelectStudent={(roll) => handleOpenStudents(roll)}
+          />
+        )}
+
+        {mobileScreen === 'pending_reviews' && (
+          <AdminPendingReviewView
+            onBack={() => setMobileScreen('dashboard')}
+            onStudentReviewed={() => {
+              fetchPendingReviews();
+              fetchOverview();
+            }}
+          />
+        )}
+
+        {mobileScreen === 'manual_mark' && (
+          <AdminManualMarkView
+            overview={overview}
+            usersList={usersList}
+            onBack={() => setMobileScreen('dashboard')}
+            onSuccess={() => {
+              fetchOverview();
+            }}
+          />
+        )}
+
+        {mobileScreen === 'students' && (
+          <AdminStudentsView
+            usersList={usersList}
+            selectedStudentRoll={mobileSelectedStudentRoll}
+            onBack={() => setMobileScreen('dashboard')}
+            onRefreshUsers={fetchUsers}
+            onOpenAddStudentModal={() => openAddModalForRole('student')}
+          />
+        )}
+
+        {mobileScreen === 'faculty' && (
+          <AdminFacultyView
+            usersList={usersList}
+            onBack={() => setMobileScreen('dashboard')}
+            onRefreshUsers={fetchUsers}
+            onOpenAddFacultyModal={() => openAddModalForRole('faculty')}
+          />
+        )}
+
+        {mobileScreen === 'departments' && (
+          <AdminDepartmentsView
+            overview={overview}
+            usersList={usersList}
+            subjectsList={subjectsList}
+            onBack={() => setMobileScreen('dashboard')}
+            onOpenAddSubjectModal={() => setShowAddSubjectModal(true)}
+          />
+        )}
+
+        {mobileScreen === 'timetable' && (
+          <AdminTimetableMobileView
+            onBack={() => setMobileScreen('dashboard')}
+            onOpenFullManagement={() => {
+              setActiveTab('timetable');
+            }}
+          />
+        )}
+
+        {mobileScreen === 'reports' && (
+          <AdminReportsView
+            overview={overview}
+            onBack={() => setMobileScreen('dashboard')}
+          />
+        )}
+
+        {mobileScreen === 'settings' && (
+          <AdminSettingsView
+            onBack={() => setMobileScreen('dashboard')}
+            onOpenAuditLogs={() => fetchAuditLogs()}
+          />
+        )}
+
+        {/* Curved Mobile Bottom Navigation */}
+        <AdminBottomNav
+          activeTab={mobileTab}
+          onTabChange={handleMobileTabChange}
+          pendingCount={pendingReviewsList.length}
+          activeSessionsCount={(overview?.sessions || []).filter(s => s.status === 'ACTIVE').length}
+        />
+      </div>
+
+      {/* DESKTOP EXPERIENCE (>= 768px): Full-Featured Admin Control Center Console */}
+      <div className="hidden md:block max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
@@ -1549,7 +1756,7 @@ export default function AdminPortal({ user }) {
           </div>
         </div>
       )}
-
     </div>
+    </>
   );
 }

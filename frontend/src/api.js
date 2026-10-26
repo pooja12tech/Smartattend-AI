@@ -474,5 +474,19 @@ export const api = {
       headers: getHeaders()
     });
     return safeParse(res, 'Failed to fetch today student timetable');
+  },
+
+  async getAdminPendingReviews() {
+    const res = await fetch(`${API_BASE}/api/admin/pending-reviews`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch pending reviews');
+  },
+
+  async getAdminSettings() {
+    const res = await fetch(`${API_BASE}/api/admin/settings`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch admin settings');
   }
 };

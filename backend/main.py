@@ -3450,6 +3450,60 @@ def admin_overview(
         "security_alerts": formatted_alerts
     }
 
+@app.get("/api/admin/pending-reviews")
+def get_admin_pending_reviews(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    records = db.query(AttendanceRecord).filter(
+        AttendanceRecord.status == "PENDING_APPROVAL"
+    ).order_by(AttendanceRecord.marked_at.desc()).limit(100).all()
+
+    reviews = []
+    for r in records:
+        session = db.query(LectureSession).filter(
+            (LectureSession.session_id == r.session_id) | (LectureSession.session_code == r.session_id)
+        ).first()
+        student = db.query(User).filter(User.roll_no == r.roll_no).first()
+        reviews.append({
+            "id": str(r.id),
+            "session_id": r.session_id,
+            "session_code": session.session_code if session else r.session_id,
+            "subject_name": session.subject_name if session else "Lecture Class",
+            "faculty_id": session.faculty_id if session else "faculty",
+            "roll_no": r.roll_no,
+            "student_name": r.student_name or (student.name if student else r.roll_no),
+            "department": student.department if student else "CSE",
+            "section": getattr(student, "section", "A") or "A",
+            "status": r.status,
+            "reason": r.reason or "Biometric or Device Verification Issue",
+            "remarks": r.remarks,
+            "face_status": r.face_status,
+            "liveness_status": r.liveness_status,
+            "face_match_score": r.face_match_score,
+            "distance_meters": r.distance_meters,
+            "used_device_id": r.used_device_id,
+            "marked_at": r.marked_at.isoformat() if r.marked_at else None
+        })
+    return {"pending_reviews": reviews, "total": len(reviews)}
+
+@app.get("/api/admin/settings")
+def get_admin_settings(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    return {
+        "academic_year": "2026 - 2027",
+        "semester": "6th Semester",
+        "min_attendance_threshold": 75.0,
+        "geofence_radius_meters": 150,
+        "qr_window_seconds": QR_WINDOW_SECONDS,
+        "device_binding_enabled": DEVICE_BINDING_ENABLED,
+        "face_match_threshold": 0.60,
+        "blink_liveness_required": True,
+        "ultrasonic_beacon_enabled": True
+    }
+
 @app.get("/api/admin/users")
 def get_admin_users(
     role: Optional[str] = None,

@@ -115,7 +115,7 @@ export default function App() {
     if (metaThemeColor) {
       const isMobileWidth = typeof window !== 'undefined' && window.innerWidth < 768;
       if (isAdmin) {
-        metaThemeColor.setAttribute('content', '#020617');
+        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
       } else if (isFaculty) {
         metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
       } else {
@@ -125,10 +125,10 @@ export default function App() {
   }, [isAdmin, isFaculty]);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${isAdmin ? 'bg-slate-950 text-slate-100 selection:bg-brand-500 selection:text-white' : isFaculty ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
-      {/* Top Navbar for Admin & Desktop Faculty */}
+    <div className={`min-h-screen flex flex-col font-sans ${isAdmin ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : isFaculty ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
+      {/* Top Navbar for Desktop Admin & Desktop Faculty */}
       {isDarkPortal && (
-        <div className={isFaculty ? "hidden md:block" : ""}>
+        <div className="hidden md:block">
           <Navbar
             currentUser={currentUser}
             onLogout={handleLogout}
@@ -166,9 +166,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent Global Footer (for Admin & Desktop Faculty) */}
+      {/* Persistent Global Footer (for Desktop Admin & Desktop Faculty) */}
       {isDarkPortal && (
-        <footer className={`py-4 border-t border-slate-900 text-center text-xs text-slate-500 ${isFaculty ? 'hidden md:block' : ''}`}>
+        <footer className="hidden md:block py-4 border-t border-slate-900 text-center text-xs text-slate-500">
           SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
         </footer>
       )}

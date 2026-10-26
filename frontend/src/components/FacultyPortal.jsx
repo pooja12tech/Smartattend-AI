@@ -11,6 +11,12 @@ import {
 import { api } from '../api';
 import FacultyTimetable from './FacultyTimetable';
 import FacultyBottomNav from './faculty/FacultyBottomNav';
+import FacultyDashboardView from './faculty/FacultyDashboardView';
+import FacultySessionSetupView from './faculty/FacultySessionSetupView';
+import FacultyTimetableMobileView from './faculty/FacultyTimetableMobileView';
+import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
+import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
+import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 
 export default function FacultyPortal({ user, onLogout }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
@@ -63,6 +69,27 @@ export default function FacultyPortal({ user, onLogout }) {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // Stepped Session Setup State (Screens 4 & 5)
+  const [setupSlot, setSetupSlot] = useState(null);
+  const setupSlotRef = useRef(setupSlot);
+  useEffect(() => {
+    setupSlotRef.current = setupSlot;
+  }, [setupSlot]);
+
+  // Ended Session Summary State (Screens 11 & 12)
+  const [sessionSummary, setSessionSummary] = useState(null);
+  const sessionSummaryRef = useRef(sessionSummary);
+  useEffect(() => {
+    sessionSummaryRef.current = sessionSummary;
+  }, [sessionSummary]);
+
+  const handleOpenSessionSetup = (slot) => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'faculty', setup: true }, '');
+    } catch (e) {}
+    setSetupSlot(slot || true);
+  };
+
   // Android Back-Button Handling State
   const [exitToast, setExitToast] = useState(false);
   const lastBackPressRef = useRef(0);
@@ -71,14 +98,26 @@ export default function FacultyPortal({ user, onLogout }) {
     try {
       window.history.pushState({ smartattend: true, role: 'faculty', tab: targetTab }, '');
     } catch (e) {}
+    setSetupSlot(null);
     setMobileTab(targetTab);
   };
 
   const handleInAppBack = () => {
+    if (sessionSummary) {
+      setSessionSummary(null);
+      setMobileTab('home');
+      return;
+    }
+    if (setupSlot) {
+      setSetupSlot(null);
+      return;
+    }
+    if (mobileTab !== 'home') {
+      setMobileTab('home');
+      return;
+    }
     if (window.history.length > 1) {
       window.history.back();
-    } else {
-      setMobileTab('home');
     }
   };
 
@@ -122,13 +161,26 @@ export default function FacultyPortal({ user, onLogout }) {
         return;
       }
 
-      // 2. If on secondary tab, return to 'home'
+      // 1b. If session summary is visible, return to home dashboard
+      if (sessionSummaryRef.current) {
+        setSessionSummary(null);
+        setMobileTab('home');
+        return;
+      }
+
+      // 2. If in stepped session setup, return to dashboard
+      if (setupSlotRef.current) {
+        setSetupSlot(null);
+        return;
+      }
+
+      // 3. If on secondary tab, return to 'home'
       if (mobileTabRef.current !== 'home') {
         setMobileTab('home');
         return;
       }
 
-      // 3. At root 'home' screen: show double-back exit confirmation toast
+      // 4. At root 'home' screen: show double-back exit confirmation toast
       const now = Date.now();
       if (now - lastBackPressRef.current < 2000) {
         setExitToast(false);
@@ -604,18 +656,55 @@ export default function FacultyPortal({ user, onLogout }) {
     }
   };
 
-  // End active lecture session
+  // End active lecture session and generate session summary report
   const handleEndSession = async () => {
     if (!activeSession) return;
-    if (!confirm('Are you sure you want to end this lecture session? Attendance will be closed.')) return;
     setEnding(true);
     const sid = activeSession.session_id;
     try {
-      await api.endSession(sid);
+      const res = await api.endSession(sid);
+
+      // Fetch finalized roster from backend (absentees are now inserted in DB)
+      let finalRoster = roster;
+      try {
+        const rData = await api.getSessionRoster(sid);
+        if (rData && rData.roster) {
+          finalRoster = rData.roster;
+          setRoster(finalRoster);
+        }
+      } catch (e) {
+        console.warn('Could not fetch final roster after ending session:', e);
+      }
+
+      const pCount = finalRoster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length;
+      const aCount = finalRoster.filter(s => s.status === 'ABSENT').length;
+      const pendCount = finalRoster.filter(s => s.status === 'PENDING_APPROVAL').length;
+      const tCount = finalRoster.length;
+      const pct = tCount > 0 ? Math.round((pCount / tCount) * 100) : 0;
+
+      let durationText = '45 mins';
+      if (activeSession.started_at) {
+        const diffMins = Math.round((Date.now() - new Date(activeSession.started_at).getTime()) / 60000);
+        durationText = `${Math.max(1, diffMins)} mins`;
+      }
+
+      setSessionSummary({
+        session: res.session || activeSession,
+        totalEnrolled: tCount,
+        presentCount: pCount,
+        absentCount: aCount,
+        pendingCount: pendCount,
+        attendancePct: pct,
+        durationText: durationText,
+        absenteesCreated: res.absentees_created || 0,
+        finalRoster: finalRoster
+      });
+
       setActiveSession(null);
       setQrData(null);
-      setManualSuccessMsg('Lecture session ended successfully. Attendance is now closed.');
+      setManualSuccessMsg('Lecture session ended successfully. Attendance is now closed & finalized.');
       setTimeout(() => setManualSuccessMsg(null), 4000);
+      setMobileTab('live');
     } catch (err) {
       const errMsg = String(err.message || err.detail || '');
       const isAlreadyEnded = err.status === 400 && (
@@ -777,35 +866,59 @@ export default function FacultyPortal({ user, onLogout }) {
     };
   }, [isSessionActive, activeSession?.session_id, portalTab]);
 
-  // Handle Faculty Manual Override (Phone Dead / Malfunction)
-  const handleManualOverride = async (rollNo, studentName) => {
-    if (!activeSession) {
-      alert('Please start a lecture session first before marking attendance!');
+  // Handle Faculty Manual Override (supports direct modal params and fallback prompt)
+  const handleManualOverride = async (rollNo, studentName, status = 'PRESENT', reason = null) => {
+    const targetSessionId = activeSession?.session_id || sessionSummary?.session?.session_id;
+    if (!targetSessionId) {
+      alert('Please start or select a lecture session first before marking attendance!');
       return;
     }
 
-    const reason = window.prompt(
-      `Enter mandatory justification reason for marking ${studentName} (${rollNo}) PRESENT:`,
-      'Phone Dead / In-Person Verification in Classroom'
-    );
-    if (!reason || !reason.trim()) {
-      return; // Cancelled by faculty or blank reason
+    let finalReason = reason;
+    if (!finalReason) {
+      finalReason = window.prompt(
+        `Enter mandatory justification reason for marking ${studentName} (${rollNo}) ${status}:`,
+        'Phone Dead / In-Person Verification in Classroom'
+      );
+      if (!finalReason || !finalReason.trim()) return;
     }
 
     setActionLoading(true);
     try {
       await api.facultyManualAttendance({
-        session_id: activeSession.session_id,
+        session_id: targetSessionId,
         roll_no: rollNo,
-        status: 'PRESENT',
-        reason: reason.trim()
+        status: status,
+        reason: finalReason.trim()
       });
 
       // Refresh live roster UI
-      const rData = await api.getSessionRoster(activeSession.session_id);
-      if (rData && rData.roster) setRoster(rData.roster);
+      const rData = await api.getSessionRoster(targetSessionId);
+      if (rData && rData.roster) {
+        setRoster(rData.roster);
+        if (sessionSummary) {
+          setSessionSummary(prev => {
+            if (!prev) return prev;
+            const updatedRoster = rData.roster;
+            const pCount = updatedRoster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length;
+            const aCount = updatedRoster.filter(s => s.status === 'ABSENT').length;
+            const pendCount = updatedRoster.filter(s => s.status === 'PENDING_APPROVAL').length;
+            const tCount = updatedRoster.length;
+            const pct = tCount > 0 ? Math.round((pCount / tCount) * 100) : 0;
+            return {
+              ...prev,
+              totalEnrolled: tCount,
+              presentCount: pCount,
+              absentCount: aCount,
+              pendingCount: pendCount,
+              attendancePct: pct,
+              finalRoster: updatedRoster
+            };
+          });
+        }
+      }
 
-      setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked PRESENT (Faculty Override logged in Audit Trail).`);
+      setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked ${status} (Faculty Override logged in Audit Trail).`);
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
       alert('Manual override failed: ' + err.message);
@@ -815,21 +928,48 @@ export default function FacultyPortal({ user, onLogout }) {
   };
 
   // Handle Exception Mode Approval/Rejection
-  const handleApproveException = async (rollNo, action) => {
+  const handleApproveException = async (rollNo, action, remarks = null) => {
+    const targetSessionId = activeSession?.session_id || sessionSummary?.session?.session_id;
+    if (!targetSessionId) return;
+
     setActionLoading(true);
     try {
       await api.facultyApprove({
-        session_id: activeSession.session_id,
+        session_id: targetSessionId,
         roll_no: rollNo,
         action: action,
-        remarks: `Faculty ${action.toLowerCase()}d exception in classroom.`
+        remarks: remarks || `Faculty ${action.toLowerCase()}d exception in classroom.`
       });
 
       // Refresh live feed & roster immediately
-      const live = await api.getFacultyLiveSession(activeSession.session_id);
+      const live = await api.getFacultyLiveSession(targetSessionId);
       setLiveData(live);
-      const rData = await api.getSessionRoster(activeSession.session_id);
-      if (rData && rData.roster) setRoster(rData.roster);
+      const rData = await api.getSessionRoster(targetSessionId);
+      if (rData && rData.roster) {
+        setRoster(rData.roster);
+        if (sessionSummary) {
+          setSessionSummary(prev => {
+            if (!prev) return prev;
+            const updatedRoster = rData.roster;
+            const pCount = updatedRoster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length;
+            const aCount = updatedRoster.filter(s => s.status === 'ABSENT').length;
+            const pendCount = updatedRoster.filter(s => s.status === 'PENDING_APPROVAL').length;
+            const tCount = updatedRoster.length;
+            const pct = tCount > 0 ? Math.round((pCount / tCount) * 100) : 0;
+            return {
+              ...prev,
+              totalEnrolled: tCount,
+              presentCount: pCount,
+              absentCount: aCount,
+              pendingCount: pendCount,
+              attendancePct: pct,
+              finalRoster: updatedRoster
+            };
+          });
+        }
+      }
+      setManualSuccessMsg(`Student ${rollNo} exception request ${action}ED.`);
+      setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
       alert('Approval action failed: ' + err.message);
     } finally {
@@ -899,408 +1039,152 @@ export default function FacultyPortal({ user, onLogout }) {
         {/* Mobile Tab Content Container */}
         <div className="max-w-md mx-auto px-4 py-4 space-y-4">
 
-          {/* TAB 1: HOME (Faculty Dashboard Shell) */}
+          {/* TAB 1: HOME (Faculty Dashboard / Stepped Session Setup) */}
           {mobileTab === 'home' && (
-            <div className="space-y-4">
-              {/* Active Session Card (if ongoing lecture) */}
-              {isSessionActive ? (
-                <div
-                  onClick={() => navigateToMobileTab('live')}
-                  className="cursor-pointer bg-gradient-to-r from-emerald-900 to-[#1A4731] text-white rounded-2xl p-4 shadow-md shadow-emerald-950/20 relative overflow-hidden transition transform hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                      Live Attendance Active
-                    </span>
-                    <span className="text-xs text-emerald-200 font-mono flex items-center gap-1">
-                      View QR <ChevronRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                  <h3 className="font-bold text-base text-white">{activeSession?.subject_name || subject}</h3>
-                  <p className="text-xs text-emerald-100/90 mt-0.5">
-                    Room: {activeSession?.room_no || 'Room 304'} &bull; Code: {activeSession?.session_code || activeSession?.session_id?.slice(0, 8)}
-                  </p>
-
-                  {/* Summary Metric Pills */}
-                  <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-emerald-700/50 text-center">
-                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
-                      <span className="text-[10px] text-emerald-300 block">Enrolled</span>
-                      <span className="text-sm font-bold text-white">{roster.length || 50}</span>
-                    </div>
-                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
-                      <span className="text-[10px] text-emerald-300 block">Present</span>
-                      <span className="text-sm font-bold text-white">
-                        {liveData?.counters?.present_count ?? roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length}
-                      </span>
-                    </div>
-                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
-                      <span className="text-[10px] text-emerald-300 block">Review</span>
-                      <span className="text-sm font-bold text-white">
-                        {liveData?.counters?.pending_count ?? roster.filter(s => s.status === 'PENDING_APPROVAL').length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* Fast Session Launcher Card */
-                <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700 tracking-wide uppercase">
-                      Start Attendance Session
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
-                      Manual / Schedule
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">
-                      Subject
-                    </label>
-                    <select
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full bg-[#F8FAF9] border border-slate-300 text-xs text-[#111827] rounded-xl px-3 py-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
-                    >
-                      <option value="CS301 - Operating Systems">CS301 - Operating Systems</option>
-                      <option value="CS402 - Machine Learning">CS402 - Machine Learning</option>
-                      <option value="CS305 - Database Systems">CS305 - Database Systems</option>
-                    </select>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStartSession(subject)}
-                    disabled={starting}
-                    className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white bg-[#1A4731] hover:bg-[#143826] active:scale-[0.99] shadow-md shadow-emerald-950/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
-                  >
-                    {starting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
-                    <span>Start Lecture Attendance</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Quick Status Bar Pills (GPS + Ultrasonic) */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
-                    <MapPin className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Geofence</span>
-                    <span className="text-xs font-extrabold text-[#111827] truncate block">
-                      150m Campus Zone
-                    </span>
-                  </div>
-                </div>
-
-                <div
-                  onClick={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
-                  className="cursor-pointer bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-2.5 active:scale-[0.98] transition"
-                >
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    ultrasonicBeaconActive ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200'
-                  }`}>
-                    <Radio className={`w-4 h-4 ${ultrasonicBeaconActive ? 'animate-pulse text-indigo-600' : ''}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Beacon</span>
-                    <span className={`text-xs font-extrabold truncate block ${ultrasonicBeaconActive ? 'text-indigo-700' : 'text-slate-500'}`}>
-                      {ultrasonicBeaconActive ? '18.8 kHz Active' : 'Muted'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Today's Classes Section (populated via api.getFacultyTimetableToday()) */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-[#111827] tracking-tight">
-                    Today's Classes
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => navigateToMobileTab('classes')}
-                    className="text-xs font-semibold text-[#1A4731] hover:underline"
-                  >
-                    View All
-                  </button>
-                </div>
-
-                {facultyTodaySchedule && facultyTodaySchedule.length > 0 ? (
-                  <div className="space-y-2">
-                    {facultyTodaySchedule.map((cls, idx) => {
-                      const isOngoing = cls.is_current_slot;
-                      return (
-                        <div
-                          key={cls.id || idx}
-                          onClick={() => {
-                            if (!isSessionActive) {
-                              handleStartSession(cls.subject_name || cls.subject_code);
-                            } else {
-                              navigateToMobileTab('live');
-                            }
-                          }}
-                          className={`bg-white rounded-xl p-3.5 border transition cursor-pointer ${
-                            isOngoing
-                              ? 'border-emerald-300 ring-1 ring-emerald-300 shadow-sm'
-                              : 'border-slate-200/90 hover:border-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
-                                <BookOpen className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="text-xs font-bold text-[#111827] truncate">
-                                  {cls.subject_name || cls.subject_code}
-                                </h4>
-                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                  {cls.start_time} - {cls.end_time} &bull; Room {cls.room_no || '304'}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div>
-                              {isOngoing ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  Live Now
-                                </span>
-                              ) : cls.is_upcoming_slot ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                  Upcoming
-                                </span>
-                              ) : (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                                  Completed
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-xl p-5 text-center border border-slate-200/90 text-slate-500 space-y-1">
-                    <Calendar className="w-6 h-6 mx-auto text-slate-400" />
-                    <p className="text-xs font-semibold text-slate-700">No scheduled classes for today</p>
-                    <p className="text-[11px] text-slate-400">Check your weekly timetable or launch an unscheduled session above.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            setupSlot ? (
+              <FacultySessionSetupView
+                user={user}
+                initialClass={typeof setupSlot === 'object' ? setupSlot : null}
+                todayClasses={facultyTodaySchedule}
+                facultyGps={facultyGps}
+                onBack={() => setSetupSlot(null)}
+                onStartSession={async (targetSubject, duration) => {
+                  await handleStartSession(targetSubject);
+                  setSetupSlot(null);
+                  navigateToMobileTab('live');
+                }}
+                starting={starting}
+              />
+            ) : (
+              <FacultyDashboardView
+                user={user}
+                activeSession={activeSession}
+                isSessionActive={isSessionActive}
+                liveData={liveData}
+                roster={roster}
+                todayClasses={facultyTodaySchedule}
+                loadingClasses={loadingSchedule}
+                facultyGps={facultyGps}
+                onRecalibrateGps={handleRecalibrateGps}
+                ultrasonicBeaconActive={ultrasonicBeaconActive}
+                onToggleUltrasonic={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+                onOpenSessionSetup={(slot) => handleOpenSessionSetup(slot)}
+                onOpenLiveQR={() => navigateToMobileTab('live')}
+                onOpenTimetable={() => navigateToMobileTab('classes')}
+                onOpenProfile={() => navigateToMobileTab('profile')}
+                onOpenNotifications={() => navigateToMobileTab('live')}
+              />
+            )
           )}
 
           {/* TAB 2: CLASSES (Faculty Timetable) */}
           {mobileTab === 'classes' && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
-                <button
-                  type="button"
-                  onClick={handleInAppBack}
-                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
-                  title="Back to Home"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </button>
-                <h2 className="text-sm font-bold text-[#111827]">Faculty Timetable</h2>
-              </div>
-              <FacultyTimetable
+            setupSlot ? (
+              <FacultySessionSetupView
                 user={user}
-                activeSession={activeSession}
-                onStartAttendance={(targetSubject) => {
-                  handleStartSession(targetSubject);
+                initialClass={typeof setupSlot === 'object' ? setupSlot : null}
+                todayClasses={facultyTodaySchedule}
+                facultyGps={facultyGps}
+                onBack={() => setSetupSlot(null)}
+                onStartSession={async (targetSubject, duration) => {
+                  await handleStartSession(targetSubject);
+                  setSetupSlot(null);
                   navigateToMobileTab('live');
                 }}
-                onSwitchToLive={() => navigateToMobileTab('live')}
+                starting={starting}
               />
-            </div>
+            ) : (
+              <FacultyTimetableMobileView
+                user={user}
+                activeSession={activeSession}
+                onBack={handleInAppBack}
+                onSelectClassForSession={(slot) => handleOpenSessionSetup(slot)}
+              />
+            )
           )}
 
-          {/* TAB 3: LIVE (Live Rotating QR & Active Console) */}
+          {/* TAB 3: LIVE (Live Rotating QR, Session Metrics, or Summary Report) */}
           {mobileTab === 'live' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleInAppBack}
-                    className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
-                    title="Back to Home"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <h2 className="text-sm font-bold text-[#111827]">Live Attendance QR</h2>
-                </div>
-                {isSessionActive && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Active
-                  </span>
-                )}
-              </div>
-
-              {isSessionActive && qrData ? (
-                <div className="space-y-4">
-                  {/* QR Card */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col items-center text-center space-y-3">
-                    <div className="p-3.5 rounded-2xl bg-white border-2 border-slate-200 shadow-sm">
-                      <QRCodeSVG
-                        value={qrData.qr_token}
-                        size={210}
-                        level="H"
-                        includeMargin={true}
-                      />
-                    </div>
-
-                    <div className="w-full max-w-xs space-y-1">
-                      <div className="flex items-center justify-between text-xs font-semibold">
-                        <span className="text-slate-500">Next Cryptographic Refresh</span>
-                        <span className="text-[#1A4731] font-mono font-bold">{qrData.expires_in_seconds}s</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                        <div
-                          className="h-full bg-[#1A4731] transition-all duration-300 ease-linear rounded-full"
-                          style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <p className="text-[10px] text-slate-400 font-mono truncate max-w-xs">
-                      Token: {qrData.qr_token.slice(0, 28)}...
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="grid grid-cols-2 gap-3">
+            sessionSummary ? (
+              <FacultySessionSummaryView
+                summary={sessionSummary}
+                onBackToHome={() => {
+                  setSessionSummary(null);
+                  navigateToMobileTab('home');
+                }}
+                onViewRoster={() => navigateToMobileTab('students')}
+              />
+            ) : isSessionActive ? (
+              <FacultyLiveSessionView
+                user={user}
+                activeSession={activeSession}
+                qrData={qrData}
+                liveData={liveData}
+                roster={roster}
+                facultyGps={facultyGps}
+                onRecalibrateGps={handleRecalibrateGps}
+                ultrasonicBeaconActive={ultrasonicBeaconActive}
+                onToggleUltrasonic={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+                onOpenProjector={() => setQrProjectorOpen(true)}
+                onViewRoster={() => navigateToMobileTab('students')}
+                onEndSession={handleEndSession}
+                ending={ending}
+                onBack={handleInAppBack}
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => navigateToMobileTab('students')}
-                      className="py-3 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                      onClick={handleInAppBack}
+                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+                      title="Back to Home"
                     >
-                      <Users className="w-4 h-4 text-[#1A4731]" />
-                      <span>View Students ({roster.length})</span>
+                      <ArrowLeft className="w-4 h-4" />
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={handleEndSession}
-                      disabled={ending}
-                      className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
-                    >
-                      {ending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 fill-white" />}
-                      <span>End Session</span>
-                    </button>
+                    <h2 className="text-sm font-bold text-[#111827]">Live Attendance QR</h2>
                   </div>
                 </div>
-              ) : (
+
                 <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/90 text-slate-500 space-y-3">
-                  <Play className="w-10 h-10 mx-auto text-slate-400 stroke-1" />
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                    <Play className="w-6 h-6 stroke-1" />
+                  </div>
                   <div>
                     <h3 className="text-sm font-bold text-[#111827]">No Active Lecture Session</h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Start a session from the Home tab or Timetable to project dynamic attendance tokens.
+                    <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                      Start a session from the Home tab or Timetable to broadcast dynamic, geofenced QR codes.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleStartSession(subject)}
-                    className="px-5 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20"
+                    onClick={() => {
+                      const currentOrNext = facultyTodaySchedule.find(c => c.is_current_slot) ||
+                        facultyTodaySchedule.find(c => c.is_upcoming_slot) ||
+                        facultyTodaySchedule[0];
+                      handleOpenSessionSetup(currentOrNext || null);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition"
                   >
-                    Start Attendance Now
+                    Setup Attendance Session
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )
           )}
 
-          {/* TAB 4: STUDENTS (Roster & Reviews) */}
+          {/* TAB 4: STUDENTS (Real-Time Student Roster, Review Exceptions & Manual Marking) */}
           {mobileTab === 'students' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleInAppBack}
-                    className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
-                    title="Back to Home"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <h2 className="text-sm font-bold text-[#111827]">Class Roster</h2>
-                </div>
-                <span className="text-xs font-semibold text-slate-500">
-                  {roster.length} Enrolled
-                </span>
-              </div>
-
-              {/* Search input */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search by student name or roll..."
-                  value={searchRoster}
-                  onChange={(e) => setSearchRoster(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
-                />
-              </div>
-
-              {/* Roster List */}
-              <div className="space-y-2">
-                {filteredRoster.map((s, idx) => {
-                  const isPresent = s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT';
-                  const isPending = s.status === 'PENDING_APPROVAL';
-
-                  return (
-                    <div
-                      key={s.roll_no || idx}
-                      className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center justify-between gap-3"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
-                          {getInitials(s.name)}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-[#111827] truncate">{s.name}</h4>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {s.roll_no} &bull; {s.department || 'CSE'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {isPresent ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Present
-                          </span>
-                        ) : isPending ? (
-                          <button
-                            type="button"
-                            onClick={() => handleApproveException(s.roll_no, 'APPROVE')}
-                            className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-                          >
-                            Review
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleManualOverride(s.roll_no, s.name)}
-                            className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 transition"
-                          >
-                            Mark
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <FacultyStudentRosterView
+              roster={sessionSummary?.finalRoster || roster}
+              subjectName={activeSession?.subject_name || sessionSummary?.session?.subject_name || subject}
+              activeSession={activeSession || sessionSummary?.session}
+              onApproveException={handleApproveException}
+              onManualMark={handleManualOverride}
+              onBack={handleInAppBack}
+              actionLoading={actionLoading}
+            />
           )}
 
           {/* TAB 5: PROFILE (Faculty Profile & Settings) */}
@@ -1433,10 +1317,13 @@ export default function FacultyPortal({ user, onLogout }) {
           activeTab={mobileTab}
           onTabChange={navigateToMobileTab}
           onLaunchClick={() => {
-            if (isSessionActive) {
+            if (isSessionActive || sessionSummary) {
               navigateToMobileTab('live');
             } else {
-              handleStartSession();
+              const currentOrNext = facultyTodaySchedule.find(c => c.is_current_slot) ||
+                facultyTodaySchedule.find(c => c.is_upcoming_slot) ||
+                facultyTodaySchedule[0];
+              handleOpenSessionSetup(currentOrNext || null);
             }
           }}
           isSessionActive={isSessionActive}
