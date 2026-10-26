@@ -1242,7 +1242,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   return (
     <div className="student-mobile-app min-h-screen pb-bottom-nav">
       {/* Mobile Screen Container */}
-      <div className="max-w-md mx-auto px-4 py-4 sm:py-6 min-h-screen sm:border-x sm:border-slate-200/80 sm:shadow-2xl bg-[#F8FAF9]">
+      <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
 
         {/* SCREEN 3: HOME DASHBOARD */}
         {currentView === 'home' && (

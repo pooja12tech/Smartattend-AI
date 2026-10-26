@@ -2,15 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Calendar, BookOpen, ShieldCheck, MapPin, Smartphone,
   Bell, Database, History, QrCode, Sun, ChevronRight, X, RefreshCw,
-  Lock, CheckCircle2, Sliders, LogOut
+  Lock, CheckCircle2, Sliders
 } from 'lucide-react';
 import { api } from '../../api';
 
 export default function AdminSettingsView({
   onBack,
-  onOpenAuditLogs,
-  onLogout,
-  onQuickSwitchRole
+  onOpenAuditLogs
 }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -191,52 +189,6 @@ export default function AdminSettingsView({
           );
         })}
       </div>
-
-      {/* Quick Switch Role (Demo Evaluation) */}
-      {onQuickSwitchRole && (
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs p-4 space-y-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-            Quick Switch Role (Demo)
-          </span>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => onQuickSwitchRole('student')}
-              className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition text-center"
-            >
-              👨‍🎓 Student
-            </button>
-            <button
-              type="button"
-              onClick={() => onQuickSwitchRole('faculty')}
-              className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition text-center"
-            >
-              👨‍🏫 Faculty
-            </button>
-            <button
-              type="button"
-              onClick={() => onQuickSwitchRole('admin')}
-              className="py-2 px-2 rounded-xl bg-[#1A4731] text-white font-bold text-xs transition text-center"
-            >
-              👨‍💼 Admin
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Logout Action */}
-      {onLogout && (
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={onLogout}
-            className="w-full py-3 px-4 rounded-2xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs flex items-center justify-center gap-2 transition"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Log Out of SmartAttend</span>
-          </button>
-        </div>
-      )}
 
       {/* Detail / Config Modal */}
       {selectedSettingModal && (

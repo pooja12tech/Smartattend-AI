@@ -18,7 +18,7 @@ import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
 import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
 import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 
-export default function FacultyPortal({ user, onLogout, onQuickSwitchRole }) {
+export default function FacultyPortal({ user, onLogout }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
   const [subject, setSubject] = useState('CS301 - Operating Systems');
   const [activeSession, setActiveSession] = useState(null);
@@ -1020,10 +1020,46 @@ export default function FacultyPortal({ user, onLogout, onQuickSwitchRole }) {
   return (
     <>
       {/* =========================================================================
-          FACULTY MOBILE-FIRST LAYOUT (Unified Phone & Laptop PWA)
-          Adheres to Warm-White & Forest-Green Design System
+          FACULTY MOBILE-FIRST LAYOUT (< 768px Viewport)
+          Adheres to Warm-White & Forest-Green Design System (Phase A)
       ========================================================================= */}
-      <div className="faculty-mobile-app min-h-screen pb-bottom-nav max-w-md mx-auto sm:border-x sm:border-slate-200/80 sm:shadow-2xl bg-[#F8FAF9]">
+      <div className="faculty-mobile-app block md:hidden pb-bottom-nav">
+        {/* Mobile Sticky Header */}
+        <div className="max-w-md mx-auto px-4 pt-3 pb-2.5 flex items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-sm sticky top-0 z-30">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-extrabold text-[#111827] tracking-tight">
+                {getGreeting()}, {facultyLastName}!
+              </h1>
+              <span className="text-base">👋</span>
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+              {todayFormattedDate} &bull; {user?.department || 'CSE'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSessionActive && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigateToMobileTab('profile')}
+              className="relative p-0.5 rounded-full border-2 border-emerald-600/40 hover:border-emerald-600 transition focus:outline-none"
+              title="Faculty Profile"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                <User className="w-4 h-4 text-slate-700" />
+              </div>
+              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+            </button>
+          </div>
+        </div>
+
         {/* Mobile Tab Content Container */}
         <div className="max-w-md mx-auto px-4 py-4 space-y-4">
 
@@ -1242,38 +1278,6 @@ export default function FacultyPortal({ user, onLogout, onQuickSwitchRole }) {
                 </div>
               </div>
 
-              {/* Quick Switch Role (Demo Evaluation) */}
-              {onQuickSwitchRole && (
-                <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Quick Switch Role (Demo)
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onQuickSwitchRole('student')}
-                      className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition text-center"
-                    >
-                      👨‍🎓 Student
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onQuickSwitchRole('faculty')}
-                      className="py-2 px-2 rounded-xl bg-[#1A4731] text-white font-bold text-xs transition text-center"
-                    >
-                      👨‍🏫 Faculty
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onQuickSwitchRole('admin')}
-                      className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition text-center"
-                    >
-                      👨‍💼 Admin
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Account Section & Logout */}
               <div className="pt-2">
                 <button
@@ -1351,9 +1355,10 @@ export default function FacultyPortal({ user, onLogout, onQuickSwitchRole }) {
       </div>
 
       {/* =========================================================================
-          FACULTY DESKTOP / TABLET CONSOLE: Fully Replaced by Mobile PWA Experience
+          FACULTY DESKTOP / TABLET CONSOLE (>= 768px Viewport)
+          Preserves 100% of Existing Desktop Controls, Projector & Classroom Wall
       ========================================================================= */}
-      <div className="hidden max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+      <div className="hidden md:block max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Faculty Portal Navigation Tabs (Phase 4 Timetable Integration) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
