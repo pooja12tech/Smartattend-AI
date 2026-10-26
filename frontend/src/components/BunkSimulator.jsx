@@ -696,7 +696,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 </button>
                 <button
                   onClick={() => applyPreset('EXTENDED_FEST')}
-                  className="px-3 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
                 >
                   🌴 Long Weekend Fest (-4 Lectures)
                 </button>

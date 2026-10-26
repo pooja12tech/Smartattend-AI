@@ -20,7 +20,16 @@ import AdminTimetableMobileView from './admin/AdminTimetableMobileView';
 import AdminReportsView from './admin/AdminReportsView';
 import AdminSettingsView from './admin/AdminSettingsView';
 
-export default function AdminPortal({ user }) {
+import { USE_NEW_DESKTOP_LAYOUT } from '../App';
+import DesktopAdminLayout from '../desktop/admin/DesktopAdminLayout';
+
+export default function AdminPortal({ user, onLogout }) {
+  const todayFormattedDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
   // Navigation tabs: 'overview' | 'teachers' | 'students' | 'subjects' | 'audit'
   const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
@@ -930,8 +939,40 @@ export default function AdminPortal({ user }) {
         />
       </div>
 
-      {/* DESKTOP EXPERIENCE (>= 768px): Full-Featured Admin Control Center Console */}
-      <div className="hidden md:block max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+      {/* DESKTOP EXPERIENCE (>= 768px): Modern State-of-the-Art DesktopAdminLayout */}
+      {USE_NEW_DESKTOP_LAYOUT ? (
+        <div className="hidden md:block">
+          <DesktopAdminLayout
+            user={user}
+            todayFormattedDate={todayFormattedDate}
+            backendOnline={Boolean(overview)}
+            overview={overview}
+            usersList={usersList}
+            subjectsList={subjectsList}
+            auditLogs={auditLogs}
+            pendingReviews={pendingReviewsList}
+            loading={loadingUsers}
+            onResetDevice={handleResetDevice}
+            onResetFace={handleResetFace}
+            onOpenFaceCapture={openFaceCaptureModal}
+            onDeleteUser={handleDeleteUser}
+            onOpenAddStudent={() => openAddModalForRole('student')}
+            onOpenAddFaculty={() => openAddModalForRole('faculty')}
+            onOpenAddSubject={() => setShowAddSubjectModal(true)}
+            onApproveReview={handleApproveReview}
+            onRejectReview={handleRejectReview}
+            onRefreshAll={() => {
+              fetchOverview();
+              fetchUsers();
+              fetchSubjects();
+              fetchAuditLogs();
+              fetchPendingReviews();
+            }}
+            onLogout={onLogout}
+          />
+        </div>
+      ) : (
+        <div className="hidden md:block max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
@@ -1578,6 +1619,8 @@ export default function AdminPortal({ user }) {
           }}
         />
       )}
+        </div>
+      )}
 
       {/* Modal: Add User (Student or Teacher) */}
       {showAddModal && (
@@ -2015,7 +2058,6 @@ export default function AdminPortal({ user }) {
           </div>
         </div>
       )}
-    </div>
     </>
   );
 }

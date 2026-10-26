@@ -9,6 +9,9 @@ import PwaUpdateToast from './components/PwaUpdateToast';
 import IosInstallBanner from './components/IosInstallBanner';
 import { api, getDeviceId } from './api';
 
+// Feature flag for new desktop experience (1-line toggle to revert)
+export const USE_NEW_DESKTOP_LAYOUT = true;
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('smartattend_current_user');
@@ -38,76 +41,47 @@ export default function App() {
   const handleLoginSuccess = (user, bindingStatus) => {
     setCurrentUser(user);
     localStorage.setItem('smartattend_current_user', JSON.stringify(user));
+
+    // Preserve bookmarkable hash URL if it matches user's role, otherwise route to role default
+    const hash = window.location.hash || '';
+    const role = user?.role;
+    const expectedPrefix = `#/${role}/`;
+    if (!hash.startsWith(expectedPrefix)) {
+      if (role === 'admin') window.location.hash = '#/admin/overview';
+      else if (role === 'faculty') window.location.hash = '#/faculty/home';
+      else if (role === 'student') window.location.hash = '#/student/home';
+    }
   };
 
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
     localStorage.removeItem('smartattend_current_user');
+    window.location.hash = '#/login';
   };
 
-  // Quick switch role (Helper for live evaluations and demos)
-  const handleQuickSwitchRole = async (targetRole) => {
-    const creds = {
-      student: { roll_no: 'student', password: 'studentpassword' },
-      faculty: { roll_no: 'faculty', password: 'facultypassword' },
-      admin: { roll_no: 'admin', password: 'adminpassword' }
-    };
-    const c = creds[targetRole];
-    if (c) {
-      try {
-        const res = await api.login({
-          roll_no: c.roll_no,
-          password: c.password,
-          device_id: getDeviceId()
-        });
-        if (res.success && res.user) {
-          handleLoginSuccess(res.user);
-          return;
-        }
-      } catch (err) {
-        console.warn('Quick switch login via API failed, using fallback:', err);
+  // Synchronize top-level hash with user session on mount
+  useEffect(() => {
+    const hash = window.location.hash || '';
+    if (!currentUser) {
+      if (!hash || hash === '#/') {
+        window.location.hash = '#/login';
+      }
+    } else {
+      const role = currentUser.role;
+      const expectedPrefix = `#/${role}`;
+      if (!hash || hash === '#/' || hash === '#/login' || !hash.startsWith(expectedPrefix)) {
+        if (role === 'admin') window.location.hash = '#/admin/overview';
+        else if (role === 'faculty') window.location.hash = '#/faculty/home';
+        else if (role === 'student') window.location.hash = '#/student/home';
       }
     }
-
-    if (targetRole === 'student') {
-      const demoUser = {
-        role: 'student',
-        roll_no: 'STU01',
-        name: 'Aarav Sharma',
-        email: 'aarav@smartattend.edu',
-        department: 'CSE',
-        semester: 6
-      };
-      setCurrentUser(demoUser);
-      localStorage.setItem('smartattend_current_user', JSON.stringify(demoUser));
-    } else if (targetRole === 'faculty') {
-      const demoUser = {
-        role: 'faculty',
-        faculty_id: 'FAC01',
-        name: 'Prof. Alan Turing',
-        email: 'faculty@smartattend.edu',
-        department: 'CSE'
-      };
-      setCurrentUser(demoUser);
-      localStorage.setItem('smartattend_current_user', JSON.stringify(demoUser));
-    } else if (targetRole === 'admin') {
-      const demoUser = {
-        role: 'admin',
-        admin_id: 'ADM01',
-        name: 'System Administrator',
-        email: 'admin@smartattend.edu',
-        department: 'Administration'
-      };
-      setCurrentUser(demoUser);
-      localStorage.setItem('smartattend_current_user', JSON.stringify(demoUser));
-    }
-  };
+  }, [currentUser]);
 
   const isStudent = currentUser?.role === 'student';
   const isFaculty = currentUser?.role === 'faculty';
   const isAdmin = currentUser?.role === 'admin';
-  const isDarkPortal = isAdmin || isFaculty;
+  const isDarkPortal = !USE_NEW_DESKTOP_LAYOUT && (isAdmin || isFaculty);
 
   // Dynamically sync Android status bar theme-color
   useEffect(() => {
@@ -117,7 +91,7 @@ export default function App() {
       if (isAdmin) {
         metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
       } else if (isFaculty) {
-        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
+        metaThemeColor.setAttribute('content', (isMobileWidth || USE_NEW_DESKTOP_LAYOUT) ? '#F8FAF9' : '#020617');
       } else {
         metaThemeColor.setAttribute('content', '#F8FAF9');
       }
@@ -125,14 +99,13 @@ export default function App() {
   }, [isAdmin, isFaculty]);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${isAdmin ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : isFaculty ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
-      {/* Top Navbar for Desktop Admin & Desktop Faculty */}
+    <div className={`min-h-screen flex flex-col font-sans ${isDarkPortal ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
+      {/* Top Navbar for Legacy Desktop Faculty/Admin */}
       {isDarkPortal && (
         <div className="hidden md:block">
           <Navbar
             currentUser={currentUser}
             onLogout={handleLogout}
-            onQuickSwitchRole={handleQuickSwitchRole}
             backendOnline={backendOnline}
           />
         </div>
@@ -140,9 +113,6 @@ export default function App() {
 
       {/* Network Offline Status Banner */}
       <OfflineBanner />
-
-      {/* PWA Update Notification Toast */}
-      <PwaUpdateToast />
 
       {/* iOS Safari Add to Home Screen Instructions */}
       <IosInstallBanner />
@@ -155,12 +125,11 @@ export default function App() {
           <StudentPortal
             user={currentUser}
             onLogout={handleLogout}
-            onQuickSwitchRole={handleQuickSwitchRole}
           />
         ) : currentUser.role === 'faculty' ? (
           <FacultyPortal user={currentUser} onLogout={handleLogout} />
         ) : currentUser.role === 'admin' ? (
-          <AdminPortal user={currentUser} />
+          <AdminPortal user={currentUser} onLogout={handleLogout} />
         ) : (
           <LoginView onLoginSuccess={handleLoginSuccess} />
         )}

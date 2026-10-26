@@ -18,6 +18,10 @@ import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
 import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
 import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 
+import { USE_NEW_DESKTOP_LAYOUT } from '../App';
+import DesktopLayout from '../desktop/DesktopLayout';
+import DesktopFacultyHome from '../desktop/faculty/DesktopFacultyHome';
+
 export default function FacultyPortal({ user, onLogout }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
   const [subject, setSubject] = useState('CS301 - Operating Systems');
@@ -59,11 +63,34 @@ export default function FacultyPortal({ user, onLogout }) {
   const [syndicateData, setSyndicateData] = useState(null);
 
   // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'profile')
-  const [mobileTab, setMobileTab] = useState('home');
+  const getInitialFacultyTab = () => {
+    if (typeof window === 'undefined') return 'home';
+    const hash = window.location.hash || '';
+    const match = hash.match(/^#\/faculty(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
+    if (match && match[1]) {
+      const tab = match[1].toLowerCase();
+      if (['home', 'classes', 'live', 'students', 'reports', 'profile'].includes(tab)) {
+        return tab;
+      }
+    }
+    return 'home';
+  };
+
+  const [mobileTab, setMobileTab] = useState(getInitialFacultyTab);
   const mobileTabRef = useRef(mobileTab);
   useEffect(() => {
     mobileTabRef.current = mobileTab;
   }, [mobileTab]);
+
+  // Synchronize mobileTab with window.location.hash
+  useEffect(() => {
+    const handleHash = () => {
+      const tab = getInitialFacultyTab();
+      setMobileTab(tab);
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   const [facultyTodaySchedule, setFacultyTodaySchedule] = useState([]);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -95,11 +122,11 @@ export default function FacultyPortal({ user, onLogout }) {
   const lastBackPressRef = useRef(0);
 
   const navigateToMobileTab = (targetTab) => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'faculty', tab: targetTab }, '');
-    } catch (e) {}
     setSetupSlot(null);
     setMobileTab(targetTab);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#/faculty/${targetTab}`;
+    }
   };
 
   const handleInAppBack = () => {
@@ -140,90 +167,42 @@ export default function FacultyPortal({ user, onLogout }) {
     loadTodaySchedule();
   }, []);
 
-  // Android hardware back button handler
+  // Modal & sheet back button handler
   useEffect(() => {
     const handlePopState = () => {
       // 1. If any modal is open, close it first
       if (showPanoramicModal) {
         setShowPanoramicModal(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
-        } catch (err) {}
         return;
       }
       if (showSyndicateModal) {
         setShowSyndicateModal(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
-        } catch (err) {}
         return;
       }
       if (qrProjectorOpen) {
         setQrProjectorOpen(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
-        } catch (err) {}
         return;
       }
       if (showLogoutConfirm) {
         setShowLogoutConfirm(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty' }, '');
-        } catch (err) {}
         return;
       }
 
       // 1b. If session summary is visible, return to home dashboard
       if (sessionSummaryRef.current) {
         setSessionSummary(null);
-        setMobileTab('home');
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
-        } catch (err) {}
+        navigateToMobileTab('home');
         return;
       }
 
       // 2. If in stepped session setup, return to dashboard
       if (setupSlotRef.current) {
         setSetupSlot(null);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
-        } catch (err) {}
         return;
-      }
-
-      // 3. If on secondary tab, return to 'home'
-      if (mobileTabRef.current !== 'home') {
-        setMobileTab('home');
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
-        } catch (err) {}
-        return;
-      }
-
-      // 4. At root 'home' screen: show double-back exit confirmation toast
-      const now = Date.now();
-      if (now - lastBackPressRef.current < 2000) {
-        setExitToast(false);
-        window.history.back();
-      } else {
-        lastBackPressRef.current = now;
-        setExitToast(true);
-        setTimeout(() => setExitToast(false), 2000);
-        try {
-          window.history.pushState({ smartattend: true, role: 'faculty', root: true }, '');
-        } catch (err) {}
       }
     };
 
     window.addEventListener('popstate', handlePopState);
-    try {
-      if (!window.history.state || !window.history.state.smartattend) {
-        window.history.replaceState({ smartattend: true, role: 'faculty', initial: true }, '');
-        window.history.pushState({ smartattend: true, role: 'faculty', tab: 'home' }, '');
-      }
-    } catch (err) {}
-
     return () => window.removeEventListener('popstate', handlePopState);
   }, [showPanoramicModal, showSyndicateModal, qrProjectorOpen, showLogoutConfirm]);
 
@@ -1355,10 +1334,65 @@ export default function FacultyPortal({ user, onLogout }) {
       </div>
 
       {/* =========================================================================
-          FACULTY DESKTOP / TABLET CONSOLE (>= 768px Viewport)
-          Preserves 100% of Existing Desktop Controls, Projector & Classroom Wall
+          FACULTY DESKTOP EXPERIENCE:
+          When USE_NEW_DESKTOP_LAYOUT is true -> Modern DesktopLayout + DesktopFacultyHome
+          When USE_NEW_DESKTOP_LAYOUT is false -> Preserves 100% of legacy dark console
       ========================================================================= */}
-      <div className="hidden md:block max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+      {USE_NEW_DESKTOP_LAYOUT ? (
+        <div className="hidden md:block">
+          <DesktopLayout
+            user={user}
+            todayFormattedDate={todayFormattedDate}
+            isSessionActive={isSessionActive}
+            alertsCount={liveData?.counters?.alerts_count || 0}
+            onStartSessionClick={() => {
+              const currentOrNext = facultyTodaySchedule.find(c => c.is_current_slot) ||
+                facultyTodaySchedule.find(c => c.is_upcoming_slot) ||
+                facultyTodaySchedule[0];
+              handleStartSession(currentOrNext ? currentOrNext.subject_name : subject);
+            }}
+            onOpenProjector={() => setQrProjectorOpen(true)}
+            onLogout={onLogout}
+            onStartSession={(slot) => {
+              handleStartSession(slot?.subject_name || slot?.subject_code || subject);
+            }}
+          >
+            <DesktopFacultyHome
+              user={user}
+              activeSession={activeSession}
+              isSessionActive={isSessionActive}
+              qrData={qrData}
+              liveData={liveData}
+              roster={roster}
+              todayClasses={facultyTodaySchedule}
+              loadingClasses={loadingSchedule}
+              highlightedSlot={
+                facultyTodaySchedule.find(c => c.is_current_slot) ||
+                facultyTodaySchedule.find(c => c.is_upcoming_slot) ||
+                facultyTodaySchedule[0] ||
+                null
+              }
+              facultyGps={facultyGps}
+              onRecalibrateGps={handleRecalibrateGps}
+              ultrasonicBeaconActive={ultrasonicBeaconActive}
+              onToggleUltrasonic={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+              onStartSession={(slot) => {
+                handleStartSession(slot?.subject_name || slot?.subject_code || subject);
+              }}
+              onEndSession={handleEndSession}
+              starting={starting}
+              ending={ending}
+              onOpenProjector={() => setQrProjectorOpen(true)}
+              onViewAllClasses={() => {
+                if (typeof window !== 'undefined') {
+                  window.location.hash = '#/faculty/classes';
+                }
+              }}
+            />
+          </DesktopLayout>
+        </div>
+      ) : (
+        <div className="hidden md:block max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Faculty Portal Navigation Tabs (Phase 4 Timetable Integration) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
@@ -2486,6 +2520,9 @@ export default function FacultyPortal({ user, onLogout }) {
         </div>
       )}
 
+        </div>
+      )}
+
       {/* Dedicated High-Contrast Fullscreen Projector Modal for Lecture Halls */}
       {qrProjectorOpen && qrData && (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 sm:p-6 animate-fade-in">
@@ -2546,8 +2583,6 @@ export default function FacultyPortal({ user, onLogout }) {
           </div>
         </div>
       )}
-
-      </div>
     </>
   );
 }

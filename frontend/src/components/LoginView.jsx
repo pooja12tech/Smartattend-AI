@@ -16,8 +16,8 @@ export default function LoginView({ onLoginSuccess }) {
   });
 
   const [roleTab, setRoleTab] = useState('student'); // 'student' | 'faculty' | 'admin'
-  const [identifier, setIdentifier] = useState('student');
-  const [password, setPassword] = useState('studentpassword');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [deviceId, setDeviceIdState] = useState('');
@@ -86,24 +86,8 @@ export default function LoginView({ onLoginSuccess }) {
     setRoleTab(newRole);
     setError(null);
     setInfoMessage(null);
-    if (newRole === 'student') {
-      setIdentifier('student');
-      setPassword('studentpassword');
-    } else if (newRole === 'faculty') {
-      setIdentifier('faculty');
-      setPassword('facultypassword');
-    } else if (newRole === 'admin') {
-      setIdentifier('admin');
-      setPassword('adminpassword');
-    }
-  };
-
-  const handleQuickFill = (id, pass, role) => {
-    setRoleTab(role);
-    setIdentifier(id);
-    setPassword(pass);
-    setError(null);
-    setInfoMessage(null);
+    setIdentifier('');
+    setPassword('');
   };
 
   const handleSubmit = async (e) => {
@@ -130,8 +114,11 @@ export default function LoginView({ onLoginSuccess }) {
   };
 
   const handleBiometricLoginSimulation = () => {
-    handleQuickFill('student', 'studentpassword', 'student');
-    setInfoMessage('Face ID biometric credentials verified. Ready to sign in.');
+    if (!identifier) {
+      setError('Please enter your University Roll No. or Faculty ID first.');
+      return;
+    }
+    setInfoMessage('Face ID biometric sensor ready. Enter password to authorize hardware passkey.');
   };
 
   const regenerateDeviceId = () => {
@@ -366,38 +353,11 @@ export default function LoginView({ onLoginSuccess }) {
             </div>
           )}
 
-          {/* Quick Demo Fill Credentials */}
-          <div className="pt-2 border-t border-slate-100">
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 mb-2">
-              <Sparkles className="w-3 h-3 text-emerald-700" />
-              <span>1-Click Demo Login:</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5 text-xs">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('student', 'studentpassword', 'student')}
-                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
-              >
-                <div className="font-bold text-emerald-800 text-[11px]">Student</div>
-                <div className="text-[9px] text-slate-400 font-mono">STU01</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickFill('faculty', 'facultypassword', 'faculty')}
-                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
-              >
-                <div className="font-bold text-emerald-800 text-[11px]">Faculty</div>
-                <div className="text-[9px] text-slate-400 font-mono">FAC01</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin', 'adminpassword', 'admin')}
-                className="p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 text-left transition"
-              >
-                <div className="font-bold text-emerald-800 text-[11px]">Admin</div>
-                <div className="text-[9px] text-slate-400 font-mono">ADM01</div>
-              </button>
-            </div>
+          {/* Campus IT Support Notice */}
+          <div className="pt-3 border-t border-slate-100 text-center">
+            <p className="text-[11px] text-slate-400">
+              Institutional portal protected by multi-factor identity verification &amp; device hardware lock.
+            </p>
           </div>
 
         </div>

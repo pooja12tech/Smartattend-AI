@@ -20,7 +20,7 @@ import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import update
+from sqlalchemy import update, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import numpy as np
@@ -3509,11 +3509,14 @@ def get_admin_users(
     role: Optional[str] = None,
     department: Optional[str] = None,
     semester: Optional[int] = None,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_faculty_or_admin),
     db: Session = Depends(get_pg_db)
 ):
     query = db.query(User)
-    if role:
+    # Faculty members can only query students
+    if current_user.role == "faculty":
+        query = query.filter(User.role == "student")
+    elif role:
         query = query.filter(User.role == role.lower())
     if department:
         query = query.filter(User.department == department)
@@ -4022,7 +4025,11 @@ def get_my_timetable(
 
     elif current_user.role == "faculty":
         entries = db.query(TimetableEntry).filter(
-            TimetableEntry.faculty_id == current_user.roll_no,
+            or_(
+                TimetableEntry.faculty_id == current_user.roll_no,
+                TimetableEntry.faculty_id == str(current_user.id),
+                TimetableEntry.faculty_name.ilike(f"%{current_user.name}%")
+            ),
             TimetableEntry.is_published == True
         ).all()
         entries_sorted = sorted(entries, key=lambda x: (DAY_ORDER.get(x.day_of_week, 99), x.start_time))
@@ -4114,7 +4121,11 @@ def get_faculty_today_timetable(
     current_time_str = now.strftime("%H:%M")
 
     entries = db.query(TimetableEntry).filter(
-        TimetableEntry.faculty_id == current_user.roll_no,
+        or_(
+            TimetableEntry.faculty_id == current_user.roll_no,
+            TimetableEntry.faculty_id == str(current_user.id),
+            TimetableEntry.faculty_name.ilike(f"%{current_user.name}%")
+        ),
         TimetableEntry.day_of_week == target_day,
         TimetableEntry.is_published == True
     ).all()

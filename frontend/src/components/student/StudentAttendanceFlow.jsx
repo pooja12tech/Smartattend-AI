@@ -52,9 +52,10 @@ export default function StudentAttendanceFlow({
   const activeDotIndex = getStepDotIndex();
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col justify-between overflow-hidden select-none">
-      {/* SCREEN 5: QR SCAN SCREEN (Phases 5 & 6) */}
-      {step === 'SCAN_QR' && (
+    <div className="fixed inset-0 z-50 bg-black/80 md:backdrop-blur-md flex items-center justify-center p-0 md:p-6 overflow-hidden select-none">
+      <div className="w-full h-full md:h-auto md:max-h-[92vh] md:max-w-lg bg-[#111827] text-white flex flex-col justify-between overflow-hidden md:rounded-3xl md:border md:border-slate-800 md:shadow-2xl relative">
+        {/* SCREEN 5: QR SCAN SCREEN (Phases 5 & 6) */}
+        {step === 'SCAN_QR' && (
         <div className="relative flex-1 flex flex-col justify-between bg-black">
           {/* Top Bar (Screen 5 Reference) */}
           <div className="relative z-20 flex items-center justify-between px-4 py-4 pt-6 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
@@ -517,6 +518,7 @@ export default function StudentAttendanceFlow({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -25,14 +25,37 @@ import StudentAcademicDetailsView from './student/StudentAcademicDetailsView';
 import StudentSettingsView from './student/StudentSettingsView';
 import StudentNotificationsView from './student/StudentNotificationsView';
 
-export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
+// Redesigned Desktop Student UI Components
+import DesktopStudentSidebar from '../desktop/student/DesktopStudentSidebar';
+import DesktopMobileOnlyModal from '../desktop/student/DesktopMobileOnlyModal';
+import DesktopStudentHome from '../desktop/student/DesktopStudentHome';
+import DesktopStudentClasses from '../desktop/student/DesktopStudentClasses';
+import DesktopStudentAttendance from '../desktop/student/DesktopStudentAttendance';
+import DesktopStudentHistory from '../desktop/student/DesktopStudentHistory';
+import DesktopStudentProfile from '../desktop/student/DesktopStudentProfile';
+
+export default function StudentPortal({ user, onLogout }) {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showMobileScanNotice, setShowMobileScanNotice] = useState(false);
   
   // Navigation View State
   // 'home' | 'classes' | 'active-session' | 'attendance' | 'subject-attendance' | 'history' | 'profile' | 'personal-info' | 'academic-details' | 'settings' | 'notifications'
-  const [currentView, setCurrentView] = useState('home');
+  const getInitialStudentView = () => {
+    if (typeof window === 'undefined') return 'home';
+    const hash = window.location.hash || '';
+    const match = hash.match(/^#\/student(?:\/([a-zA-Z0-9_-]+))?(?:\?.*)?$/);
+    if (match && match[1]) {
+      const v = match[1].toLowerCase();
+      if (['home', 'classes', 'active-session', 'attendance', 'subject-attendance', 'history', 'profile', 'personal-info', 'academic-details', 'settings', 'notifications'].includes(v)) {
+        return v;
+      }
+    }
+    return 'home';
+  };
+
+  const [currentView, setCurrentView] = useState(getInitialStudentView);
   const [selectedSession, setSelectedSession] = useState(null);
 
   // Synchronous refs for popstate listener (prevents stale closure traps)
@@ -167,12 +190,28 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
   // Synchronize history state on navigation
   const navigateTo = (targetView) => {
-    if (targetView === currentView && !isScannerOpen) return;
-    try {
-      window.history.pushState({ smartattend: true, view: targetView, scanner: false }, '');
-    } catch (e) {}
     setCurrentView(targetView);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#/student/${targetView}`;
+    }
   };
+
+  // Synchronize currentView with window.location.hash
+  useEffect(() => {
+    const handleHash = () => {
+      const v = getInitialStudentView();
+      setCurrentView(v);
+    };
+    window.addEventListener('hashchange', handleHash);
+
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#/student/')) {
+      const v = getInitialStudentView();
+      window.location.hash = `#/student/${v}`;
+    }
+
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   // In-app Back button handler (< button)
   const handleInAppBack = () => {
@@ -192,23 +231,12 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
     }
   };
 
-  // Unified popstate listener handling Android system Back gestures/buttons
+  // Modal & sheet back button handler
   useEffect(() => {
-    // Initialize root history state if missing
-    try {
-      if (!window.history.state || !window.history.state.smartattend) {
-        window.history.replaceState({ smartattend: true, view: 'root', initial: true }, '');
-        window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
-      }
-    } catch (e) {}
-
     const handlePopState = (e) => {
       // 1. If scanner or face verification modal is open: close it safely
       if (isScannerOpenRef.current) {
         handleCloseScannerModal();
-        try {
-          window.history.pushState({ smartattend: true, view: currentViewRef.current, scanner: false }, '');
-        } catch (err) {}
         return;
       }
 
@@ -219,45 +247,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
         }
         setEnrollCameraActive(false);
-        try {
-          window.history.pushState({ smartattend: true, view: currentViewRef.current, scanner: false }, '');
-        } catch (err) {}
         return;
-      }
-
-      // 3. Sub-views return to their parent
-      const cur = currentViewRef.current;
-      if (['personal-info', 'academic-details', 'settings'].includes(cur)) {
-        setCurrentView('profile');
-        try {
-          window.history.pushState({ smartattend: true, view: 'profile', scanner: false }, '');
-        } catch (err) {}
-        return;
-      }
-      if (['classes', 'attendance', 'subject-attendance', 'history', 'profile', 'active-session', 'notifications'].includes(cur)) {
-        setCurrentView('home');
-        try {
-          window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
-        } catch (err) {}
-        return;
-      }
-
-      // 4. Root dashboard ('home'): prevent accidental exit, require double back within 2s
-      if (cur === 'home') {
-        const now = Date.now();
-        if (now - lastBackPressRef.current < 2000) {
-          // Double back confirmed: allow system exit
-          window.history.back();
-        } else {
-          // First back press: prompt toast and preserve root
-          lastBackPressRef.current = now;
-          setExitToast(true);
-          if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
-          exitTimeoutRef.current = setTimeout(() => setExitToast(false), 2000);
-          try {
-            window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
-          } catch (err) {}
-        }
       }
     };
 
@@ -1240,162 +1230,239 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   }
 
   return (
-    <div className="student-mobile-app min-h-screen pb-bottom-nav">
-      {/* Mobile Screen Container */}
-      <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
+    <div className="student-portal-wrapper min-h-screen bg-[#F8FAF9] text-[#111827]">
+      {/* ======================================================== */}
+      {/* 1. MOBILE PHONE VIEW (< 768px): 100% PRESERVED EXACT PWA */}
+      {/* ======================================================== */}
+      <div className="md:hidden student-mobile-app min-h-screen pb-bottom-nav">
+        {/* Mobile Screen Container */}
+        <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
 
-        {/* SCREEN 3: HOME DASHBOARD */}
-        {currentView === 'home' && (
-          <StudentHomeView
-            dashboard={dashboard}
-            user={user}
-            todayClasses={todayClasses}
-            activeSession={ongoingClass}
-            onOpenActiveSession={(sess) => {
-              setSelectedSession(sess);
-              navigateTo('active-session');
+          {/* SCREEN 3: HOME DASHBOARD */}
+          {currentView === 'home' && (
+            <StudentHomeView
+              dashboard={dashboard}
+              user={user}
+              todayClasses={todayClasses}
+              activeSession={ongoingClass}
+              onOpenActiveSession={(sess) => {
+                setSelectedSession(sess);
+                navigateTo('active-session');
+              }}
+              onOpenSubjectAttendance={() => navigateTo('subject-attendance')}
+              onOpenClassesTab={() => navigateTo('classes')}
+              onOpenProfile={() => navigateTo('profile')}
+              onOpenScanner={handleStartAttendanceFlow}
+            />
+          )}
+
+          {/* SCREEN 4: ACTIVE SESSION */}
+          {currentView === 'active-session' && (
+            <StudentActiveSessionView
+              session={selectedSession || ongoingClass}
+              onBack={handleInAppBack}
+              onStartScan={handleStartAttendanceFlow}
+            />
+          )}
+
+          {/* SCREEN 13: CLASSES / TIMETABLE */}
+          {currentView === 'classes' && (
+            <StudentClassesView
+              timetable={fullTimetable}
+              todayClasses={todayClasses}
+              onBack={handleInAppBack}
+              onOpenSession={(sess) => {
+                setSelectedSession(sess);
+                navigateTo('active-session');
+              }}
+            />
+          )}
+
+          {/* SCREEN 14: ATTENDANCE HISTORY */}
+          {currentView === 'history' && (
+            <StudentAttendanceHistoryView
+              logs={dashboard?.recent_logs || []}
+              onBack={handleInAppBack}
+            />
+          )}
+
+          {/* SCREEN 15: SUBJECT-WISE ATTENDANCE */}
+          {(currentView === 'subject-attendance' || currentView === 'attendance') && (
+            <StudentSubjectAttendanceView
+              dashboard={dashboard}
+              onBack={handleInAppBack}
+            />
+          )}
+
+          {/* SCREEN 16: STUDENT PROFILE */}
+          {currentView === 'profile' && (
+            <StudentProfileView
+              dashboard={dashboard}
+              user={user}
+              onBack={handleInAppBack}
+              onOpenPersonalInfo={() => navigateTo('personal-info')}
+              onOpenAcademicDetails={() => navigateTo('academic-details')}
+              onOpenAttendanceReport={() => navigateTo('subject-attendance')}
+              onOpenTimetable={() => navigateTo('classes')}
+              onOpenFaceEnroll={() => {
+                try {
+                  window.history.pushState({ smartattend: true, view: currentView, faceEnroll: true }, '');
+                } catch (e) {}
+                setShowFaceEnrollModal(true);
+              }}
+              onOpenSettings={() => navigateTo('settings')}
+              onOpenNotifications={() => navigateTo('notifications')}
+              onLogout={onLogout}
+            />
+          )}
+
+          {/* SCREEN 17: PERSONAL INFORMATION */}
+          {currentView === 'personal-info' && (
+            <StudentPersonalInfoView
+              dashboard={dashboard}
+              user={user}
+              onBack={handleInAppBack}
+            />
+          )}
+
+          {/* SCREEN 18: ACADEMIC DETAILS */}
+          {currentView === 'academic-details' && (
+            <StudentAcademicDetailsView
+              dashboard={dashboard}
+              user={user}
+              onBack={handleInAppBack}
+            />
+          )}
+
+          {/* SCREEN 19: SETTINGS */}
+          {currentView === 'settings' && (
+            <StudentSettingsView
+              onBack={handleInAppBack}
+              onLogout={onLogout}
+              onOpenNotifications={() => navigateTo('notifications')}
+            />
+          )}
+
+          {/* SCREEN 20: NOTIFICATIONS */}
+          {currentView === 'notifications' && (
+            <StudentNotificationsView
+              notifications={dashboard?.notifications || []}
+              onBack={handleInAppBack}
+              onMarkAllRead={() => {
+                if (user?.roll_no) {
+                  api.markAllNotificationsRead(user.roll_no).then(fetchDashboardData).catch(() => {});
+                }
+              }}
+            />
+          )}
+
+        </div>
+
+        {/* Android Exit Confirmation Toast */}
+        {exitToast && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            Press back again to exit SmartAttend
+          </div>
+        )}
+
+        {/* Persistent Mobile Bottom Navigation (Screens 3-20) */}
+        {!isScannerOpen && (
+          <StudentBottomNav
+            activeTab={
+              currentView === 'home' || currentView === 'active-session'
+                ? 'home'
+                : currentView === 'classes'
+                ? 'classes'
+                : currentView === 'subject-attendance' || currentView === 'attendance' || currentView === 'history'
+                ? 'attendance'
+                : currentView === 'profile' || currentView === 'personal-info' || currentView === 'academic-details' || currentView === 'settings'
+                ? 'profile'
+                : 'home'
+            }
+            onTabChange={(tabId) => {
+              if (tabId === 'home') navigateTo('home');
+              else if (tabId === 'classes') navigateTo('classes');
+              else if (tabId === 'attendance') navigateTo('subject-attendance');
+              else if (tabId === 'profile') navigateTo('profile');
             }}
-            onOpenSubjectAttendance={() => navigateTo('subject-attendance')}
-            onOpenClassesTab={() => navigateTo('classes')}
-            onOpenProfile={() => navigateTo('profile')}
-            onOpenScanner={handleStartAttendanceFlow}
+            onScanClick={handleStartAttendanceFlow}
           />
         )}
-
-        {/* SCREEN 4: ACTIVE SESSION */}
-        {currentView === 'active-session' && (
-          <StudentActiveSessionView
-            session={selectedSession || ongoingClass}
-            onBack={handleInAppBack}
-            onStartScan={handleStartAttendanceFlow}
-          />
-        )}
-
-        {/* SCREEN 13: CLASSES / TIMETABLE */}
-        {currentView === 'classes' && (
-          <StudentClassesView
-            timetable={fullTimetable}
-            todayClasses={todayClasses}
-            onBack={handleInAppBack}
-            onOpenSession={(sess) => {
-              setSelectedSession(sess);
-              navigateTo('active-session');
-            }}
-          />
-        )}
-
-        {/* SCREEN 14: ATTENDANCE HISTORY */}
-        {currentView === 'history' && (
-          <StudentAttendanceHistoryView
-            logs={dashboard?.recent_logs || []}
-            onBack={handleInAppBack}
-          />
-        )}
-
-        {/* SCREEN 15: SUBJECT-WISE ATTENDANCE */}
-        {(currentView === 'subject-attendance' || currentView === 'attendance') && (
-          <StudentSubjectAttendanceView
-            dashboard={dashboard}
-            onBack={handleInAppBack}
-          />
-        )}
-
-        {/* SCREEN 16: STUDENT PROFILE */}
-        {currentView === 'profile' && (
-          <StudentProfileView
-            dashboard={dashboard}
-            user={user}
-            onBack={handleInAppBack}
-            onOpenPersonalInfo={() => navigateTo('personal-info')}
-            onOpenAcademicDetails={() => navigateTo('academic-details')}
-            onOpenAttendanceReport={() => navigateTo('subject-attendance')}
-            onOpenTimetable={() => navigateTo('classes')}
-            onOpenFaceEnroll={() => {
-              try {
-                window.history.pushState({ smartattend: true, view: currentView, faceEnroll: true }, '');
-              } catch (e) {}
-              setShowFaceEnrollModal(true);
-            }}
-            onOpenSettings={() => navigateTo('settings')}
-            onOpenNotifications={() => navigateTo('notifications')}
-            onLogout={onLogout}
-          />
-        )}
-
-        {/* SCREEN 17: PERSONAL INFORMATION */}
-        {currentView === 'personal-info' && (
-          <StudentPersonalInfoView
-            dashboard={dashboard}
-            user={user}
-            onBack={handleInAppBack}
-          />
-        )}
-
-        {/* SCREEN 18: ACADEMIC DETAILS */}
-        {currentView === 'academic-details' && (
-          <StudentAcademicDetailsView
-            dashboard={dashboard}
-            user={user}
-            onBack={handleInAppBack}
-          />
-        )}
-
-        {/* SCREEN 19: SETTINGS */}
-        {currentView === 'settings' && (
-          <StudentSettingsView
-            onBack={handleInAppBack}
-            onLogout={onLogout}
-            onOpenNotifications={() => navigateTo('notifications')}
-            onQuickSwitchRole={onQuickSwitchRole}
-          />
-        )}
-
-        {/* SCREEN 20: NOTIFICATIONS */}
-        {currentView === 'notifications' && (
-          <StudentNotificationsView
-            notifications={dashboard?.notifications || []}
-            onBack={handleInAppBack}
-            onMarkAllRead={() => {
-              if (user?.roll_no) {
-                api.markAllNotificationsRead(user.roll_no).then(fetchDashboardData).catch(() => {});
-              }
-            }}
-          />
-        )}
-
       </div>
 
-      {/* Android Exit Confirmation Toast */}
-      {exitToast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150">
-          Press back again to exit SmartAttend
-        </div>
-      )}
-
-      {/* Persistent Mobile Bottom Navigation (Screens 3-20) */}
-      {/* Hidden during dedicated full-screen camera and face verification (Phase 4 requirement) */}
-      {!isScannerOpen && (
-        <StudentBottomNav
-          activeTab={
-            currentView === 'home' || currentView === 'active-session'
-              ? 'home'
-              : currentView === 'classes'
-              ? 'classes'
-              : currentView === 'subject-attendance' || currentView === 'attendance' || currentView === 'history'
-              ? 'attendance'
-              : currentView === 'profile' || currentView === 'personal-info' || currentView === 'academic-details' || currentView === 'settings'
-              ? 'profile'
-              : 'home'
-          }
-          onTabChange={(tabId) => {
-            if (tabId === 'home') navigateTo('home');
-            else if (tabId === 'classes') navigateTo('classes');
-            else if (tabId === 'attendance') navigateTo('subject-attendance');
-            else if (tabId === 'profile') navigateTo('profile');
-          }}
-          onScanClick={handleStartAttendanceFlow}
+      {/* ======================================================== */}
+      {/* 2. DESKTOP LAPTOP VIEW (>= 768px): FULL-SCREEN SIDEBAR UI */}
+      {/* ======================================================== */}
+      <div className="hidden md:flex min-h-screen bg-[#F8FAF9] w-full">
+        <DesktopStudentSidebar
+          user={user}
+          currentView={currentView}
+          onNavigate={(viewId) => navigateTo(viewId)}
+          onTriggerScanNotice={() => setShowMobileScanNotice(true)}
+          onLogout={onLogout}
         />
-      )}
+
+        <main className="flex-1 min-w-0 min-h-screen overflow-y-auto px-8 py-8 w-full bg-[#F8FAF9]">
+          {(currentView === 'home' || currentView === 'active-session') && (
+            <DesktopStudentHome
+              dashboard={dashboard}
+              user={user}
+              todayClasses={todayClasses}
+              activeSession={ongoingClass}
+              onOpenActiveSession={(sess) => {
+                setSelectedSession(sess);
+                navigateTo('active-session');
+              }}
+              onStartScan={() => setShowMobileScanNotice(true)}
+              onOpenClassesTab={() => navigateTo('classes')}
+              onOpenSubjectAttendance={() => navigateTo('subject-attendance')}
+              onOpenHistory={() => navigateTo('attendance')}
+            />
+          )}
+
+          {currentView === 'classes' && (
+            <DesktopStudentClasses
+              todayClasses={todayClasses}
+              fullTimetable={fullTimetable}
+              onStartScan={() => setShowMobileScanNotice(true)}
+            />
+          )}
+
+          {(currentView === 'subject-attendance' || currentView === 'attendance') && (
+            <DesktopStudentAttendance
+              dashboard={dashboard}
+            />
+          )}
+
+          {['profile', 'personal-info', 'academic-details', 'settings'].includes(currentView) && (
+            <DesktopStudentProfile
+              dashboard={dashboard}
+              user={user}
+              onLogout={onLogout}
+            />
+          )}
+
+          {currentView === 'notifications' && (
+            <div className="max-w-3xl mx-auto">
+              <StudentNotificationsView
+                notifications={dashboard?.notifications || []}
+                onBack={() => navigateTo('home')}
+                onMarkAllRead={() => {
+                  if (user?.roll_no) {
+                    api.markAllNotificationsRead(user.roll_no).then(fetchDashboardData).catch(() => {});
+                  }
+                }}
+              />
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Desktop Mobile Only Attendance Notice Modal */}
+      <DesktopMobileOnlyModal
+        isOpen={showMobileScanNotice}
+        onClose={() => setShowMobileScanNotice(false)}
+      />
 
       {/* SCREEN 5 - 12: ATTENDANCE FULLSCREEN MODAL FLOW */}
       {isScannerOpen && (
