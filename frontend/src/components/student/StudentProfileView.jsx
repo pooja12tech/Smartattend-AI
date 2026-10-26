@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ArrowLeft, User, ShieldCheck, ChevronRight, FileText, Calendar,
-  Camera, Settings, Bell, Edit3, Fingerprint, Lock
+  Camera, Settings, Bell, Edit3, Fingerprint, Lock, LogOut, AlertTriangle
 } from 'lucide-react';
 
 export default function StudentProfileView({
@@ -14,8 +14,10 @@ export default function StudentProfileView({
   onOpenTimetable,
   onOpenFaceEnroll,
   onOpenSettings,
-  onOpenNotifications
+  onOpenNotifications,
+  onLogout
 }) {
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const student = dashboard?.student || user || {};
   const isEnrolled = student.has_registered_face ?? user?.has_registered_face ?? true;
 
@@ -65,6 +67,13 @@ export default function StudentProfileView({
       action: onOpenNotifications
     }
   ];
+
+  const handleConfirmLogout = () => {
+    setShowLogoutModal(false);
+    if (onLogout) {
+      onLogout();
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -143,6 +152,58 @@ export default function StudentProfileView({
           );
         })}
       </div>
+
+      {/* Account Section & Logout Button (Phase 2 Requirement) */}
+      <div className="pt-1">
+        <button
+          type="button"
+          id="btn-profile-logout"
+          onClick={() => setShowLogoutModal(true)}
+          className="w-full py-3.5 px-4 rounded-2xl bg-white border border-rose-200/90 hover:bg-rose-50/60 active:scale-[0.99] text-rose-600 font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition"
+        >
+          <LogOut className="w-4 h-4 text-rose-600" />
+          <span>Log Out of SmartAttend</span>
+        </button>
+      </div>
+
+      {/* Logout Confirmation Dialog Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm border border-slate-200 shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+              <LogOut className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-extrabold text-[#111827]">
+                Log Out of SmartAttend?
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Are you sure you want to sign out? You will need your roll number and password to sign back in.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(false)}
+                className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition focus:outline-none"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                id="btn-confirm-logout"
+                onClick={handleConfirmLogout}
+                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition focus:outline-none"
+              >
+                Yes, Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

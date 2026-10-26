@@ -3,7 +3,7 @@ import {
   Fingerprint, Calendar, Smartphone, QrCode, Camera, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, Award, Flame, BookOpen, Clock, ChevronDown, ChevronUp, RefreshCw,
   MapPin, ShieldAlert, Sparkles, Check, ArrowRight, RotateCcw, ShieldCheck, CheckSquare,
-  HelpCircle, History, Eye, User, Radio
+  HelpCircle, History, Eye, User, Radio, LogOut
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -30,10 +30,16 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Navigation Tab State (Screen 3-20)
+  // Navigation View State
   // 'home' | 'classes' | 'active-session' | 'attendance' | 'subject-attendance' | 'history' | 'profile' | 'personal-info' | 'academic-details' | 'settings' | 'notifications'
   const [currentView, setCurrentView] = useState('home');
   const [selectedSession, setSelectedSession] = useState(null);
+
+  // Synchronous refs for popstate listener (prevents stale closure traps)
+  const currentViewRef = useRef(currentView);
+  useEffect(() => {
+    currentViewRef.current = currentView;
+  }, [currentView]);
 
   // Timetable State
   const [todayClasses, setTodayClasses] = useState([]);
@@ -45,7 +51,13 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
   // Attendance Modal Step Flow: 'IDLE' | 'SCAN_QR' | 'FACE_VERIFY' | 'EVALUATING' | 'RESULT'
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const isScannerOpenRef = useRef(isScannerOpen);
+  useEffect(() => {
+    isScannerOpenRef.current = isScannerOpen;
+  }, [isScannerOpen]);
+
   const [attendanceStep, setAttendanceStep] = useState('IDLE');
+  const [scannerStage, setScannerStage] = useState('INITIALIZING'); // 'INITIALIZING' | 'SCANNING' | 'DETECTED' | 'VALIDATING' | 'ERROR'
   const [scannedToken, setScannedToken] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [qrScanError, setQrScanError] = useState(null);
@@ -67,7 +79,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [selfieCaptured, setSelfieCaptured] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [blinkStatus, setBlinkStatus] = useState('NO_FACE'); // 'INIT' | 'NO_FACE' | 'MULTIPLE_FACES' | 'ALIGNING' | 'WAITING_BLINK' | 'BLINKING' | 'BLINK_DETECTED' | 'CAPTURING'
+  const [blinkStatus, setBlinkStatus] = useState('NO_FACE');
   const [facePromptMessage, setFacePromptMessage] = useState('Position your face inside the circle');
   const [blinkFlash, setBlinkFlash] = useState(false);
   const [eyeClosingFeedback, setEyeClosingFeedback] = useState(false);
@@ -117,6 +129,121 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   const [ultrasonicVerified, setUltrasonicVerified] = useState(false);
   const [ultrasonicScanning, setUltrasonicScanning] = useState(false);
 
+  // Android Back Button & Exit Confirmation Toast State
+  const [exitToast, setExitToast] = useState(false);
+  const lastBackPressRef = useRef(0);
+  const exitTimeoutRef = useRef(null);
+
+  // Face Biometric Reference Enrollment State
+  const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
+  const showFaceEnrollModalRef = useRef(showFaceEnrollModal);
+  useEffect(() => {
+    showFaceEnrollModalRef.current = showFaceEnrollModal;
+  }, [showFaceEnrollModal]);
+
+  const [enrollSelfie, setEnrollSelfie] = useState(null);
+  const [enrollConsent, setEnrollConsent] = useState(true);
+  const [enrollingFace, setEnrollingFace] = useState(false);
+  const [faceEnrollSuccess, setFaceEnrollSuccess] = useState(null);
+  const [faceEnrollError, setFaceEnrollError] = useState(null);
+  const enrollVideoRef = useRef(null);
+  const [enrollCameraActive, setEnrollCameraActive] = useState(false);
+
+  // ==========================================
+  // PHASE 3: ANDROID BACK-BUTTON NAVIGATION
+  // ==========================================
+
+  // Synchronize history state on navigation
+  const navigateTo = (targetView) => {
+    if (targetView === currentView && !isScannerOpen) return;
+    try {
+      window.history.pushState({ smartattend: true, view: targetView, scanner: false }, '');
+    } catch (e) {}
+    setCurrentView(targetView);
+  };
+
+  // In-app Back button handler (< button)
+  const handleInAppBack = () => {
+    if (window.history.state && window.history.state.smartattend) {
+      window.history.back();
+    } else {
+      // Fallback if no history state
+      if (isScannerOpen) {
+        handleCloseScannerModal();
+      } else if (showFaceEnrollModal) {
+        setShowFaceEnrollModal(false);
+      } else if (['personal-info', 'academic-details', 'settings'].includes(currentView)) {
+        setCurrentView('profile');
+      } else {
+        setCurrentView('home');
+      }
+    }
+  };
+
+  // Unified popstate listener handling Android system Back gestures/buttons
+  useEffect(() => {
+    // Initialize root history state if missing
+    try {
+      if (!window.history.state || !window.history.state.smartattend) {
+        window.history.replaceState({ smartattend: true, view: 'home', scanner: false }, '');
+      }
+    } catch (e) {}
+
+    const handlePopState = (e) => {
+      // 1. If scanner or face verification modal is open: close it safely
+      if (isScannerOpenRef.current) {
+        handleCloseScannerModal();
+        return;
+      }
+
+      // 2. If face enrollment modal is open: close it safely
+      if (showFaceEnrollModalRef.current) {
+        setShowFaceEnrollModal(false);
+        if (enrollVideoRef.current?.srcObject) {
+          enrollVideoRef.current.srcObject.getTracks().forEach(t => t.stop());
+        }
+        setEnrollCameraActive(false);
+        return;
+      }
+
+      // 3. Sub-views return to their parent
+      const cur = currentViewRef.current;
+      if (['personal-info', 'academic-details', 'settings'].includes(cur)) {
+        setCurrentView('profile');
+        return;
+      }
+      if (['classes', 'attendance', 'subject-attendance', 'history', 'profile', 'active-session', 'notifications'].includes(cur)) {
+        setCurrentView('home');
+        return;
+      }
+
+      // 4. Root dashboard ('home'): prevent accidental exit, require double back within 2s
+      if (cur === 'home') {
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          // Double back confirmed: allow system exit
+          window.history.back();
+        } else {
+          // First back press: prompt toast and preserve root
+          lastBackPressRef.current = now;
+          setExitToast(true);
+          if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+          exitTimeoutRef.current = setTimeout(() => setExitToast(false), 2000);
+          try {
+            window.history.pushState({ smartattend: true, view: 'home', scanner: false }, '');
+          } catch (err) {}
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
+    };
+  }, []);
+
+  // Ultrasonic Geofence Detection
   const detectUltrasonicChirp = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
@@ -162,16 +289,6 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       return false;
     }
   };
-
-  // Face Biometric Reference Enrollment State
-  const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
-  const [enrollSelfie, setEnrollSelfie] = useState(null);
-  const [enrollConsent, setEnrollConsent] = useState(true);
-  const [enrollingFace, setEnrollingFace] = useState(false);
-  const [faceEnrollSuccess, setFaceEnrollSuccess] = useState(null);
-  const [faceEnrollError, setFaceEnrollError] = useState(null);
-  const enrollVideoRef = useRef(null);
-  const [enrollCameraActive, setEnrollCameraActive] = useState(false);
 
   const getFaceErrorMessage = (code, fallbackMsg) => {
     switch (code) {
@@ -220,16 +337,13 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
   const fetchTimetables = async () => {
     try {
-      // Fetch today's classes
       const todayRes = await api.getStudentTimetableToday().catch(() => null);
       if (todayRes?.today_classes) {
         setTodayClasses(todayRes.today_classes);
       }
-      // Fetch full timetable
       const fullRes = await api.getMyTimetable().catch(() => null);
       if (fullRes?.timetable) {
         setFullTimetable(fullRes.timetable);
-        // If today's endpoint had 0 classes, compute from full timetable
         if (!todayRes || !todayRes.today_classes || todayRes.today_classes.length === 0) {
           const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
           const currentDay = days[new Date().getDay()];
@@ -252,16 +366,13 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   useEffect(() => {
     fetchDashboardData();
     fetchTimetables();
-    // Pre-warm AI FaceLandmarker in background so it is instantly ready (0ms delay) when student scans QR
     prewarmFaceLandmarker();
   }, [user.roll_no]);
 
-  // Active ongoing class session detection
   const ongoingClass = useMemo(() => {
     return todayClasses.find(c => c.is_current_slot) || null;
   }, [todayClasses]);
 
-  // Biometric unlock simulation
   const handleBiometricUnlock = () => {
     setBiometricScanning(true);
     setTimeout(() => {
@@ -270,30 +381,37 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
     }, 600);
   };
 
-  // Stop Rear Camera QR Scanner (Idempotent and safe)
+  // Stop Rear Camera QR Scanner (Idempotent and hardware safe)
   const stopQRScanner = async () => {
     if (qrStartTimeoutRef.current) {
       clearTimeout(qrStartTimeoutRef.current);
       qrStartTimeoutRef.current = null;
     }
     const scanner = qrScannerRef.current;
-    if (!scanner) return;
     qrScannerRef.current = null;
-    try {
-      if (scanner.isScanning) {
-        await scanner.stop();
-      }
-    } catch (err) {
-      console.warn('Error stopping QR scanner:', err);
+    if (scanner) {
+      try {
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
+      } catch (err) {}
+      try {
+        scanner.clear();
+      } catch (err) {}
     }
-    try {
-      scanner.clear();
-    } catch (err) {
-      console.warn('Error clearing QR scanner:', err);
+
+    // Explicitly shut down all media tracks on the reader video
+    const video = document.querySelector('#smartattend-qr-reader video');
+    if (video && video.srcObject) {
+      try {
+        video.srcObject.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      video.srcObject = null;
     }
+    setIsTorchOn(false);
   };
 
-  // Stop Front Camera Stream (Idempotent and attempt-cancelling)
+  // Stop Front Camera Stream
   const stopFrontCamera = () => {
     attemptIdRef.current++;
     isStartingFrontCameraRef.current = false;
@@ -359,6 +477,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
     setIsScannerOpen(false);
     setAttendanceStep('IDLE');
+    setScannerStage('INITIALIZING');
     setQrScanError(null);
     setCameraError(null);
     setCapturedLocation(null);
@@ -375,8 +494,15 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
     if (!biometricUnlocked) handleBiometricUnlock();
     qrProcessingRef.current = false;
     captureTriggeredRef.current = false;
+
+    // Push scanner history state for Android Back button
+    try {
+      window.history.pushState({ smartattend: true, view: currentView, scanner: true }, '');
+    } catch (e) {}
+
     setIsScannerOpen(true);
     setAttendanceStep('SCAN_QR');
+    setScannerStage('INITIALIZING');
     closedFrameBufferRef.current = null;
     livenessChallengeRef.current = null;
     setScannedToken('');
@@ -411,10 +537,12 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
   // Start Rear Camera QR Scanner
   const startQRScanner = () => {
     setQrScanError(null);
+    setScannerStage('INITIALIZING');
     qrProcessingRef.current = false;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setQrScanError('Camera access requires HTTPS or localhost. navigator.mediaDevices is undefined.');
+      setScannerStage('ERROR');
       return;
     }
 
@@ -434,7 +562,10 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           { facingMode: 'environment' },
           {
             fps: 10,
-            qrbox: { width: 250, height: 250 },
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.75);
+              return { width: edge, height: edge };
+            },
             aspectRatio: 1.0
           },
           async (decodedText) => {
@@ -443,14 +574,18 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
             const rawToken = decodedText.trim();
             const parts = rawToken.split('.');
             if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
-              setQrScanError(`Scanned QR is not a valid SmartAttend token. Expected session_id.window.signature format.`);
+              setQrScanError('Scanned QR code is not a valid SmartAttend token. Expected session_id.window.signature format.');
+              setScannerStage('ERROR');
               return;
             }
 
             qrProcessingRef.current = true;
             setQrScanError(null);
+            setScannerStage('DETECTED');
             setScannedToken(rawToken);
             setSessionId(parts[0]);
+
+            setTimeout(() => setScannerStage('VALIDATING'), 150);
 
             const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -540,28 +675,29 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           },
           () => {}
         );
+
+        setScannerStage('SCANNING');
       } catch (err) {
         console.error('Failed to start rear camera QR scanner:', err);
         setQrScanError('Failed to access rear camera. Please grant camera permissions.');
+        setScannerStage('ERROR');
       }
     }, 100);
   };
 
-  // Toggle torch / flash
+  // Toggle torch on rear camera using video element track
   const handleToggleTorch = async () => {
     try {
-      const scanner = qrScannerRef.current;
-      if (scanner && scanner.isScanning) {
-        const stream = activeStreamRef.current;
-        if (stream) {
-          const track = stream.getVideoTracks()[0];
-          if (track && track.getCapabilities && track.getCapabilities().torch) {
-            await track.applyConstraints({ advanced: [{ torch: !isTorchOn }] });
-            setIsTorchOn(!isTorchOn);
-          }
-        }
+      const video = document.querySelector('#smartattend-qr-reader video');
+      const track = video?.srcObject?.getVideoTracks?.()[0];
+      if (track && track.getCapabilities && track.getCapabilities().torch) {
+        const nextTorch = !isTorchOn;
+        await track.applyConstraints({ advanced: [{ torch: nextTorch }] });
+        setIsTorchOn(nextTorch);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Torch toggle error:', e);
+    }
   };
 
   // Step 2: Start Front Camera with Real-Time AI Face & Eye-Blink Liveness Auto-Capture
@@ -666,7 +802,6 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
       isStartingFrontCameraRef.current = false;
 
-      // Create deterministic blink state machine
       const machine = createBlinkStateMachine({
         autoCaptureDelayMs: 400
       });
@@ -850,7 +985,6 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       }
 
       if (!capturedBase64) {
-        // Fallback synthetic photo if camera capture fails in demo environment
         const c = document.createElement('canvas');
         c.width = 480; c.height = 480;
         const ctx = c.getContext('2d');
@@ -926,7 +1060,6 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       liveness_status: blinkStatus === 'BLINK_DETECTED' || blinkStatus === 'CAPTURING' ? 'CLIENT_BLINK_VERIFIED' : 'NOT_CHECKED'
     };
 
-    // Progression of gates
     gates.gate2 = 'RUNNING';
     setGateProgress({ ...gates, activeGate: 2 });
     await new Promise(r => setTimeout(r, 300));
@@ -955,7 +1088,6 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
       });
       setAttendanceStep('RESULT');
 
-      // Confetti celebration for confirmed attendance
       confetti({
         particleCount: 90,
         spread: 70,
@@ -1065,7 +1197,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
     }
   };
 
-  // Global cleanup
+  // Global cleanup on unmount
   useEffect(() => {
     return () => {
       stopFrontCamera();
@@ -1096,11 +1228,11 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
             activeSession={ongoingClass}
             onOpenActiveSession={(sess) => {
               setSelectedSession(sess);
-              setCurrentView('active-session');
+              navigateTo('active-session');
             }}
-            onOpenSubjectAttendance={() => setCurrentView('subject-attendance')}
-            onOpenClassesTab={() => setCurrentView('classes')}
-            onOpenProfile={() => setCurrentView('profile')}
+            onOpenSubjectAttendance={() => navigateTo('subject-attendance')}
+            onOpenClassesTab={() => navigateTo('classes')}
+            onOpenProfile={() => navigateTo('profile')}
             onOpenScanner={handleStartAttendanceFlow}
           />
         )}
@@ -1109,7 +1241,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
         {currentView === 'active-session' && (
           <StudentActiveSessionView
             session={selectedSession || ongoingClass}
-            onBack={() => setCurrentView('home')}
+            onBack={handleInAppBack}
             onStartScan={handleStartAttendanceFlow}
           />
         )}
@@ -1119,10 +1251,10 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           <StudentClassesView
             timetable={fullTimetable}
             todayClasses={todayClasses}
-            onBack={() => setCurrentView('home')}
+            onBack={handleInAppBack}
             onOpenSession={(sess) => {
               setSelectedSession(sess);
-              setCurrentView('active-session');
+              navigateTo('active-session');
             }}
           />
         )}
@@ -1131,7 +1263,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
         {currentView === 'history' && (
           <StudentAttendanceHistoryView
             logs={dashboard?.recent_logs || []}
-            onBack={() => setCurrentView('home')}
+            onBack={handleInAppBack}
           />
         )}
 
@@ -1139,7 +1271,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
         {(currentView === 'subject-attendance' || currentView === 'attendance') && (
           <StudentSubjectAttendanceView
             dashboard={dashboard}
-            onBack={() => setCurrentView('home')}
+            onBack={handleInAppBack}
           />
         )}
 
@@ -1148,14 +1280,20 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           <StudentProfileView
             dashboard={dashboard}
             user={user}
-            onBack={() => setCurrentView('home')}
-            onOpenPersonalInfo={() => setCurrentView('personal-info')}
-            onOpenAcademicDetails={() => setCurrentView('academic-details')}
-            onOpenAttendanceReport={() => setCurrentView('subject-attendance')}
-            onOpenTimetable={() => setCurrentView('classes')}
-            onOpenFaceEnroll={() => setShowFaceEnrollModal(true)}
-            onOpenSettings={() => setCurrentView('settings')}
-            onOpenNotifications={() => setCurrentView('notifications')}
+            onBack={handleInAppBack}
+            onOpenPersonalInfo={() => navigateTo('personal-info')}
+            onOpenAcademicDetails={() => navigateTo('academic-details')}
+            onOpenAttendanceReport={() => navigateTo('subject-attendance')}
+            onOpenTimetable={() => navigateTo('classes')}
+            onOpenFaceEnroll={() => {
+              try {
+                window.history.pushState({ smartattend: true, view: currentView, faceEnroll: true }, '');
+              } catch (e) {}
+              setShowFaceEnrollModal(true);
+            }}
+            onOpenSettings={() => navigateTo('settings')}
+            onOpenNotifications={() => navigateTo('notifications')}
+            onLogout={onLogout}
           />
         )}
 
@@ -1164,7 +1302,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           <StudentPersonalInfoView
             dashboard={dashboard}
             user={user}
-            onBack={() => setCurrentView('profile')}
+            onBack={handleInAppBack}
           />
         )}
 
@@ -1173,16 +1311,16 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           <StudentAcademicDetailsView
             dashboard={dashboard}
             user={user}
-            onBack={() => setCurrentView('profile')}
+            onBack={handleInAppBack}
           />
         )}
 
         {/* SCREEN 19: SETTINGS */}
         {currentView === 'settings' && (
           <StudentSettingsView
-            onBack={() => setCurrentView('profile')}
+            onBack={handleInAppBack}
             onLogout={onLogout}
-            onOpenNotifications={() => setCurrentView('notifications')}
+            onOpenNotifications={() => navigateTo('notifications')}
             onQuickSwitchRole={onQuickSwitchRole}
           />
         )}
@@ -1191,7 +1329,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
         {currentView === 'notifications' && (
           <StudentNotificationsView
             notifications={dashboard?.notifications || []}
-            onBack={() => setCurrentView('home')}
+            onBack={handleInAppBack}
             onMarkAllRead={() => {
               if (user?.roll_no) {
                 api.markAllNotificationsRead(user.roll_no).then(fetchDashboardData).catch(() => {});
@@ -1202,32 +1340,43 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
 
       </div>
 
+      {/* Android Exit Confirmation Toast */}
+      {exitToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150">
+          Press back again to exit SmartAttend
+        </div>
+      )}
+
       {/* Persistent Mobile Bottom Navigation (Screens 3-20) */}
-      <StudentBottomNav
-        activeTab={
-          currentView === 'home' || currentView === 'active-session'
-            ? 'home'
-            : currentView === 'classes'
-            ? 'classes'
-            : currentView === 'subject-attendance' || currentView === 'attendance' || currentView === 'history'
-            ? 'attendance'
-            : currentView === 'profile' || currentView === 'personal-info' || currentView === 'academic-details' || currentView === 'settings'
-            ? 'profile'
-            : 'home'
-        }
-        onTabChange={(tabId) => {
-          if (tabId === 'home') setCurrentView('home');
-          else if (tabId === 'classes') setCurrentView('classes');
-          else if (tabId === 'attendance') setCurrentView('subject-attendance');
-          else if (tabId === 'profile') setCurrentView('profile');
-        }}
-        onScanClick={handleStartAttendanceFlow}
-      />
+      {/* Hidden during dedicated full-screen camera and face verification (Phase 4 requirement) */}
+      {!isScannerOpen && (
+        <StudentBottomNav
+          activeTab={
+            currentView === 'home' || currentView === 'active-session'
+              ? 'home'
+              : currentView === 'classes'
+              ? 'classes'
+              : currentView === 'subject-attendance' || currentView === 'attendance' || currentView === 'history'
+              ? 'attendance'
+              : currentView === 'profile' || currentView === 'personal-info' || currentView === 'academic-details' || currentView === 'settings'
+              ? 'profile'
+              : 'home'
+          }
+          onTabChange={(tabId) => {
+            if (tabId === 'home') navigateTo('home');
+            else if (tabId === 'classes') navigateTo('classes');
+            else if (tabId === 'attendance') navigateTo('subject-attendance');
+            else if (tabId === 'profile') navigateTo('profile');
+          }}
+          onScanClick={handleStartAttendanceFlow}
+        />
+      )}
 
       {/* SCREEN 5 - 12: ATTENDANCE FULLSCREEN MODAL FLOW */}
       {isScannerOpen && (
         <StudentAttendanceFlow
           step={attendanceStep}
+          scannerStage={scannerStage}
           blinkStatus={blinkStatus}
           facePromptMessage={facePromptMessage}
           blinkFlash={blinkFlash}
@@ -1241,7 +1390,7 @@ export default function StudentPortal({ user, onLogout, onQuickSwitchRole }) {
           ultrasonicVerified={ultrasonicVerified}
           isTorchOn={isTorchOn}
           onToggleTorch={handleToggleTorch}
-          onCancel={handleCloseScannerModal}
+          onCancel={handleInAppBack}
           onRetryQR={startQRScanner}
           onRetryCamera={() => startFrontCameraWithBlinkDetection(scannedToken, sessionId)}
           onManualCapture={() => captureSelfieAndProceed(scannedToken, sessionId)}

@@ -13,24 +13,25 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
   return (
     <nav
       aria-label="Student Navigation"
-      className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] bottom-nav-fixed"
+      className="fixed bottom-0 inset-x-0 z-40 bg-white/98 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]"
+      style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
     >
-      <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between relative">
+      <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
         {tabs.map((tab) => {
           if (tab.isAction) {
             return (
-              <div key={tab.id} className="relative flex flex-col items-center -mt-6">
+              <div key={tab.id} className="flex-1 flex flex-col items-center justify-center">
                 <button
                   type="button"
                   id="nav-scan-button"
                   onClick={onScanClick}
-                  className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#1A4731] hover:bg-[#143826] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-emerald-950/25 border-4 border-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#1A4731]/40"
+                  className="-mt-3.5 w-11 h-11 rounded-full bg-[#1A4731] hover:bg-[#143826] active:scale-95 text-white flex items-center justify-center shadow-md shadow-emerald-950/20 border-2 border-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#1A4731]/30"
                   title="Scan Attendance QR"
                   aria-label="Scan Attendance QR"
                 >
-                  <QrCode className="w-6 h-6 sm:w-7 sm:h-7 stroke-[2.2]" />
+                  <QrCode className="w-5 h-5 stroke-[2.2]" />
                 </button>
-                <span className="text-[10px] font-semibold text-[#1A4731] mt-0.5">
+                <span className="text-[10px] font-bold text-[#1A4731] mt-0.5 tracking-tight">
                   Scan
                 </span>
               </div>

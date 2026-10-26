@@ -1,11 +1,12 @@
 import React from 'react';
 import {
   ArrowLeft, Zap, RefreshCw, Eye, CheckCircle2, XCircle, AlertTriangle,
-  RotateCcw, MapPin, Check, Camera, ShieldCheck
+  RotateCcw, MapPin, Check, Camera, ShieldCheck, QrCode
 } from 'lucide-react';
 
 export default function StudentAttendanceFlow({
   step, // 'SCAN_QR' | 'FACE_VERIFY' | 'EVALUATING' | 'RESULT'
+  scannerStage = 'SCANNING', // 'INITIALIZING' | 'SCANNING' | 'DETECTED' | 'VALIDATING' | 'ERROR'
   blinkStatus, // 'INIT' | 'NO_FACE' | 'MULTIPLE_FACES' | 'ALIGNING' | 'WAITING_BLINK' | 'BLINKING' | 'BLINK_DETECTED' | 'CAPTURING'
   facePromptMessage,
   blinkFlash,
@@ -51,79 +52,122 @@ export default function StudentAttendanceFlow({
   const activeDotIndex = getStepDotIndex();
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col justify-between overflow-hidden">
-      {/* SCREEN 5: QR SCAN SCREEN */}
+    <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col justify-between overflow-hidden select-none">
+      {/* SCREEN 5: QR SCAN SCREEN (Phases 5 & 6) */}
       {step === 'SCAN_QR' && (
         <div className="relative flex-1 flex flex-col justify-between bg-black">
           {/* Top Bar (Screen 5 Reference) */}
-          <div className="relative z-20 flex items-center justify-between px-4 py-4 pt-6 bg-gradient-to-b from-black/80 to-transparent">
+          <div className="relative z-20 flex items-center justify-between px-4 py-4 pt-6 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
             <button
               type="button"
+              id="btn-scanner-back"
               onClick={onCancel}
-              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition focus:outline-none"
-              title="Back"
+              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition focus:outline-none"
+              title="Return to Previous Screen"
+              aria-label="Back"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
 
-            <h2 className="text-sm font-bold tracking-wide text-white">
+            <h2 className="text-base font-extrabold tracking-tight text-white">
               Scan QR Code
             </h2>
 
             <button
               type="button"
+              id="btn-scanner-torch"
               onClick={onToggleTorch}
-              className={`p-2 rounded-full transition focus:outline-none ${
-                isTorchOn ? 'bg-amber-400 text-slate-950' : 'bg-white/10 hover:bg-white/20 text-white'
+              className={`p-2.5 rounded-full transition-all focus:outline-none active:scale-95 ${
+                isTorchOn
+                  ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/40 ring-2 ring-amber-300'
+                  : 'bg-white/10 hover:bg-white/20 text-white'
               }`}
-              title="Toggle Flashlight"
+              title={isTorchOn ? 'Turn Flash Off' : 'Turn Flash On'}
+              aria-label="Toggle Flashlight"
             >
               <Zap className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Center: Live Camera Viewport & QR Frame with Corner Brackets */}
-          <div className="relative flex-1 flex flex-col items-center justify-center px-6">
-            {/* Real Html5Qrcode video container */}
-            <div className="relative w-full max-w-[280px] aspect-square rounded-3xl overflow-hidden bg-black/60 shadow-2xl flex items-center justify-center">
+          {/* Center: Dedicated Mobile Viewport & Reticle Frame */}
+          <div className="relative flex-1 flex flex-col items-center justify-center px-4">
+            {/* Viewfinder box with clean aspect ratio */}
+            <div className="relative w-[82vw] max-w-[310px] aspect-square rounded-3xl overflow-hidden bg-black shadow-2xl flex items-center justify-center border border-white/10">
+              {/* Html5Qrcode container */}
               <div id="smartattend-qr-reader" className="w-full h-full object-cover" />
 
-              {/* Green Corner Brackets Overlay (Screen 5 Reference) */}
-              <div className="absolute inset-4 pointer-events-none">
-                {/* Top-left corner */}
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-emerald-400 rounded-tl-xl" />
-                {/* Top-right corner */}
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-emerald-400 rounded-tr-xl" />
-                {/* Bottom-left corner */}
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-emerald-400 rounded-bl-xl" />
-                {/* Bottom-right corner */}
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-emerald-400 rounded-br-xl" />
+              {/* State 1: Initializing Camera */}
+              {scannerStage === 'INITIALIZING' && (
+                <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-2.5 z-20">
+                  <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+                  <span className="text-xs font-semibold text-slate-300">
+                    Initializing camera...
+                  </span>
+                </div>
+              )}
 
-                {/* Subtle animated scanline */}
-                <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-pulse absolute top-1/2 -translate-y-1/2" />
+              {/* State 3 & 4: QR Detected / Validating Session */}
+              {(scannerStage === 'DETECTED' || scannerStage === 'VALIDATING') && (
+                <div className="absolute inset-0 bg-emerald-950/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 z-20 animate-in fade-in">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/40">
+                    {scannerStage === 'VALIDATING' ? (
+                      <RefreshCw className="w-6 h-6 animate-spin" />
+                    ) : (
+                      <Check className="w-7 h-7 stroke-[3]" />
+                    )}
+                  </div>
+                  <span className="text-xs font-bold text-emerald-200">
+                    {scannerStage === 'VALIDATING' ? 'Validating lecture session...' : 'QR code detected!'}
+                  </span>
+                </div>
+              )}
+
+              {/* Elegant Restrained Forest-Green Reticle Corners */}
+              <div className="absolute inset-3 pointer-events-none z-10">
+                {/* Top-left corner */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-[3.5px] border-l-[3.5px] border-emerald-400 rounded-tl-xl" />
+                {/* Top-right corner */}
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-[3.5px] border-r-[3.5px] border-emerald-400 rounded-tr-xl" />
+                {/* Bottom-left corner */}
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[3.5px] border-l-[3.5px] border-emerald-400 rounded-bl-xl" />
+                {/* Bottom-right corner */}
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[3.5px] border-r-[3.5px] border-emerald-400 rounded-br-xl" />
+
+                {/* Animated Green Laser Scanline (Active only while scanning) */}
+                {scannerStage === 'SCANNING' && (
+                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent absolute top-0 animate-[bounce_2.5s_infinite_ease-in-out] shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
+                )}
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 font-medium text-center mt-6">
-              Align the QR code within the frame
+            {/* Instruction Below Frame (Phase 5 Requirement) */}
+            <p className="text-xs text-slate-300 font-medium text-center mt-6 tracking-wide">
+              Align the faculty's QR code within the frame.
             </p>
 
+            {/* Scanning Error Banner */}
             {qrScanError && (
-              <div className="mt-4 p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2">
-                <p>{qrScanError}</p>
+              <div className="mt-4 p-3.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2 shadow-lg">
+                <div className="flex items-center justify-center gap-1.5 text-rose-300 font-bold">
+                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  <span>Scanning Notice</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">{qrScanError}</p>
                 <button
                   type="button"
+                  id="btn-retry-qr-scan"
                   onClick={onRetryQR}
-                  className="px-3 py-1.5 rounded-xl bg-rose-600 text-white font-semibold text-[11px]"
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs shadow transition"
                 >
-                  Retry Scanner
+                  Scan Again
                 </button>
               </div>
             )}
           </div>
 
-          <div className="p-6 text-center text-[11px] text-slate-500">
-            Powered by SmartAttend-AI Anti-Proxy Engine
+          {/* Understated Identity at bottom (Phase 5 Requirement) */}
+          <div className="p-5 text-center text-[10px] text-slate-500 font-medium tracking-wider uppercase">
+            SmartAttend-AI Anti-Proxy Engine
           </div>
         </div>
       )}
@@ -132,12 +176,15 @@ export default function StudentAttendanceFlow({
       {step === 'FACE_VERIFY' && (
         <div className="relative flex-1 flex flex-col justify-between bg-black">
           {/* Top Status & Prompts (Screens 6-10 Reference) */}
-          <div className="relative z-20 px-4 py-4 pt-6 flex flex-col items-center gap-3 bg-gradient-to-b from-black/80 to-transparent">
+          <div className="relative z-20 px-4 py-4 pt-6 flex flex-col items-center gap-3 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
             <div className="w-full flex items-center justify-between">
               <button
                 type="button"
+                id="btn-face-verify-back"
                 onClick={onCancel}
-                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition focus:outline-none"
+                className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition focus:outline-none"
+                title="Cancel Face Check"
+                aria-label="Back"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -145,7 +192,7 @@ export default function StudentAttendanceFlow({
               {/* Dynamic Header Badge matching Reference */}
               <div className="flex-1 flex justify-center px-2">
                 {blinkStatus === 'INIT' ? (
-                  <div className="px-3 py-1 rounded-full bg-slate-800/90 border border-slate-700 text-xs font-semibold flex items-center gap-2">
+                  <div className="px-3.5 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-xs font-semibold flex items-center gap-2">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
                     <span>Initializing Camera...</span>
                   </div>
@@ -166,7 +213,7 @@ export default function StudentAttendanceFlow({
                 )}
               </div>
 
-              <div className="w-9" />
+              <div className="w-10" />
             </div>
           </div>
 
@@ -237,7 +284,7 @@ export default function StudentAttendanceFlow({
                 <button
                   type="button"
                   onClick={onRetryCamera}
-                  className="px-3 py-1.5 rounded-xl bg-rose-600 text-white font-semibold text-[11px]"
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-[11px] transition"
                 >
                   Retry Camera
                 </button>
@@ -250,7 +297,7 @@ export default function StudentAttendanceFlow({
             <button
               type="button"
               onClick={onRetryCamera}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs flex items-center gap-1.5"
+              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs flex items-center gap-1.5 active:scale-95 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Retry</span>
@@ -259,7 +306,7 @@ export default function StudentAttendanceFlow({
             <button
               type="button"
               onClick={onManualCapture}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 transition"
+              className="flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
               <span>Manual Capture (Override)</span>
@@ -341,7 +388,7 @@ export default function StudentAttendanceFlow({
         <div className="flex-1 flex flex-col justify-center items-center px-4 py-8 bg-[#F8FAF9] text-[#111827]">
           {submissionResult?.success ? (
             /* ATTENDANCE SUCCESS (Screen 12 Reference) */
-            <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-xl text-center space-y-5">
+            <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-xl text-center space-y-5 animate-in zoom-in-95">
               {/* Green checkmark circle */}
               <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
                 <Check className="w-9 h-9 stroke-[3]" />
@@ -399,6 +446,7 @@ export default function StudentAttendanceFlow({
               {/* Primary Green Button (Screen 12 Reference) */}
               <button
                 type="button"
+                id="btn-attendance-done"
                 onClick={onBackToHome}
                 className="w-full py-3.5 px-4 rounded-2xl bg-[#1A4731] hover:bg-[#143826] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-emerald-950/20 transition"
               >
@@ -407,7 +455,7 @@ export default function StudentAttendanceFlow({
             </div>
           ) : (
             /* ATTENDANCE REJECTED / FAILURE */
-            <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-rose-200 shadow-xl text-center space-y-4">
+            <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-rose-200 shadow-xl text-center space-y-4 animate-in zoom-in-95">
               <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-sm">
                 <XCircle className="w-9 h-9" />
               </div>

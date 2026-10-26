@@ -105,3 +105,27 @@ body {
 .bottom-nav-fixed {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
 }
+
+/* Polish Html5Qrcode Reader Preview */
+#smartattend-qr-reader {
+  border: none !important;
+  background-color: transparent !important;
+}
+#smartattend-qr-reader video {
+  object-fit: cover !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 1.5rem !important;
+}
+#smartattend-qr-reader__scan_region {
+  border: none !important;
+}
+#smartattend-qr-reader__scan_region > div {
+  border: none !important;
+}
+#smartattend-qr-reader__dashboard_section {
+  display: none !important;
+}
+#smartattend-qr-reader img[alt="Info icon"] {
+  display: none !important;
+}
