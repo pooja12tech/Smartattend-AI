@@ -5,12 +5,14 @@ import {
   Play, Users, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle,
   RefreshCw, Smartphone, Search, Check, Sparkles, UserCheck, ShieldCheck, Square, MapPin,
   LayoutGrid, List, Maximize2, Minimize2, Volume2, VolumeX, Tv, Zap, CheckCheck,
-  Camera, Upload, Radio, X, Activity, Eye, Network, Calendar
+  Camera, Upload, Radio, X, Activity, Eye, Network, Calendar,
+  ChevronRight, ChevronLeft, ArrowLeft, LogOut, Bell, Shield, BookOpen, AlertCircle, ArrowUpRight, User
 } from 'lucide-react';
 import { api } from '../api';
 import FacultyTimetable from './FacultyTimetable';
+import FacultyBottomNav from './faculty/FacultyBottomNav';
 
-export default function FacultyPortal({ user }) {
+export default function FacultyPortal({ user, onLogout }) {
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
   const [subject, setSubject] = useState('CS301 - Operating Systems');
   const [activeSession, setActiveSession] = useState(null);
@@ -50,6 +52,133 @@ export default function FacultyPortal({ user }) {
   const [syndicateLoading, setSyndicateLoading] = useState(false);
   const [syndicateData, setSyndicateData] = useState(null);
 
+  // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'profile')
+  const [mobileTab, setMobileTab] = useState('home');
+  const mobileTabRef = useRef(mobileTab);
+  useEffect(() => {
+    mobileTabRef.current = mobileTab;
+  }, [mobileTab]);
+
+  const [facultyTodaySchedule, setFacultyTodaySchedule] = useState([]);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Android Back-Button Handling State
+  const [exitToast, setExitToast] = useState(false);
+  const lastBackPressRef = useRef(0);
+
+  const navigateToMobileTab = (targetTab) => {
+    try {
+      window.history.pushState({ smartattend: true, role: 'faculty', tab: targetTab }, '');
+    } catch (e) {}
+    setMobileTab(targetTab);
+  };
+
+  const handleInAppBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      setMobileTab('home');
+    }
+  };
+
+  // Fetch today's schedule for faculty
+  const loadTodaySchedule = async () => {
+    setLoadingSchedule(true);
+    try {
+      const res = await api.getFacultyTimetableToday();
+      if (res && res.today_classes) {
+        setFacultyTodaySchedule(res.today_classes);
+      }
+    } catch (e) {
+      console.warn('Could not load today schedule:', e);
+    } finally {
+      setLoadingSchedule(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTodaySchedule();
+  }, []);
+
+  // Android hardware back button handler
+  useEffect(() => {
+    const handlePopState = () => {
+      // 1. If any modal is open, close it first
+      if (showPanoramicModal) {
+        setShowPanoramicModal(false);
+        return;
+      }
+      if (showSyndicateModal) {
+        setShowSyndicateModal(false);
+        return;
+      }
+      if (qrProjectorOpen) {
+        setQrProjectorOpen(false);
+        return;
+      }
+      if (showLogoutConfirm) {
+        setShowLogoutConfirm(false);
+        return;
+      }
+
+      // 2. If on secondary tab, return to 'home'
+      if (mobileTabRef.current !== 'home') {
+        setMobileTab('home');
+        return;
+      }
+
+      // 3. At root 'home' screen: show double-back exit confirmation toast
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        setExitToast(false);
+        window.history.back();
+      } else {
+        lastBackPressRef.current = now;
+        setExitToast(true);
+        setTimeout(() => setExitToast(false), 2000);
+        try {
+          window.history.pushState({ smartattend: true, role: 'faculty', root: true }, '');
+        } catch (err) {}
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    try {
+      window.history.replaceState({ smartattend: true, role: 'faculty', root: true }, '');
+    } catch (err) {}
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showPanoramicModal, showSyndicateModal, qrProjectorOpen, showLogoutConfirm]);
+
+  // Synchronize Android status bar theme-color
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', qrProjectorOpen ? '#000000' : '#F8FAF9');
+    }
+    return () => {
+      const m = document.querySelector('meta[name="theme-color"]');
+      if (m) m.setAttribute('content', '#F8FAF9');
+    };
+  }, [qrProjectorOpen]);
+
+  const facultyName = user?.name || 'Prof. Faculty';
+  const facultyLastName = facultyName.split(' ').slice(-1)[0] || 'Faculty';
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const todayFormattedDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
 
   // Web Audio pleasant arrival chime
   const playArrivalChime = () => {
@@ -725,7 +854,600 @@ export default function FacultyPortal({ user }) {
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+    <>
+      {/* =========================================================================
+          FACULTY MOBILE-FIRST LAYOUT (< 768px Viewport)
+          Adheres to Warm-White & Forest-Green Design System (Phase A)
+      ========================================================================= */}
+      <div className="faculty-mobile-app block md:hidden pb-bottom-nav">
+        {/* Mobile Sticky Header */}
+        <div className="max-w-md mx-auto px-4 pt-3 pb-2.5 flex items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-sm sticky top-0 z-30">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-extrabold text-[#111827] tracking-tight">
+                {getGreeting()}, {facultyLastName}!
+              </h1>
+              <span className="text-base">👋</span>
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+              {todayFormattedDate} &bull; {user?.department || 'CSE'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSessionActive && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigateToMobileTab('profile')}
+              className="relative p-0.5 rounded-full border-2 border-emerald-600/40 hover:border-emerald-600 transition focus:outline-none"
+              title="Faculty Profile"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                <User className="w-4 h-4 text-slate-700" />
+              </div>
+              <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Tab Content Container */}
+        <div className="max-w-md mx-auto px-4 py-4 space-y-4">
+
+          {/* TAB 1: HOME (Faculty Dashboard Shell) */}
+          {mobileTab === 'home' && (
+            <div className="space-y-4">
+              {/* Active Session Card (if ongoing lecture) */}
+              {isSessionActive ? (
+                <div
+                  onClick={() => navigateToMobileTab('live')}
+                  className="cursor-pointer bg-gradient-to-r from-emerald-900 to-[#1A4731] text-white rounded-2xl p-4 shadow-md shadow-emerald-950/20 relative overflow-hidden transition transform hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      Live Attendance Active
+                    </span>
+                    <span className="text-xs text-emerald-200 font-mono flex items-center gap-1">
+                      View QR <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-base text-white">{activeSession?.subject_name || subject}</h3>
+                  <p className="text-xs text-emerald-100/90 mt-0.5">
+                    Room: {activeSession?.room_no || 'Room 304'} &bull; Code: {activeSession?.session_code || activeSession?.session_id?.slice(0, 8)}
+                  </p>
+
+                  {/* Summary Metric Pills */}
+                  <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-emerald-700/50 text-center">
+                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
+                      <span className="text-[10px] text-emerald-300 block">Enrolled</span>
+                      <span className="text-sm font-bold text-white">{roster.length || 50}</span>
+                    </div>
+                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
+                      <span className="text-[10px] text-emerald-300 block">Present</span>
+                      <span className="text-sm font-bold text-white">
+                        {liveData?.counters?.present_count ?? roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length}
+                      </span>
+                    </div>
+                    <div className="bg-emerald-950/40 rounded-xl py-1.5 px-2">
+                      <span className="text-[10px] text-emerald-300 block">Review</span>
+                      <span className="text-sm font-bold text-white">
+                        {liveData?.counters?.pending_count ?? roster.filter(s => s.status === 'PENDING_APPROVAL').length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Fast Session Launcher Card */
+                <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 tracking-wide uppercase">
+                      Start Attendance Session
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                      Manual / Schedule
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">
+                      Subject
+                    </label>
+                    <select
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full bg-[#F8FAF9] border border-slate-300 text-xs text-[#111827] rounded-xl px-3 py-2.5 font-semibold focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                    >
+                      <option value="CS301 - Operating Systems">CS301 - Operating Systems</option>
+                      <option value="CS402 - Machine Learning">CS402 - Machine Learning</option>
+                      <option value="CS305 - Database Systems">CS305 - Database Systems</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleStartSession(subject)}
+                    disabled={starting}
+                    className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white bg-[#1A4731] hover:bg-[#143826] active:scale-[0.99] shadow-md shadow-emerald-950/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
+                  >
+                    {starting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
+                    <span>Start Lecture Attendance</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Quick Status Bar Pills (GPS + Ultrasonic) */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Geofence</span>
+                    <span className="text-xs font-extrabold text-[#111827] truncate block">
+                      150m Campus Zone
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+                  className="cursor-pointer bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-2.5 active:scale-[0.98] transition"
+                >
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                    ultrasonicBeaconActive ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200'
+                  }`}>
+                    <Radio className={`w-4 h-4 ${ultrasonicBeaconActive ? 'animate-pulse text-indigo-600' : ''}`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Beacon</span>
+                    <span className={`text-xs font-extrabold truncate block ${ultrasonicBeaconActive ? 'text-indigo-700' : 'text-slate-500'}`}>
+                      {ultrasonicBeaconActive ? '18.8 kHz Active' : 'Muted'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Today's Classes Section (populated via api.getFacultyTimetableToday()) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-[#111827] tracking-tight">
+                    Today's Classes
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => navigateToMobileTab('classes')}
+                    className="text-xs font-semibold text-[#1A4731] hover:underline"
+                  >
+                    View All
+                  </button>
+                </div>
+
+                {facultyTodaySchedule && facultyTodaySchedule.length > 0 ? (
+                  <div className="space-y-2">
+                    {facultyTodaySchedule.map((cls, idx) => {
+                      const isOngoing = cls.is_current_slot;
+                      return (
+                        <div
+                          key={cls.id || idx}
+                          onClick={() => {
+                            if (!isSessionActive) {
+                              handleStartSession(cls.subject_name || cls.subject_code);
+                            } else {
+                              navigateToMobileTab('live');
+                            }
+                          }}
+                          className={`bg-white rounded-xl p-3.5 border transition cursor-pointer ${
+                            isOngoing
+                              ? 'border-emerald-300 ring-1 ring-emerald-300 shadow-sm'
+                              : 'border-slate-200/90 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+                                <BookOpen className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="text-xs font-bold text-[#111827] truncate">
+                                  {cls.subject_name || cls.subject_code}
+                                </h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  {cls.start_time} - {cls.end_time} &bull; Room {cls.room_no || '304'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div>
+                              {isOngoing ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  Live Now
+                                </span>
+                              ) : cls.is_upcoming_slot ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                  Upcoming
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                                  Completed
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl p-5 text-center border border-slate-200/90 text-slate-500 space-y-1">
+                    <Calendar className="w-6 h-6 mx-auto text-slate-400" />
+                    <p className="text-xs font-semibold text-slate-700">No scheduled classes for today</p>
+                    <p className="text-[11px] text-slate-400">Check your weekly timetable or launch an unscheduled session above.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: CLASSES (Faculty Timetable) */}
+          {mobileTab === 'classes' && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={handleInAppBack}
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+                  title="Back to Home"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-sm font-bold text-[#111827]">Faculty Timetable</h2>
+              </div>
+              <FacultyTimetable
+                user={user}
+                activeSession={activeSession}
+                onStartAttendance={(targetSubject) => {
+                  handleStartSession(targetSubject);
+                  navigateToMobileTab('live');
+                }}
+                onSwitchToLive={() => navigateToMobileTab('live')}
+              />
+            </div>
+          )}
+
+          {/* TAB 3: LIVE (Live Rotating QR & Active Console) */}
+          {mobileTab === 'live' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleInAppBack}
+                    className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+                    title="Back to Home"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <h2 className="text-sm font-bold text-[#111827]">Live Attendance QR</h2>
+                </div>
+                {isSessionActive && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {isSessionActive && qrData ? (
+                <div className="space-y-4">
+                  {/* QR Card */}
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col items-center text-center space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-white border-2 border-slate-200 shadow-sm">
+                      <QRCodeSVG
+                        value={qrData.qr_token}
+                        size={210}
+                        level="H"
+                        includeMargin={true}
+                      />
+                    </div>
+
+                    <div className="w-full max-w-xs space-y-1">
+                      <div className="flex items-center justify-between text-xs font-semibold">
+                        <span className="text-slate-500">Next Cryptographic Refresh</span>
+                        <span className="text-[#1A4731] font-mono font-bold">{qrData.expires_in_seconds}s</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full bg-[#1A4731] transition-all duration-300 ease-linear rounded-full"
+                          style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 font-mono truncate max-w-xs">
+                      Token: {qrData.qr_token.slice(0, 28)}...
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigateToMobileTab('students')}
+                      className="py-3 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <Users className="w-4 h-4 text-[#1A4731]" />
+                      <span>View Students ({roster.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleEndSession}
+                      disabled={ending}
+                      className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
+                    >
+                      {ending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 fill-white" />}
+                      <span>End Session</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/90 text-slate-500 space-y-3">
+                  <Play className="w-10 h-10 mx-auto text-slate-400 stroke-1" />
+                  <div>
+                    <h3 className="text-sm font-bold text-[#111827]">No Active Lecture Session</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Start a session from the Home tab or Timetable to project dynamic attendance tokens.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleStartSession(subject)}
+                    className="px-5 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20"
+                  >
+                    Start Attendance Now
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: STUDENTS (Roster & Reviews) */}
+          {mobileTab === 'students' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleInAppBack}
+                    className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+                    title="Back to Home"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <h2 className="text-sm font-bold text-[#111827]">Class Roster</h2>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">
+                  {roster.length} Enrolled
+                </span>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by student name or roll..."
+                  value={searchRoster}
+                  onChange={(e) => setSearchRoster(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                />
+              </div>
+
+              {/* Roster List */}
+              <div className="space-y-2">
+                {filteredRoster.map((s, idx) => {
+                  const isPresent = s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT';
+                  const isPending = s.status === 'PENDING_APPROVAL';
+
+                  return (
+                    <div
+                      key={s.roll_no || idx}
+                      className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
+                          {getInitials(s.name)}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-[#111827] truncate">{s.name}</h4>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {s.roll_no} &bull; {s.department || 'CSE'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isPresent ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Present
+                          </span>
+                        ) : isPending ? (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveException(s.roll_no, 'APPROVE')}
+                            className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
+                          >
+                            Review
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleManualOverride(s.roll_no, s.name)}
+                            className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 transition"
+                          >
+                            Mark
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: PROFILE (Faculty Profile & Settings) */}
+          {mobileTab === 'profile' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-1 border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={handleInAppBack}
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+                  title="Back to Home"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-sm font-bold text-[#111827]">Faculty Profile</h2>
+              </div>
+
+              {/* Profile Card */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm text-center space-y-2">
+                <div className="w-16 h-16 rounded-full bg-slate-100 border-2 border-emerald-600/40 mx-auto flex items-center justify-center font-black text-lg text-slate-700">
+                  {getInitials(facultyName)}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-[#111827]">{facultyName}</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {user?.roll_no || user?.faculty_id || 'FAC01'} &bull; {user?.department || 'Computer Science & Engineering'}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{user?.email || 'faculty@smartattend.edu'}</p>
+                </div>
+              </div>
+
+              {/* Settings Group */}
+              <div className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-sm divide-y divide-slate-100">
+                <div
+                  onClick={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
+                  className="py-2.5 px-2 flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Radio className="w-4 h-4 text-[#1A4731]" />
+                    <span className="text-xs font-semibold text-[#111827]">Ultrasonic Acoustic Beacon</span>
+                  </div>
+                  <span className={`text-[11px] font-bold ${ultrasonicBeaconActive ? 'text-emerald-700' : 'text-slate-400'}`}>
+                    {ultrasonicBeaconActive ? 'Active' : 'Muted'}
+                  </span>
+                </div>
+
+                <div
+                  onClick={handleRecalibrateGps}
+                  className="py-2.5 px-2 flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <MapPin className="w-4 h-4 text-[#1A4731]" />
+                    <span className="text-xs font-semibold text-[#111827]">Recalibrate Faculty GPS</span>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500">Sync</span>
+                </div>
+
+                <div
+                  onClick={() => navigateToMobileTab('classes')}
+                  className="py-2.5 px-2 flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Calendar className="w-4 h-4 text-[#1A4731]" />
+                    <span className="text-xs font-semibold text-[#111827]">Weekly Timetable Schedule</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </div>
+
+              {/* Account Section & Logout */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(true)}
+                  className="w-full py-3 px-4 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Log Out of SmartAttend</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Android Exit Confirmation Toast */}
+        {exitToast && (
+          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150">
+            Press back again to exit SmartAttend
+          </div>
+        )}
+
+        {/* Logout Confirmation Modal */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white text-[#111827] w-full max-w-sm rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-4">
+              <div className="flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-rose-600" />
+                <h3 className="text-base font-extrabold text-[#111827]">
+                  Log Out of SmartAttend?
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You will be returned to the login screen. Any ongoing lecture sessions can be resumed upon logging back in.
+              </p>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    onLogout?.();
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-md shadow-rose-600/20"
+                >
+                  Yes, Log Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Persistent Curved Faculty Bottom Navigation */}
+        <FacultyBottomNav
+          activeTab={mobileTab}
+          onTabChange={navigateToMobileTab}
+          onLaunchClick={() => {
+            if (isSessionActive) {
+              navigateToMobileTab('live');
+            } else {
+              handleStartSession();
+            }
+          }}
+          isSessionActive={isSessionActive}
+        />
+      </div>
+
+      {/* =========================================================================
+          FACULTY DESKTOP / TABLET CONSOLE (>= 768px Viewport)
+          Preserves 100% of Existing Desktop Controls, Projector & Classroom Wall
+      ========================================================================= */}
+      <div className="hidden md:block max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
 
       {/* Faculty Portal Navigation Tabs (Phase 4 Timetable Integration) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
@@ -1914,6 +2636,7 @@ export default function FacultyPortal({ user }) {
         </div>
       )}
 
-    </div>
+      </div>
+    </>
   );
 }

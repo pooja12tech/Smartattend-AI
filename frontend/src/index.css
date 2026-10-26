@@ -107,9 +107,17 @@ body {
 }
 
 /* Ensure smooth native momentum scrolling on mobile */
-.student-mobile-app {
+.student-mobile-app,
+.faculty-mobile-app {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+}
+
+.faculty-mobile-app {
+  background-color: #F8FAF9;
+  color: #111827;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Polish Html5Qrcode Reader Preview */

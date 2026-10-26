@@ -105,26 +105,37 @@ export default function App() {
   };
 
   const isStudent = currentUser?.role === 'student';
-  const isDarkPortal = currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin');
+  const isFaculty = currentUser?.role === 'faculty';
+  const isAdmin = currentUser?.role === 'admin';
+  const isDarkPortal = isAdmin || isFaculty;
 
   // Dynamically sync Android status bar theme-color
   useEffect(() => {
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', isDarkPortal ? '#020617' : '#F8FAF9');
+      const isMobileWidth = typeof window !== 'undefined' && window.innerWidth < 768;
+      if (isAdmin) {
+        metaThemeColor.setAttribute('content', '#020617');
+      } else if (isFaculty) {
+        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
+      } else {
+        metaThemeColor.setAttribute('content', '#F8FAF9');
+      }
     }
-  }, [isDarkPortal]);
+  }, [isAdmin, isFaculty]);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${isDarkPortal ? 'bg-slate-950 text-slate-100 selection:bg-brand-500 selection:text-white' : 'bg-[#F8FAF9] text-[#111827]'}`}>
-      {/* Top Navbar for Faculty & Admin Portals */}
+    <div className={`min-h-screen flex flex-col font-sans ${isAdmin ? 'bg-slate-950 text-slate-100 selection:bg-brand-500 selection:text-white' : isFaculty ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
+      {/* Top Navbar for Admin & Desktop Faculty */}
       {isDarkPortal && (
-        <Navbar
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          onQuickSwitchRole={handleQuickSwitchRole}
-          backendOnline={backendOnline}
-        />
+        <div className={isFaculty ? "hidden md:block" : ""}>
+          <Navbar
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            onQuickSwitchRole={handleQuickSwitchRole}
+            backendOnline={backendOnline}
+          />
+        </div>
       )}
 
       {/* Network Offline Status Banner */}
@@ -147,7 +158,7 @@ export default function App() {
             onQuickSwitchRole={handleQuickSwitchRole}
           />
         ) : currentUser.role === 'faculty' ? (
-          <FacultyPortal user={currentUser} />
+          <FacultyPortal user={currentUser} onLogout={handleLogout} />
         ) : currentUser.role === 'admin' ? (
           <AdminPortal user={currentUser} />
         ) : (
@@ -155,9 +166,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent Global Footer (for Faculty & Admin portals) */}
+      {/* Persistent Global Footer (for Admin & Desktop Faculty) */}
       {isDarkPortal && (
-        <footer className="py-4 border-t border-slate-900 text-center text-xs text-slate-500">
+        <footer className={`py-4 border-t border-slate-900 text-center text-xs text-slate-500 ${isFaculty ? 'hidden md:block' : ''}`}>
           SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
         </footer>
       )}
