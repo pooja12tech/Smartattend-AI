@@ -30,9 +30,9 @@ export default function DesktopSidebar({
         <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100">
           <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src="/smartattend_tile.png"
+              src="/smartattend_logo.png"
               alt="SmartAttend Logo"
-              className="w-11 h-11 object-contain shrink-0 drop-shadow-xs"
+              className="w-11 h-11 object-contain shrink-0"
             />
             {!collapsed && (
               <div className="hidden lg:block truncate">

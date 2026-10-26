@@ -723,7 +723,7 @@ export default function AdminPortal({ user, onLogout }) {
   if (loading && !overview) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500 gap-4">
-        <img src="/smartattend_tile.png" alt="SmartAttend" className="w-20 h-20 sm:w-24 sm:h-24 object-contain animate-ambient-float drop-shadow-xl" />
+        <img src="/smartattend_logo.png" alt="SmartAttend" className="w-20 h-20 sm:w-24 sm:h-24 object-contain animate-ambient-float" />
         <p className="text-sm font-semibold text-slate-700 tracking-wide">Loading SmartAttend Administration Console...</p>
       </div>
     );

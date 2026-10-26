@@ -49,9 +49,9 @@ export default function DesktopStudentSidebar({
         {/* Brand Header */}
         <div className="flex items-center gap-3">
           <img
-            src="/smartattend_tile.png"
+            src="/smartattend_logo.png"
             alt="SmartAttend Logo"
-            className="w-11 h-11 object-contain shrink-0 drop-shadow-xs"
+            className="w-11 h-11 object-contain shrink-0"
           />
           <div>
             <div className="flex items-center gap-2">

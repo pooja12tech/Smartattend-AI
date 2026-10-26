@@ -55,9 +55,9 @@ export default function Navbar({ currentUser, onLogout, backendOnline }) {
         {/* Brand */}
         <div className="flex items-center gap-3">
           <img
-            src="/smartattend_tile.png"
+            src="/smartattend_logo.png"
             alt="SmartAttend Logo"
-            className="w-10 h-10 object-contain shrink-0 drop-shadow-xs"
+            className="w-10 h-10 object-contain shrink-0"
           />
           <div>
             <div className="flex items-center gap-2">
