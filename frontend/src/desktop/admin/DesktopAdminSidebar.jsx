@@ -33,11 +33,11 @@ export default function DesktopAdminSidebar({
       {/* Top Branding */}
       <div>
         <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100">
-          <div className="flex items-center gap-3.5 overflow-hidden">
+          <div className="flex items-center gap-3 overflow-hidden">
             <img
-              src="/smartattend_logo.png"
+              src="/smartattend_tile.png"
               alt="SmartAttend Logo"
-              className="w-12 h-12 object-contain shrink-0"
+              className="w-11 h-11 object-contain shrink-0 drop-shadow-xs"
             />
             {!collapsed && (
               <div className="hidden lg:block truncate">

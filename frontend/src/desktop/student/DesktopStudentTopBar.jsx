@@ -45,9 +45,9 @@ export default function DesktopStudentTopBar({
         {/* Left: Brand & Portal Badge */}
         <div className="flex items-center gap-3 shrink-0">
           <img
-            src="/smartattend_logo.png"
+            src="/smartattend_tile.png"
             alt="SmartAttend Logo"
-            className="w-11 h-11 object-contain shrink-0"
+            className="w-10 h-10 object-contain shrink-0 drop-shadow-xs"
           />
           <div>
             <div className="flex items-center gap-2">

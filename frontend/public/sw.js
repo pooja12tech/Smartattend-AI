@@ -16,6 +16,7 @@ const CORE_SHELL_URLS = [
   '/favicon.ico',
   '/favicon-32x32.png',
   '/favicon-16x16.png',
+  '/smartattend_tile.png',
   '/smartattend_logo.png',
   '/smartattend-ai-logo.png',
   '/apple-touch-icon.png',

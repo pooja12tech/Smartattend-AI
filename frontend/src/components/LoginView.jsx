@@ -143,9 +143,9 @@ export default function LoginView({ onLoginSuccess }) {
         {/* Center: SmartAttend Logo & Icon */}
         <div className="flex flex-col items-center justify-center space-y-4">
           <img
-            src="/smartattend_logo.png"
+            src="/smartattend_tile.png"
             alt="SmartAttend Logo"
-            className="w-36 h-36 sm:w-44 sm:h-44 object-contain animate-ambient-float"
+            className="w-32 h-32 sm:w-36 sm:h-36 object-contain animate-ambient-float drop-shadow-xl"
           />
           <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight">
             SmartAttend
@@ -167,9 +167,9 @@ export default function LoginView({ onLoginSuccess }) {
         {/* Header (Screen 2 Reference) */}
         <div className="text-left space-y-2">
           <img
-            src="/smartattend_logo.png"
+            src="/smartattend_tile.png"
             alt="SmartAttend Logo"
-            className="w-16 h-16 object-contain mb-1"
+            className="w-14 h-14 object-contain mb-1 drop-shadow-sm hover:scale-105 transition-transform"
           />
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111827] tracking-tight">
