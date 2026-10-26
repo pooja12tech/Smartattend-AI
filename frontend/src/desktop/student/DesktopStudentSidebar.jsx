@@ -47,10 +47,12 @@ export default function DesktopStudentSidebar({
       {/* Top Brand & Profile */}
       <div className="p-5 space-y-6">
         {/* Brand Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#1A4731] text-white flex items-center justify-center shadow-xs">
-            <GraduationCap className="w-6 h-6 stroke-[2.2]" />
-          </div>
+        <div className="flex items-center gap-3.5">
+          <img
+            src="/smartattend_logo.png"
+            alt="SmartAttend Logo"
+            className="w-12 h-12 object-contain shrink-0"
+          />
           <div>
             <div className="flex items-center gap-2">
               <span className="text-base font-extrabold text-[#111827] tracking-tight">

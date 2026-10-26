@@ -142,9 +142,11 @@ export default function LoginView({ onLoginSuccess }) {
 
         {/* Center: SmartAttend Logo & Icon */}
         <div className="flex flex-col items-center justify-center space-y-4">
-          <div className="w-20 h-20 rounded-3xl bg-[#1A4731] flex items-center justify-center text-white shadow-xl shadow-emerald-950/20">
-            <GraduationCap className="w-12 h-12 stroke-[1.8]" />
-          </div>
+          <img
+            src="/smartattend_logo.png"
+            alt="SmartAttend Logo"
+            className="w-36 h-36 sm:w-44 sm:h-44 object-contain animate-in zoom-in-95 duration-500"
+          />
           <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight">
             SmartAttend
           </h1>
@@ -163,13 +165,20 @@ export default function LoginView({ onLoginSuccess }) {
       <div className="w-full max-w-sm sm:max-w-md space-y-6">
         
         {/* Header (Screen 2 Reference) */}
-        <div className="text-left space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111827] tracking-tight">
-            Welcome Back
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Sign in to your SmartAttend account
-          </p>
+        <div className="text-left space-y-2">
+          <img
+            src="/smartattend_logo.png"
+            alt="SmartAttend Logo"
+            className="w-16 h-16 object-contain mb-1"
+          />
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#111827] tracking-tight">
+              Welcome Back
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500">
+              Sign in to your SmartAttend account
+            </p>
+          </div>
         </div>
 
         {/* Card */}

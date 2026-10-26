@@ -54,9 +54,11 @@ export default function Navbar({ currentUser, onLogout, backendOnline }) {
         
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-brand-500/30">
-            <ShieldCheck className="w-6 h-6 text-white" />
-          </div>
+          <img
+            src="/smartattend_logo.png"
+            alt="SmartAttend Logo"
+            className="w-11 h-11 object-contain shrink-0"
+          />
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold tracking-tight text-white">SmartAttend</span>

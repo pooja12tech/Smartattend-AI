@@ -19,16 +19,14 @@ export default function DesktopMobileOnlyModal({ isOpen, onClose }) {
 
         {/* Header Icon & Tag */}
         <div className="space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shadow-xs">
-            <Smartphone className="w-7 h-7 stroke-[2.2]" />
+          <div className="flex items-center gap-3">
+            <img src="/smartattend_logo.png" alt="SmartAttend" className="w-12 h-12 object-contain shrink-0" />
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider">
+              Anti-Proxy Security Policy
+            </span>
           </div>
 
           <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider">
-                Anti-Proxy Security Policy
-              </span>
-            </div>
             <h2 className="text-xl font-black text-[#111827] tracking-tight mt-1.5">
               Mark Attendance from Your Mobile Phone
             </h2>

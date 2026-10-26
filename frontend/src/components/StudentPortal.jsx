@@ -1218,9 +1218,9 @@ export default function StudentPortal({ user, onLogout }) {
 
   if (loading && !dashboard) {
     return (
-      <div className="student-mobile-app flex flex-col items-center justify-center min-h-screen text-slate-500 gap-3">
-        <RefreshCw className="w-8 h-8 animate-spin text-[#1A4731]" />
-        <p className="text-xs font-semibold">Loading SmartAttend...</p>
+      <div className="student-mobile-app flex flex-col items-center justify-center min-h-screen text-slate-500 gap-4">
+        <img src="/smartattend_logo.png" alt="SmartAttend" className="w-24 h-24 sm:w-28 sm:h-28 object-contain animate-pulse" />
+        <p className="text-sm font-semibold text-slate-700 tracking-wide">Loading SmartAttend...</p>
       </div>
     );
   }

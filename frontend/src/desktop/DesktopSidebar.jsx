@@ -28,10 +28,12 @@ export default function DesktopSidebar({
       {/* Top Branding */}
       <div>
         <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-2xl bg-[#1A4731] text-white flex items-center justify-center shrink-0 shadow-sm">
-              <GraduationCap className="w-6 h-6" />
-            </div>
+          <div className="flex items-center gap-3.5 overflow-hidden">
+            <img
+              src="/smartattend_logo.png"
+              alt="SmartAttend Logo"
+              className="w-12 h-12 object-contain shrink-0"
+            />
             {!collapsed && (
               <div className="hidden lg:block truncate">
                 <span className="text-sm font-extrabold text-[#111827] tracking-tight block">

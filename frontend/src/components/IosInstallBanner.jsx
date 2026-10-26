@@ -24,7 +24,7 @@ export default function IosInstallBanner() {
       <div className="glass-panel p-4 rounded-2xl border border-indigo-500/30 shadow-2xl shadow-indigo-950/80 bg-slate-900/95 backdrop-blur-xl text-slate-200 text-xs space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-white text-sm">
-            <Smartphone className="w-4 h-4 text-indigo-400" />
+            <img src="/smartattend_logo.png" alt="SmartAttend" className="w-5 h-5 object-contain" />
             <span>Install on iOS</span>
           </div>
           <button
