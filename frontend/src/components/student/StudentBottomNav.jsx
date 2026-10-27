@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Home, CalendarDays, QrCode, CheckSquare, User } from 'lucide-react';
+import RocketScanButton from './RocketScanButton';
 
 export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }) {
   const navContainerRef = useRef(null);
@@ -119,29 +120,10 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
         {tabs.map((tab) => {
           if (tab.isAction) {
             return (
-              <div key={tab.id} className="flex flex-col items-center justify-end h-full relative">
-                {/* Ambient breathing aura behind elevated Scan button */}
-                <div className="absolute -top-4 w-[52px] h-[52px] rounded-full bg-emerald-500/25 animate-ring-expand pointer-events-none" />
-
-                {/* Elevated Central Scan Button */}
-                <button
-                  type="button"
-                  id="nav-scan-button"
-                  onClick={onScanClick}
-                  className="group absolute -top-4 w-[52px] h-[52px] rounded-full bg-gradient-to-b from-[#1A4731] via-[#163f2b] to-[#102c1e] active:scale-90 hover:scale-105 text-white flex items-center justify-center shadow-[0_8px_20px_rgba(26,71,49,0.38)] ring-[3.5px] ring-[#F8FAF9] transition-all duration-200 focus:outline-none focus:ring-[#1A4731]/40 cursor-pointer overflow-hidden"
-                  title="Scan Attendance QR"
-                  aria-label="Scan Attendance QR"
-                >
-                  {/* Subtle glass reflection sheen */}
-                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/15 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <QrCode className="w-6 h-6 stroke-[2.2] text-white group-active:rotate-12 transition-transform duration-200" />
-                </button>
-
-                {/* Harmonized Label matching adjacent baselines */}
-                <span className="text-[11px] font-bold text-[#1A4731] tracking-tight pb-0.5">
-                  Scan
-                </span>
-              </div>
+              <RocketScanButton
+                key={tab.id}
+                onScanClick={onScanClick}
+              />
             );
           }
 
