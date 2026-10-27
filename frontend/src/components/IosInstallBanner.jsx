@@ -21,7 +21,7 @@ export default function IosInstallBanner() {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto animate-fade-in">
-      <div className="glass-panel p-4 rounded-2xl border border-indigo-500/30 shadow-2xl shadow-indigo-950/80 bg-slate-900/95 backdrop-blur-xl text-slate-200 text-xs space-y-2.5">
+      <div className="glass-panel p-4 rounded-2xl border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 bg-slate-900/95 backdrop-blur-xl text-slate-200 text-xs space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-white text-sm">
             <img src="/smartattend_logo.png" alt="SmartAttend" className="w-5 h-5 object-contain" />
@@ -43,14 +43,14 @@ export default function IosInstallBanner() {
         <ol className="list-decimal list-inside space-y-1 text-slate-300 text-[11px] font-medium bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
           <li className="flex items-center gap-1.5">
             <span>1. Tap the</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono text-[10px] border border-slate-700">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[10px] border border-slate-700">
               <Share className="w-3 h-3 mr-1" /> Share
             </span>
             <span>button in Safari</span>
           </li>
           <li className="flex items-center gap-1.5">
             <span>2. Scroll down and tap</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono text-[10px] border border-slate-700">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[10px] border border-slate-700">
               <PlusSquare className="w-3 h-3 mr-1" /> Add to Home Screen
             </span>
           </li>
@@ -59,7 +59,7 @@ export default function IosInstallBanner() {
         <div className="flex justify-end pt-1">
           <button
             onClick={handleDismiss}
-            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shadow-sm"
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-sm"
           >
             Got it
           </button>

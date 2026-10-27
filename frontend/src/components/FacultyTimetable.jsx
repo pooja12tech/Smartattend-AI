@@ -270,7 +270,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
             
             {/* Metric 1: Total Weekly Lectures */}
             <div className="glass-panel rounded-xl p-4 border border-slate-800 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
@@ -315,12 +315,12 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
 
             {/* Metric 4: System Status */}
             <div className="glass-panel rounded-xl p-4 border border-slate-800 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Schedule Authority</p>
-                <p className="text-xs font-bold text-purple-300 mt-0.5">Academic Deanery</p>
+                <p className="text-xs font-bold text-emerald-300 mt-0.5">Academic Deanery</p>
                 <p className="text-[10px] text-slate-500">Curated & Synchronized</p>
               </div>
             </div>
@@ -348,7 +348,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
                         TODAY'S UPCOMING LECTURE
                       </span>
                     ) : (
-                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5">
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5" />
                         NEXT UP: {nextScheduledLecture.targetDay}
                       </span>
@@ -372,7 +372,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
                     </h2>
                     <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
                       <span className="inline-flex items-center gap-1">
-                        <Users className="w-3 h-3 text-indigo-400" />
+                        <Users className="w-3 h-3 text-emerald-400" />
                         {nextScheduledLecture.slot.department} &bull; Semester {nextScheduledLecture.slot.semester} &bull; Section {nextScheduledLecture.slot.section}
                       </span>
                       <span>&bull;</span>
@@ -400,7 +400,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
                       className={`px-5 py-2.5 rounded-xl font-bold text-xs text-white shadow-lg flex items-center gap-2 transition active:scale-95 ${
                         nextScheduledLecture.isLiveNow
                           ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/30'
-                          : 'bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 shadow-brand-500/25'
+                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-brand-500/25'
                       }`}
                       title={`Launch attendance session for ${nextScheduledLecture.slot.subject_code}`}
                     >
@@ -542,7 +542,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
                                     {/* Cohort & Room */}
                                     <div className="mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-1 text-[11px] text-slate-400">
                                       <div className="flex items-center justify-between">
-                                        <span className="truncate text-indigo-300">
+                                        <span className="truncate text-emerald-300">
                                           {slot.department ? `${slot.department.split(' ')[0]} S${slot.semester}` : `Sem ${slot.semester}`} ({slot.section})
                                         </span>
                                         <span className="font-mono text-slate-300 font-semibold bg-slate-900/80 px-1.5 py-0.5 rounded border border-slate-700/80 flex items-center gap-0.5">
@@ -700,7 +700,7 @@ export default function FacultyTimetable({ user, activeSession, onStartAttendanc
                                   </h4>
 
                                   <p className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
-                                    <span className="text-indigo-300 font-medium">
+                                    <span className="text-emerald-300 font-medium">
                                       {slot.department} &bull; Sem {slot.semester} &bull; Section {slot.section}
                                     </span>
                                     <span>&bull;</span>

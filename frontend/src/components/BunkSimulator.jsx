@@ -318,7 +318,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
       <div className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none opacity-20 -mr-20 -mt-20 transition-all duration-500 ${
         localSim.status === 'SAFE' ? 'bg-emerald-500' : 'bg-rose-500'
       }`} />
-      <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-10 -ml-20 -mb-20 bg-indigo-500" />
+      <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-10 -ml-20 -mb-20 bg-emerald-500" />
 
       {/* Header Bar */}
       <div className="relative z-10 space-y-5">
@@ -356,8 +356,8 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
               <span>Reset</span>
             </button>
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-1.5 text-xs font-mono text-indigo-300">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-1.5 text-xs font-mono text-emerald-300">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
               <span>ACID 75% Engine</span>
             </div>
           </div>
@@ -387,7 +387,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
 
               {/* The Signature Dynamic Phrase */}
               <p className="text-sm sm:text-base font-bold text-white leading-relaxed">
-                In <span className="text-indigo-300 underline decoration-indigo-400/50 font-extrabold">{activeSubjectData.title}</span>,
+                In <span className="text-emerald-300 underline decoration-emerald-400/50 font-extrabold">{activeSubjectData.title}</span>,
                 your current attendance is <span className="text-white font-mono font-black">{activeSubjectData.pct}%</span>.
                 {' '}
                 {localSim.baselineSafeSkips > 0 ? (
@@ -404,7 +404,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               {/* What-If Impact Feedback */}
               {(effectiveBunks > 0 || effectiveAttends > 0) && (
                 <p className="text-xs text-slate-300 font-medium flex items-center gap-2 pt-1">
-                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                   <span>
                     <strong>What-If Simulation Active:</strong> {effectiveBunks > 0 ? `Missing ${effectiveBunks} planned class${effectiveBunks !== 1 ? 'es' : ''}` : ''}{effectiveBunks > 0 && effectiveAttends > 0 ? ' & ' : ''}{effectiveAttends > 0 ? `attending ${effectiveAttends} classes` : ''} shifts your attendance to <strong className={localSim.projPct >= targetThreshold ? 'text-emerald-400' : 'text-rose-400'}>{localSim.projPct}%</strong> ({localSim.delta >= 0 ? `+${localSim.delta}%` : `${localSim.delta}%`}).
                     {' '}
@@ -441,7 +441,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-white flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4 text-indigo-400" /> Choose Subject for Simulation
+                <BookOpen className="w-4 h-4 text-emerald-400" /> Choose Subject for Simulation
               </span>
               <span className="text-[11px] text-slate-400 font-mono">
                 {activeSubjectData.attended} / {activeSubjectData.total} Lectures
@@ -450,7 +450,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             <select
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
             >
               <option value="OVERALL">📊 All Subjects Combined (Overall Semester Aggregate - {overallPct}%)</option>
               {subjectsList.map((sub, idx) => (
@@ -465,16 +465,16 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-white flex items-center gap-1.5">
-                <Target className="w-4 h-4 text-indigo-400" /> Target Threshold Limit
+                <Target className="w-4 h-4 text-emerald-400" /> Target Threshold Limit
               </span>
-              <span className="font-mono text-xs font-bold text-indigo-300">{targetThreshold.toFixed(1)}%</span>
+              <span className="font-mono text-xs font-bold text-emerald-300">{targetThreshold.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTargetThreshold(75.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 75.0
-                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
@@ -484,7 +484,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 onClick={() => setTargetThreshold(80.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 80.0
-                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
@@ -494,7 +494,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 onClick={() => setTargetThreshold(85.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 85.0
-                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
@@ -510,7 +510,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             onClick={() => setActiveTab('CALENDAR')}
             className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'CALENDAR'
-                ? 'bg-gradient-to-r from-indigo-600 to-brand-600 text-white shadow-lg shadow-indigo-600/30'
+                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
@@ -527,14 +527,14 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             onClick={() => setActiveTab('SLIDERS')}
             className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'SLIDERS'
-                ? 'bg-gradient-to-r from-indigo-600 to-brand-600 text-white shadow-lg shadow-indigo-600/30'
+                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
             <Sliders className="w-4 h-4" />
             <span>Interactive Sliders</span>
             {(plannedBunks > 0 || plannedAttends > 0) && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500 text-white font-mono">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white font-mono">
                 {plannedBunks}b / {plannedAttends}a
               </span>
             )}
@@ -544,7 +544,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             onClick={() => setActiveTab('ROADMAP')}
             className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'ROADMAP'
-                ? 'bg-gradient-to-r from-indigo-600 to-brand-600 text-white shadow-lg shadow-indigo-600/30'
+                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
@@ -556,7 +556,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             onClick={() => setActiveTab('SUBJECTS')}
             className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'SUBJECTS'
-                ? 'bg-gradient-to-r from-indigo-600 to-brand-600 text-white shadow-lg shadow-indigo-600/30'
+                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
@@ -570,7 +570,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="space-y-4 animate-in fade-in duration-300">
             <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs">
               <div className="flex items-center gap-2 text-slate-300">
-                <Calendar className="w-4 h-4 text-indigo-400" />
+                <Calendar className="w-4 h-4 text-emerald-400" />
                 <span>
                   <strong>Upcoming 14-Day Schedule:</strong> Click any day to simulate taking leave (e.g. for a Friday hackathon or fest).
                 </span>
@@ -578,7 +578,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => applyPreset('HACKATHON')}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition text-[11px] font-bold"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition text-[11px] font-bold"
                 >
                   🚀 Test Friday Hackathon Preset
                 </button>
@@ -620,7 +620,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                       <p className="text-[11px] text-slate-300 truncate font-medium">{item.subject}</p>
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
                         <span>{item.classes} Lecture{item.classes !== 1 ? 's' : ''}</span>
-                        <span className="font-mono text-indigo-300">{item.day}</span>
+                        <span className="font-mono text-emerald-300">{item.day}</span>
                       </div>
                     </div>
 
@@ -684,7 +684,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => applyPreset('HACKATHON')}
-                  className="px-3 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
                 >
                   🚀 Friday Hackathon (-2 Lectures)
                 </button>
@@ -866,7 +866,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                       >
                         <div>
                           <p className="font-bold flex items-center gap-1.5">
-                            {step.reached ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />}
+                            {step.reached ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />}
                             <span>Lecture +{step.attendedAdd}</span>
                           </p>
                           <p className="text-[10px] text-slate-400 mt-0.5">
@@ -972,7 +972,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                     key={idx}
                     className={`p-4 rounded-2xl border transition-all ${
                       selectedSubject === (sub.subject_code || sub.subject)
-                        ? 'bg-indigo-950/30 border-indigo-500 ring-1 ring-indigo-500'
+                        ? 'bg-emerald-950/30 border-emerald-500 ring-1 ring-emerald-500'
                         : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
                     }`}
                   >
@@ -1007,7 +1007,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                           setSelectedSubject(sub.subject_code || sub.subject);
                           setActiveTab('SLIDERS');
                         }}
-                        className="px-2.5 py-1 bg-slate-950 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-lg text-[11px] font-bold border border-slate-800 transition"
+                        className="px-2.5 py-1 bg-slate-950 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-lg text-[11px] font-bold border border-slate-800 transition"
                       >
                         Simulate Subject &rarr;
                       </button>

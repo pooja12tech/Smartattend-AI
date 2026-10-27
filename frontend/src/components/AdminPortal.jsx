@@ -3,7 +3,7 @@ import {
   Users, ShieldAlert, Award, Smartphone, RefreshCw, UserPlus, Download,
   CheckCircle2, AlertTriangle, TrendingUp, Search, Plus, X,
   BookOpen, History, Camera, Lock, Unlock, FileText, Check, Trash2, GraduationCap, Building2,
-  Calendar
+  Calendar, LogOut
 } from 'lucide-react';
 import { api } from '../api';
 import AdminTimetableManagement from './AdminTimetableManagement';
@@ -81,6 +81,7 @@ export default function AdminPortal({ user, onLogout }) {
   const [capturedFacePhoto, setCapturedFacePhoto] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [enrollingFaceLoading, setEnrollingFaceLoading] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const adminVideoRef = useRef(null);
   const adminCanvasRef = useRef(null);
   const adminStreamRef = useRef(null);
@@ -970,7 +971,7 @@ export default function AdminPortal({ user, onLogout }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-400 flex items-center justify-center text-sm font-bold shadow-lg shadow-purple-500/10">
+            <span className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-sm font-bold shadow-lg shadow-emerald-500/10">
               AD
             </span>
             <span>Administrator Control Center</span>
@@ -983,7 +984,7 @@ export default function AdminPortal({ user, onLogout }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => openAddModalForRole('student')}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
           >
             <UserPlus className="w-3.5 h-3.5" /> + Add Student
           </button>
@@ -1036,7 +1037,7 @@ export default function AdminPortal({ user, onLogout }) {
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'overview' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'overview' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <TrendingUp className="w-4 h-4" />
           <span>Overview & Breakdown</span>
@@ -1052,7 +1053,7 @@ export default function AdminPortal({ user, onLogout }) {
 
         <button
           onClick={() => { setActiveTab('students'); fetchUsers(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'students' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'students' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <Users className="w-4 h-4" />
           <span>Students & Biometrics ({studentsList.length})</span>
@@ -1060,7 +1061,7 @@ export default function AdminPortal({ user, onLogout }) {
 
         <button
           onClick={() => { setActiveTab('subjects'); fetchSubjects(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'subjects' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'subjects' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <BookOpen className="w-4 h-4" />
           <span>Curriculum & Subjects ({subjectsList.length})</span>
@@ -1076,7 +1077,7 @@ export default function AdminPortal({ user, onLogout }) {
 
         <button
           onClick={() => { setActiveTab('audit'); fetchAuditLogs(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'audit' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'audit' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
         >
           <History className="w-4 h-4" />
           <span>Audit Trail Logs</span>
@@ -1091,7 +1092,7 @@ export default function AdminPortal({ user, onLogout }) {
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
                 <span>Total Students</span>
-                <Users className="w-4 h-4 text-indigo-400" />
+                <Users className="w-4 h-4 text-emerald-400" />
               </div>
               <p className="text-3xl font-black text-white mt-2">{studentsList.length || counts.students || 0}</p>
               <p className="text-[10px] text-slate-400 mt-1">Enrolled across departments</p>
@@ -1118,7 +1119,7 @@ export default function AdminPortal({ user, onLogout }) {
             <div className="glass-card rounded-2xl p-5 border border-slate-800">
               <div className="flex items-center justify-between text-slate-400 text-xs">
                 <span>Active Subjects</span>
-                <BookOpen className="w-4 h-4 text-purple-400" />
+                <BookOpen className="w-4 h-4 text-emerald-400" />
               </div>
               <p className="text-3xl font-black text-white mt-2">{subjectsList.length || 3}</p>
               <p className="text-[10px] text-slate-400 mt-1">Semester curriculum courses</p>
@@ -1130,7 +1131,7 @@ export default function AdminPortal({ user, onLogout }) {
             {/* Department-wise Distribution */}
             <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
               <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-indigo-400" />
+                <Building2 className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">Department-Wise Distribution</h3>
               </div>
               <p className="text-xs text-slate-400">Total students and faculty mapped per academic department.</p>
@@ -1142,8 +1143,8 @@ export default function AdminPortal({ user, onLogout }) {
                       <div>
                         <h4 className="text-xs font-bold text-white">{dept}</h4>
                         <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
-                          <span className="flex items-center gap-1 text-indigo-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> {data.students} Students
+                          <span className="flex items-center gap-1 text-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {data.students} Students
                           </span>
                           <span className="flex items-center gap-1 text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {data.faculty} Faculty
@@ -1201,7 +1202,7 @@ export default function AdminPortal({ user, onLogout }) {
                   onClick={handleExportDefaultersCSV}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
                 >
-                  <Download className="w-3.5 h-3.5 text-purple-400" /> Export CSV
+                  <Download className="w-3.5 h-3.5 text-emerald-400" /> Export CSV
                 </button>
               )}
             </div>
@@ -1332,7 +1333,7 @@ export default function AdminPortal({ user, onLogout }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-indigo-400" />
+                <Users className="w-4 h-4 text-emerald-400" />
                 Student Roster, Hardware Locks & Biometric Status
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1342,7 +1343,7 @@ export default function AdminPortal({ user, onLogout }) {
 
             <button
               onClick={() => openAddModalForRole('student')}
-              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 self-start sm:self-auto transition"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 self-start sm:self-auto transition"
             >
               <Plus className="w-3.5 h-3.5" /> Add Student
             </button>
@@ -1413,23 +1414,23 @@ export default function AdminPortal({ user, onLogout }) {
                         {stu.bound_device_id === 'UNBOUND' ? (
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">UNBOUND</span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold truncate max-w-[120px] inline-block">{stu.bound_device_id}</span>
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold truncate max-w-[120px] inline-block">{stu.bound_device_id}</span>
                         )}
                       </td>
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-2">
                           {stu.has_registered_face ? (
-                            <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">ENROLLED</span>
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">ENROLLED</span>
                           ) : (
                             <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">NOT ENROLLED</span>
                           )}
                           <button
                             type="button"
                             onClick={() => openFaceCaptureModal(stu)}
-                            className="px-2 py-0.5 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold flex items-center gap-1 transition active:scale-95"
+                            className="px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition active:scale-95"
                             title="Capture verified student photo using camera"
                           >
-                            <Camera className="w-3 h-3 text-indigo-400" />
+                            <Camera className="w-3 h-3 text-emerald-400" />
                             <span>{stu.has_registered_face ? 'Retake' : 'Capture'}</span>
                           </button>
                         </div>
@@ -1449,7 +1450,7 @@ export default function AdminPortal({ user, onLogout }) {
                           type="button"
                           onClick={() => handleResetFace(stu.roll_no)}
                           disabled={resettingFaceRoll === stu.roll_no || !stu.has_registered_face}
-                          className="px-2 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
+                          className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
                           title="Reset face template"
                         >
                           {resettingFaceRoll === stu.roll_no ? 'Resetting...' : 'Reset Face'}
@@ -1486,7 +1487,7 @@ export default function AdminPortal({ user, onLogout }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-purple-400" />
+                <BookOpen className="w-4 h-4 text-emerald-400" />
                 Academic Curriculum & Course Modules
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1496,7 +1497,7 @@ export default function AdminPortal({ user, onLogout }) {
 
             <button
               onClick={() => setShowAddSubjectModal(true)}
-              className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1 transition"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition"
             >
               <Plus className="w-3.5 h-3.5" /> Add Subject
             </button>
@@ -1518,7 +1519,7 @@ export default function AdminPortal({ user, onLogout }) {
               <tbody className="divide-y divide-slate-800/60 font-mono">
                 {subjectsList.map((subj) => (
                   <tr key={subj.code} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-3 font-bold text-purple-400">{subj.code}</td>
+                    <td className="py-3 px-3 font-bold text-emerald-400">{subj.code}</td>
                     <td className="py-3 px-3 font-sans font-semibold text-white">{subj.name}</td>
                     <td className="py-3 px-3 font-sans text-slate-400">{subj.department}</td>
                     <td className="py-3 px-3 text-slate-300">Sem {subj.semester || 6}</td>
@@ -1539,7 +1540,7 @@ export default function AdminPortal({ user, onLogout }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <History className="w-4 h-4 text-purple-400" />
+                <History className="w-4 h-4 text-emerald-400" />
                 Immutable System Audit Trail (ACID Audit Log)
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1577,7 +1578,7 @@ export default function AdminPortal({ user, onLogout }) {
                       </td>
                       <td className="py-2.5 px-3 text-slate-300">{log.actor_name || log.actor_id} ({log.actor_role})</td>
                       <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
                           {log.action}
                         </span>
                       </td>
@@ -1721,7 +1722,7 @@ export default function AdminPortal({ user, onLogout }) {
                   <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-slate-300 font-medium text-[11px] flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-purple-400" />
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Verified Admission Photo (Optional at creation)</span>
                       </label>
                       {newStudentPhoto && (
@@ -1734,7 +1735,7 @@ export default function AdminPortal({ user, onLogout }) {
                     <div className="flex items-center gap-3">
                       {newStudentPhoto ? (
                         <div className="relative shrink-0">
-                          <img src={newStudentPhoto} alt="New Student" className="w-14 h-14 rounded-xl object-cover border border-purple-500/40" />
+                          <img src={newStudentPhoto} alt="New Student" className="w-14 h-14 rounded-xl object-cover border border-emerald-500/40" />
                           <button
                             type="button"
                             onClick={() => setNewStudentPhoto(null)}
@@ -1751,8 +1752,8 @@ export default function AdminPortal({ user, onLogout }) {
                         </div>
                       )}
                       <div className="space-y-1 flex-1">
-                        <label className="px-3 py-1.5 rounded-lg bg-indigo-600/25 hover:bg-indigo-600/35 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold flex items-center gap-1.5 w-fit cursor-pointer transition">
-                          <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                        <label className="px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1.5 w-fit cursor-pointer transition">
+                          <Camera className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Upload Photo / Capture</span>
                           <input
                             type="file"
@@ -1805,7 +1806,7 @@ export default function AdminPortal({ user, onLogout }) {
                 <button
                   type="submit"
                   disabled={creatingUser}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
                 >
                   {creatingUser ? 'Provisioning Account...' : `Create ${newRole.toUpperCase()}`}
                 </button>
@@ -1889,7 +1890,7 @@ export default function AdminPortal({ user, onLogout }) {
                 <button
                   type="submit"
                   disabled={creatingSubject}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
                 >
                   {creatingSubject ? 'Adding...' : 'Add Subject to Curriculum'}
                 </button>
@@ -1920,7 +1921,7 @@ export default function AdminPortal({ user, onLogout }) {
             {/* Header */}
             <div>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
                   <Camera className="w-4 h-4" />
                 </div>
                 <div>
@@ -1940,7 +1941,7 @@ export default function AdminPortal({ user, onLogout }) {
                     <img
                       src={capturedFacePhoto}
                       alt="Captured Student Face"
-                      className="w-52 h-52 rounded-2xl object-cover border-2 border-purple-500 shadow-xl"
+                      className="w-52 h-52 rounded-2xl object-cover border-2 border-emerald-500 shadow-xl"
                     />
                     <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-slate-950 shadow-lg">
                       <CheckCircle2 className="w-4 h-4" />
@@ -1964,8 +1965,8 @@ export default function AdminPortal({ user, onLogout }) {
                   {/* Oval Face Guide */}
                   {adminCameraActive && (
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className="w-48 h-60 rounded-full border-2 border-dashed border-purple-400/80 shadow-2xl flex items-center justify-center">
-                        <span className="text-[10px] text-purple-200/90 font-semibold bg-black/60 px-2.5 py-0.5 rounded-full mt-40">
+                      <div className="w-48 h-60 rounded-full border-2 border-dashed border-emerald-400/80 shadow-2xl flex items-center justify-center">
+                        <span className="text-[10px] text-emerald-200/90 font-semibold bg-black/60 px-2.5 py-0.5 rounded-full mt-40">
                           Align Face Here
                         </span>
                       </div>
@@ -1980,7 +1981,7 @@ export default function AdminPortal({ user, onLogout }) {
                       <button
                         type="button"
                         onClick={startAdminCamera}
-                        className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition"
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition"
                       >
                         Start Camera
                       </button>
@@ -2005,7 +2006,7 @@ export default function AdminPortal({ user, onLogout }) {
                   <button
                     type="button"
                     onClick={captureAdminPhoto}
-                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-purple-500/25 transition active:scale-95"
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-95"
                   >
                     <Camera className="w-4 h-4" />
                     <span>Capture Frame</span>
@@ -2047,6 +2048,42 @@ export default function AdminPortal({ user, onLogout }) {
             </div>
 
             <canvas ref={adminCanvasRef} className="hidden" />
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white text-[#111827] w-full max-w-sm rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2">
+              <LogOut className="w-5 h-5 text-rose-600" />
+              <h3 className="text-base font-extrabold text-[#111827]">
+                Log Out of Admin Console?
+              </h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to end your active administrative session?
+            </p>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  onLogout?.();
+                }}
+                className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition shadow-md shadow-rose-600/30"
+              >
+                Log Out
+              </button>
+            </div>
           </div>
         </div>
       )}

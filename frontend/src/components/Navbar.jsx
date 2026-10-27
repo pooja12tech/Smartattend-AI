@@ -26,8 +26,8 @@ export default function Navbar({ currentUser, onLogout, backendOnline }) {
     switch (role) {
       case 'admin':
         return (
-          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             Admin Portal
           </span>
         );
@@ -40,8 +40,8 @@ export default function Navbar({ currentUser, onLogout, backendOnline }) {
         );
       default:
         return (
-          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             Student Portal (PWA)
           </span>
         );
@@ -85,7 +85,7 @@ export default function Navbar({ currentUser, onLogout, backendOnline }) {
             <button
               onClick={handleInstallClick}
               title="Install SmartAttend as Progressive Web App"
-              className="px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm animate-pulse"
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm animate-pulse"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Install App</span>

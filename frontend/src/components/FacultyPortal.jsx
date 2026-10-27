@@ -266,10 +266,10 @@ export default function FacultyPortal({ user, onLogout }) {
 
   const getAvatarGradient = (rollNo) => {
     const gradients = [
-      'from-indigo-600 to-purple-600',
+      'from-emerald-600 to-teal-600',
       'from-emerald-600 to-teal-600',
       'from-blue-600 to-cyan-600',
-      'from-violet-600 to-fuchsia-600',
+      'from-emerald-600 to-fuchsia-600',
       'from-amber-600 to-orange-600',
       'from-rose-600 to-pink-600',
     ];
@@ -1496,8 +1496,8 @@ export default function FacultyPortal({ user, onLogout }) {
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
                 ACTIVE: {activeSession?.session_code || activeSession?.session_id?.substring(0, 8) || 'SESSION'}
               </div>
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-indigo-300">
-                <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-300">
+                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Geofence: 150m (Live Faculty GPS: {facultyGps.lat ? `${facultyGps.lat.toFixed(4)}, ${facultyGps.lng.toFixed(4)}` : 'Syncing...'})</span>
               </div>
 
@@ -1508,11 +1508,11 @@ export default function FacultyPortal({ user, onLogout }) {
                 title={ultrasonicBeaconActive ? "Ultrasonic inaudible room audio beacon ACTIVE (18.8 kHz)" : "Ultrasonic beacon MUTED"}
                 className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
                   ultrasonicBeaconActive
-                    ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
                     : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-400'
                 }`}
               >
-                <Radio className={`w-3.5 h-3.5 ${ultrasonicBeaconActive ? 'text-indigo-400 animate-pulse' : 'text-slate-500'}`} />
+                <Radio className={`w-3.5 h-3.5 ${ultrasonicBeaconActive ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
                 <span className="hidden md:inline">Ultrasonic:</span> {ultrasonicBeaconActive ? 'ON' : 'OFF'}
               </button>
 
@@ -1523,7 +1523,7 @@ export default function FacultyPortal({ user, onLogout }) {
                   setShowPanoramicModal(true);
                   setPanoramicResult(null);
                 }}
-                className="px-3.5 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-md shadow-purple-500/20 flex items-center gap-1.5 transition active:scale-95"
+                className="px-3.5 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition active:scale-95"
                 title="Scan entire lecture hall at once with InsightFace Multi-Face AI"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -1591,7 +1591,7 @@ export default function FacultyPortal({ user, onLogout }) {
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-brand-500 to-indigo-400 transition-all duration-300 ease-linear rounded-full"
+                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
                     style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
                   ></div>
                 </div>
@@ -1686,7 +1686,7 @@ export default function FacultyPortal({ user, onLogout }) {
                   className={`h-full transition-all duration-700 ease-out rounded-full ${
                     attendancePct >= 75
                       ? 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400 shadow-lg shadow-emerald-500/30'
-                      : 'bg-gradient-to-r from-brand-600 to-indigo-500'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600'
                   }`}
                   style={{ width: `${Math.min(100, attendancePct)}%` }}
                 />
@@ -1696,7 +1696,7 @@ export default function FacultyPortal({ user, onLogout }) {
 
           {/* Real-Time Arrival Toast Celebration */}
           {latestArrival && (
-            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-indigo-500/20 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between shadow-xl shadow-emerald-500/10 animate-pulse">
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-teal-500/20 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between shadow-xl shadow-emerald-500/10 animate-pulse">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center font-bold text-emerald-200 text-xs">
                   {getInitials(latestArrival.name)}
@@ -1938,7 +1938,7 @@ export default function FacultyPortal({ user, onLogout }) {
                                   {s.status === 'MANUAL_PRESENT' ? 'Teacher Signed' : s.face_status === 'PANORAMIC_AI_MATCH' ? 'Panoramic AI' : 'Verified'}
                                 </span>
                                 {s.ultrasonic_verified && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 inline-flex items-center gap-0.5">
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-0.5">
                                     <Radio className="w-2 h-2" /> Acoustic
                                   </span>
                                 )}
@@ -2047,7 +2047,7 @@ export default function FacultyPortal({ user, onLogout }) {
                                 type="button"
                                 onClick={() => handleManualOverride(s.roll_no, s.name)}
                                 disabled={actionLoading}
-                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
                               >
                                 Mark Present Manually
                               </button>
@@ -2187,9 +2187,9 @@ export default function FacultyPortal({ user, onLogout }) {
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-purple-400" />
+                  <Camera className="w-5 h-5 text-emerald-400" />
                   Panoramic Classroom AI Face Scanner
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     Category 2 AI
                   </span>
                 </h3>
@@ -2218,7 +2218,7 @@ export default function FacultyPortal({ user, onLogout }) {
                   handleStopPanoramicWebcam();
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  panoramicTab === 'upload' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
+                  panoramicTab === 'upload' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
                 }`}
               >
                 <Upload className="w-3.5 h-3.5" /> Upload Lecture Hall Photo
@@ -2230,7 +2230,7 @@ export default function FacultyPortal({ user, onLogout }) {
                   handleStartPanoramicWebcam();
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  panoramicTab === 'camera' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
+                  panoramicTab === 'camera' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
                 }`}
               >
                 <Camera className="w-3.5 h-3.5" /> Webcam / Camera Viewfinder
@@ -2240,8 +2240,8 @@ export default function FacultyPortal({ user, onLogout }) {
             {/* Tab 1: Upload Wide Photo */}
             {panoramicTab === 'upload' && !panoramicResult && (
               <div className="space-y-4">
-                <label className="border-2 border-dashed border-slate-700 hover:border-purple-500/60 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition bg-slate-900/40 hover:bg-slate-900/80">
-                  <Upload className="w-10 h-10 text-purple-400 mb-2" />
+                <label className="border-2 border-dashed border-slate-700 hover:border-emerald-500/60 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition bg-slate-900/40 hover:bg-slate-900/80">
+                  <Upload className="w-10 h-10 text-emerald-400 mb-2" />
                   <span className="text-xs font-bold text-white">Click or drag a wide classroom picture</span>
                   <span className="text-[11px] text-slate-500 mt-1">Supports high-res JPEG, PNG, WebP up to 15MB</span>
                   <input
@@ -2269,7 +2269,7 @@ export default function FacultyPortal({ user, onLogout }) {
                 <button
                   type="button"
                   onClick={handleCapturePanoramicSnapshot}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"
                 >
                   <Camera className="w-4 h-4" /> Snap Classroom View
                 </button>
@@ -2279,7 +2279,7 @@ export default function FacultyPortal({ user, onLogout }) {
             {/* Preview Selected / Captured Image */}
             {panoramicImage && !panoramicResult && (
               <div className="space-y-3">
-                <div className="relative rounded-2xl overflow-hidden border border-purple-500/40 max-h-72 flex items-center justify-center bg-black">
+                <div className="relative rounded-2xl overflow-hidden border border-emerald-500/40 max-h-72 flex items-center justify-center bg-black">
                   <img src={panoramicImage} alt="Classroom Preview" className="max-h-72 w-auto object-contain" />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -2295,7 +2295,7 @@ export default function FacultyPortal({ user, onLogout }) {
                     type="button"
                     onClick={handleRunPanoramicAI}
                     disabled={panoramicLoading}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-2 disabled:opacity-50"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/25 flex items-center gap-2 disabled:opacity-50"
                   >
                     {panoramicLoading ? (
                       <>
@@ -2326,9 +2326,9 @@ export default function FacultyPortal({ user, onLogout }) {
                     <span className="text-[10px] text-emerald-300 uppercase font-semibold">Enrolled Matched</span>
                     <p className="text-xl font-black text-emerald-400 mt-0.5">{panoramicResult.matched_count}</p>
                   </div>
-                  <div className="glass-card rounded-xl p-3 border border-purple-500/30 bg-purple-500/10 text-center">
-                    <span className="text-[10px] text-purple-300 uppercase font-semibold">Auto-Marked Present</span>
-                    <p className="text-xl font-black text-purple-300 mt-0.5">{panoramicResult.auto_marked_count}</p>
+                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
+                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Auto-Marked Present</span>
+                    <p className="text-xl font-black text-emerald-300 mt-0.5">{panoramicResult.auto_marked_count}</p>
                   </div>
                   <div className="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-500/10 text-center">
                     <span className="text-[10px] text-amber-300 uppercase font-semibold">Visitors / Unenrolled</span>
@@ -2377,7 +2377,7 @@ export default function FacultyPortal({ user, onLogout }) {
                   <button
                     type="button"
                     onClick={() => setShowPanoramicModal(false)}
-                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg"
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg"
                   >
                     Done & Return to Live Wall
                   </button>
@@ -2434,8 +2434,8 @@ export default function FacultyPortal({ user, onLogout }) {
                     <span className="text-[10px] text-amber-300 uppercase font-semibold">Syndicate Rings</span>
                     <p className="text-xl font-black text-amber-400 mt-0.5">{syndicateData?.syndicates_detected || 0}</p>
                   </div>
-                  <div className="glass-card rounded-xl p-3 border border-indigo-500/30 bg-indigo-500/10 text-center">
-                    <span className="text-[10px] text-indigo-300 uppercase font-semibold">Status</span>
+                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
+                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Status</span>
                     <p className="text-sm font-bold text-emerald-400 mt-1">Active Defense</p>
                   </div>
                 </div>
@@ -2464,7 +2464,7 @@ export default function FacultyPortal({ user, onLogout }) {
                         <p className="text-xs text-slate-200 font-medium">{syn.description}</p>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400">
                           <span className="text-slate-500">Involved Roll Nos:</span>
-                          <span className="font-mono font-bold text-indigo-300">{syn.involved_students?.join(', ')}</span>
+                          <span className="font-mono font-bold text-emerald-300">{syn.involved_students?.join(', ')}</span>
                         </div>
                         <p className="text-[10px] text-amber-300 italic pt-1 border-t border-rose-500/20">
                           Recommendation: {syn.recommendation}
@@ -2542,7 +2542,7 @@ export default function FacultyPortal({ user, onLogout }) {
             </div>
 
             {/* Giant QR Code Display */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-white shadow-2xl shadow-indigo-500/20 border-8 border-slate-800">
+            <div className="p-6 sm:p-8 rounded-3xl bg-white shadow-2xl shadow-emerald-500/20 border-8 border-slate-800">
               <QRCodeSVG
                 value={qrData.qr_token}
                 size={340}
@@ -2555,11 +2555,11 @@ export default function FacultyPortal({ user, onLogout }) {
             <div className="w-full max-w-md space-y-2">
               <div className="flex items-center justify-between text-sm font-bold">
                 <span className="text-slate-400">Next Cryptographic Refresh:</span>
-                <span className="text-indigo-400 font-mono text-lg">{qrData.expires_in_seconds}s</span>
+                <span className="text-emerald-400 font-mono text-lg">{qrData.expires_in_seconds}s</span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 via-brand-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
+                  className="h-full bg-gradient-to-r from-emerald-500 via-brand-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
                   style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
                 ></div>
               </div>

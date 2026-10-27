@@ -454,7 +454,7 @@ export default function AdminTimetableManagement({
             {/* Add Entry Button */}
             <button
               onClick={() => openCreateModal()}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
             >
               <Plus className="w-4 h-4" />
               <span>+ Create Slot</span>
@@ -1162,7 +1162,7 @@ export default function AdminTimetableManagement({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
                 >
                   {submitting ? (
                     <>
@@ -1314,7 +1314,7 @@ function TimetableSlotCard({ entry, onEdit, onDelete, onTogglePublish }) {
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Building2 className="w-3 h-3 text-indigo-400 shrink-0" />
+            <Building2 className="w-3 h-3 text-emerald-400 shrink-0" />
             <span className="text-slate-300 font-medium">{entry.room_no}</span>
           </div>
           <span className="text-[10px] text-slate-500 font-mono">

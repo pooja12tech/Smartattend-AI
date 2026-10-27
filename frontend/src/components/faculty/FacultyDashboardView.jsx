@@ -230,13 +230,13 @@ export default function FacultyDashboardView({
           className="cursor-pointer bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 active:scale-[0.98] transition group"
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition ${
-            ultrasonicBeaconActive ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200'
+            ultrasonicBeaconActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'
           }`}>
-            <Radio className={`w-5 h-5 ${ultrasonicBeaconActive ? 'animate-pulse text-indigo-600' : ''}`} />
+            <Radio className={`w-5 h-5 ${ultrasonicBeaconActive ? 'animate-pulse text-emerald-600' : ''}`} />
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Acoustic Beacon</span>
-            <span className={`text-xs font-extrabold truncate block ${ultrasonicBeaconActive ? 'text-indigo-700' : 'text-slate-500'}`}>
+            <span className={`text-xs font-extrabold truncate block ${ultrasonicBeaconActive ? 'text-emerald-700' : 'text-slate-500'}`}>
               {ultrasonicBeaconActive ? '18.8 kHz ON' : 'Muted'}
             </span>
             <span className="text-[10px] text-slate-400 font-medium block">

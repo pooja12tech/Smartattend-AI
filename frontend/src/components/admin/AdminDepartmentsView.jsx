@@ -18,7 +18,7 @@ export default function AdminDepartmentsView({
   const baseDepartments = [
     { code: 'CSE', name: 'Computer Science & Engineering', icon: Code, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     { code: 'ECE', name: 'Electronics & Communication', icon: Cpu, color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    { code: 'IT', name: 'Information Technology', icon: Globe, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    { code: 'IT', name: 'Information Technology', icon: Globe, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     { code: 'ME', name: 'Mechanical Engineering', icon: Wrench, color: 'bg-amber-50 text-amber-700 border-amber-200' },
     { code: 'CE', name: 'Civil Engineering', icon: Hammer, color: 'bg-rose-50 text-rose-700 border-rose-200' },
     { code: 'EE', name: 'Electrical Engineering', icon: Zap, color: 'bg-cyan-50 text-cyan-700 border-cyan-200' }

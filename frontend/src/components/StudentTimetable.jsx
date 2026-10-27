@@ -193,7 +193,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
             My Timetable &amp; Lecture Schedule
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Cohort: <span className="font-semibold text-slate-200">{studentDept}</span> &bull; Semester <span className="font-semibold text-slate-200">{studentSem}</span> &bull; Section <span className="font-semibold text-indigo-300 font-mono">{studentSec}</span>
+            Cohort: <span className="font-semibold text-slate-200">{studentDept}</span> &bull; Semester <span className="font-semibold text-slate-200">{studentSem}</span> &bull; Section <span className="font-semibold text-emerald-300 font-mono">{studentSec}</span>
           </p>
         </div>
 
@@ -305,7 +305,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Next Scheduled Lecture Banner (2 cols on large) */}
-            <div className="lg:col-span-2 glass-panel rounded-2xl p-6 border border-slate-800 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-indigo-950/30 flex flex-col justify-between space-y-4">
+            <div className="lg:col-span-2 glass-panel rounded-2xl p-6 border border-slate-800 relative overflow-hidden bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-emerald-950/30 flex flex-col justify-between space-y-4">
               <div>
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -332,7 +332,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                   <div className="mt-4 space-y-3">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                           {nextScheduledLecture.slot.subject_code}
                         </span>
                         <h2 className="text-lg sm:text-xl font-black text-white mt-1">
@@ -353,7 +353,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                     {/* Metadata chips */}
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300 pt-1">
                       <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                        <User className="w-3.5 h-3.5 text-indigo-400" />
+                        <User className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Prof. <strong className="text-white">{nextScheduledLecture.slot.faculty_name}</strong></span>
                       </div>
                       <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
@@ -413,7 +413,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
             <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col justify-between space-y-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-indigo-400" />
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                     My Schedule Overview
                   </h3>
@@ -427,7 +427,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                   </div>
                   <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
                     <span className="text-[11px] text-slate-400 block">Weekly Total</span>
-                    <span className="text-2xl font-black text-indigo-300 mt-0.5 block">{timetable.length}</span>
+                    <span className="text-2xl font-black text-emerald-300 mt-0.5 block">{timetable.length}</span>
                     <span className="text-[10px] text-slate-500">Lectures / Wk</span>
                   </div>
                 </div>
@@ -440,7 +440,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                 </div>
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="text-slate-400">Class &amp; Section:</span>
-                  <span className="font-semibold font-mono text-indigo-300">Sem {studentSem} - Sec {studentSec}</span>
+                  <span className="font-semibold font-mono text-emerald-300">Sem {studentSem} - Sec {studentSec}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="text-slate-400">Published Status:</span>
@@ -480,7 +480,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                         key={day}
                         className={`rounded-2xl border transition-all flex flex-col ${
                           isToday
-                            ? 'bg-gradient-to-b from-indigo-950/40 via-slate-900/90 to-slate-900/90 border-brand-500/50 shadow-lg shadow-brand-500/10'
+                            ? 'bg-gradient-to-b from-emerald-950/40 via-slate-900/90 to-slate-900/90 border-brand-500/50 shadow-lg shadow-brand-500/10'
                             : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700'
                         }`}
                       >
@@ -562,7 +562,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
 
                                   {/* Subject Code & Name */}
                                   <div>
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                       {slot.subject_code}
                                     </span>
                                     <h4 className="text-xs font-bold text-white mt-1 leading-snug line-clamp-2">
@@ -573,7 +573,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                                   {/* Faculty & Room details */}
                                   <div className="space-y-1 text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
                                     <div className="flex items-center gap-1 truncate text-slate-300">
-                                      <User className="w-3 h-3 text-indigo-400 shrink-0" />
+                                      <User className="w-3 h-3 text-emerald-400 shrink-0" />
                                       <span className="truncate">{slot.faculty_name}</span>
                                     </div>
                                     <div className="flex items-center justify-between text-[10px]">
@@ -710,7 +710,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                             </div>
 
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                 {slot.subject_code}
                               </span>
                               <h4 className="text-sm sm:text-base font-bold text-white">
@@ -724,7 +724,7 @@ export default function StudentTimetable({ user, onOpenScanner, recentLogs = [] 
                         <div className="flex flex-wrap items-center gap-3 justify-between md:justify-end pt-3 md:pt-0 border-t md:border-t-0 border-slate-800">
                           <div className="text-xs text-slate-300 flex items-center gap-3">
                             <span className="flex items-center gap-1.5 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                              <User className="w-3.5 h-3.5 text-indigo-400" />
+                              <User className="w-3.5 h-3.5 text-emerald-400" />
                               Prof. <strong className="text-white">{slot.faculty_name}</strong>
                             </span>
                             <span className="flex items-center gap-1.5 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">

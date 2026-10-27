@@ -60,7 +60,7 @@ export default function FacultyStudentRosterView({
     const gradients = [
       'from-emerald-600 to-teal-700',
       'from-blue-600 to-cyan-700',
-      'from-violet-600 to-indigo-700',
+      'from-emerald-600 to-emerald-700',
       'from-amber-600 to-orange-700',
       'from-rose-600 to-pink-700',
     ];
