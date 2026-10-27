@@ -16,66 +16,95 @@ export default function DesktopSystemStatus({
   onOpenProjector,
   alertsCount = 0
 }) {
+  const refreshInterval = qrData?.refresh_interval_seconds || 20;
   const [countdown, setCountdown] = useState(qrData?.expires_in_seconds || 20);
+  const targetEndRef = React.useRef(Date.now() + (qrData?.expires_in_seconds || 20) * 1000);
 
   useEffect(() => {
     if (qrData?.expires_in_seconds !== undefined) {
+      targetEndRef.current = Date.now() + qrData.expires_in_seconds * 1000;
       setCountdown(qrData.expires_in_seconds);
     }
-  }, [qrData?.expires_in_seconds, qrData?.qr_token]);
+  }, [qrData?.qr_token, qrData?.expires_in_seconds]);
 
   useEffect(() => {
+    if (!isSessionActive) return;
     const timer = setInterval(() => {
-      setCountdown((prev) => (prev > 1 ? prev - 1 : 1));
-    }, 1000);
+      const remainingMs = targetEndRef.current - Date.now();
+      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      if (remainingSec <= 0) {
+        targetEndRef.current = Date.now() + refreshInterval * 1000;
+        setCountdown(refreshInterval);
+      } else {
+        setCountdown(remainingSec);
+      }
+    }, 250);
     return () => clearInterval(timer);
-  }, []);
+  }, [isSessionActive, refreshInterval]);
 
-  const refreshInterval = qrData?.refresh_interval_seconds || 20;
   const progressPct = Math.min(100, Math.max(0, (countdown / refreshInterval) * 100));
 
   return (
     <div className="space-y-6">
-      {/* CARD 1: Session QR Panel */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs p-5 space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#EBF4EE] text-[#1A4731] flex items-center justify-center">
+      {/* CARD 1: Session QR Panel (Redesigned with Premium Cyber-Minimalist Aesthetics) */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6 space-y-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#1A4731] flex items-center justify-center shadow-xs">
               <QrCode className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-extrabold text-[#111827]">
-              Session QR Code
-            </h3>
+            <div>
+              <h3 className="text-sm font-extrabold text-[#111827]">
+                Session QR Code
+              </h3>
+              <span className="text-[11px] text-slate-400 font-medium block">
+                Dynamic 20-Second Anti-Proxy Token
+              </span>
+            </div>
           </div>
 
           {isSessionActive && (
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50/90 border border-emerald-200/90 px-3 py-1 rounded-full shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Rotating Every {refreshInterval}s
             </span>
           )}
         </div>
 
         {isSessionActive && qrData ? (
-          <div className="flex flex-col items-center text-center space-y-4 pt-1">
-            {/* Realtime QR display */}
-            <div className="p-4 rounded-2xl bg-white border-2 border-[#1A4731] shadow-md">
-              <QRCodeSVG
-                value={qrData.qr_token || 'smartattend-token'}
-                size={180}
-                level="H"
-                includeMargin={false}
-              />
+          <div className="flex flex-col items-center text-center space-y-5 pt-1">
+            {/* Realtime QR Display with High-Tech Frame */}
+            <div className="relative p-5 rounded-3xl bg-gradient-to-b from-white via-slate-50/50 to-emerald-50/30 border border-slate-200 shadow-xl shadow-emerald-950/5 group transition-all">
+              {/* Corner Accents */}
+              <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-emerald-600 rounded-tl-lg pointer-events-none" />
+              <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-emerald-600 rounded-tr-lg pointer-events-none" />
+              <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-emerald-600 rounded-bl-lg pointer-events-none" />
+              <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-emerald-600 rounded-br-lg pointer-events-none" />
+
+              <div className="p-3 bg-white rounded-2xl shadow-inner border border-slate-100">
+                <QRCodeSVG
+                  value={qrData.qr_token || 'smartattend-token'}
+                  size={196}
+                  level="H"
+                  includeMargin={false}
+                />
+              </div>
             </div>
 
-            {/* Countdown progress bar */}
-            <div className="w-full space-y-1.5">
+            {/* Countdown Progress with Live Indicator */}
+            <div className="w-full max-w-[280px] space-y-2">
               <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-slate-500">Next Rotation:</span>
-                <span className="text-[#1A4731] font-mono text-sm">{countdown}s</span>
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                  Next Rotation:
+                </span>
+                <span className="text-[#1A4731] font-mono text-sm bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/80">
+                  {countdown}s
+                </span>
               </div>
-              <div className="w-full h-2 rounded-full bg-slate-100 border border-slate-200 overflow-hidden">
+              <div className="w-full h-2.5 rounded-full bg-slate-100 border border-slate-200 overflow-hidden p-0.5">
                 <div
-                  className="h-full bg-gradient-to-r from-emerald-500 to-[#1A4731] transition-all duration-300 ease-linear rounded-full"
+                  className="h-full bg-gradient-to-r from-emerald-500 via-[#1A4731] to-emerald-600 transition-all duration-300 ease-linear rounded-full shadow-xs"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
@@ -86,7 +115,7 @@ export default function DesktopSystemStatus({
               <button
                 type="button"
                 onClick={onOpenProjector}
-                className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-xs"
+                className="w-full min-h-[44px] px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#1A4731] via-[#143826] to-[#1A4731] hover:brightness-110 active:scale-[0.98] text-white font-extrabold text-xs flex items-center justify-center gap-2 transition shadow-md shadow-[#1A4731]/20 cursor-pointer"
               >
                 <Maximize2 className="w-4 h-4" />
                 <span>Fullscreen Classroom Wall</span>

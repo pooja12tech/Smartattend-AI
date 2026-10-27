@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ArrowLeft, Zap, RefreshCw, Eye, CheckCircle2, XCircle, AlertTriangle,
-  RotateCcw, MapPin, Check, Camera, ShieldCheck, QrCode
+  RotateCcw, MapPin, Check, Camera, ShieldCheck, QrCode, ZoomIn
 } from 'lucide-react';
 
 export default function StudentAttendanceFlow({
@@ -28,6 +28,43 @@ export default function StudentAttendanceFlow({
   onOpenFaceEnroll,
   onRequestException
 }) {
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Smooth Optical & Digital Zoom Handler for distance scanning
+  const handleSetZoom = async (level) => {
+    setZoomLevel(level);
+
+    // 1. Try Hardware Camera Zoom via MediaStreamTrack
+    try {
+      const videoEl = document.querySelector('#smartattend-qr-reader video');
+      if (videoEl && videoEl.srcObject) {
+        const [track] = videoEl.srcObject.getVideoTracks();
+        if (track && track.getCapabilities) {
+          const caps = track.getCapabilities();
+          if (caps.zoom) {
+            const min = caps.zoom.min || 1;
+            const max = caps.zoom.max || 5;
+            const target = Math.min(max, Math.max(min, level));
+            await track.applyConstraints({
+              advanced: [{ zoom: target }]
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Hardware zoom not available, using digital zoom:', err);
+    }
+
+    // 2. High-performance GPU CSS scale fallback (guaranteed on all mobile browsers)
+    try {
+      const videoEl = document.querySelector('#smartattend-qr-reader video');
+      if (videoEl) {
+        videoEl.style.transform = `scale(${level})`;
+        videoEl.style.transformOrigin = 'center center';
+        videoEl.style.transition = 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)';
+      }
+    } catch (e) {}
+  };
   // Step indicator dots active index
   const getStepDotIndex = () => {
     switch (blinkStatus) {
@@ -54,12 +91,22 @@ export default function StudentAttendanceFlow({
   const isScanSuccess = scannerStage === 'DETECTED' || scannerStage === 'VALIDATING';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center p-0 overflow-hidden select-none animate-in slide-in-from-bottom duration-500 ease-out">
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center p-0 overflow-hidden select-none animate-in fade-in duration-300">
+      {/* Hide html5-qrcode's ugly default duplicate borders and text */}
+      <style>{`
+        #smartattend-qr-reader #qr-shaded-region { display: none !important; }
+        #smartattend-qr-reader__scan_region { border: none !important; box-shadow: none !important; }
+        #smartattend-qr-reader__scan_region svg { display: none !important; }
+        #smartattend-qr-reader__dashboard_section_csr { display: none !important; }
+        #smartattend-qr-reader__header_message { display: none !important; }
+        #smartattend-qr-reader img { display: none !important; }
+      `}</style>
+
       <div className="w-full h-full bg-black text-white flex flex-col justify-between overflow-hidden relative">
-        {/* SCREEN 5: QR SCAN SCREEN (Phases 5 & 6) */}
+        {/* SCREEN 5: QR SCAN SCREEN */}
         {step === 'SCAN_QR' && (
         <div className="relative flex-1 flex flex-col justify-between bg-black overflow-hidden">
-          {/* Full-Screen Camera Viewport: displays feed across almost entire screen (Requirement 5) */}
+          {/* Full-Screen Camera Viewport: displays feed across almost entire screen */}
           <div className="absolute inset-0 w-full h-full overflow-hidden z-0 bg-black">
             <div
               id="smartattend-qr-reader"
@@ -69,13 +116,13 @@ export default function StudentAttendanceFlow({
             <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-transparent to-black/85 pointer-events-none" />
           </div>
 
-          {/* Top Bar (Screen 5 Reference) */}
+          {/* Top Bar */}
           <div className="relative z-20 flex items-center justify-between px-4 py-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] bg-gradient-to-b from-black/90 via-black/50 to-transparent">
             <button
               type="button"
               id="btn-scanner-back"
               onClick={onCancel}
-              className="min-h-[44px] min-w-[44px] p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition flex items-center justify-center focus:outline-none"
+              className="min-h-[44px] min-w-[44px] p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition flex items-center justify-center focus:outline-none cursor-pointer"
               title="Return to Previous Screen"
               aria-label="Back"
             >
@@ -90,7 +137,7 @@ export default function StudentAttendanceFlow({
               type="button"
               id="btn-scanner-torch"
               onClick={onToggleTorch}
-              className={`min-h-[44px] min-w-[44px] p-2.5 rounded-full transition-all flex items-center justify-center focus:outline-none active:scale-95 ${
+              className={`min-h-[44px] min-w-[44px] p-2.5 rounded-full transition-all flex items-center justify-center focus:outline-none active:scale-95 cursor-pointer ${
                 isTorchOn
                   ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/40 ring-2 ring-amber-300'
                   : 'bg-white/10 hover:bg-white/20 text-white'
@@ -102,10 +149,10 @@ export default function StudentAttendanceFlow({
             </button>
           </div>
 
-          {/* Center: Square QR Scanning Frame in Centre (Requirement 5 & 6) */}
+          {/* Center: Square QR Scanning Frame in Centre */}
           <div className="relative z-20 flex-1 flex flex-col items-center justify-center px-4">
             <div
-              className={`relative w-[72vw] max-w-[280px] aspect-square rounded-3xl flex items-center justify-center transition-all duration-300 pointer-events-none ${
+              className={`relative w-[74vw] max-w-[280px] aspect-square rounded-3xl flex items-center justify-center transition-all duration-300 pointer-events-none ${
                 isScanSuccess
                   ? 'bg-emerald-950/40 shadow-[0_0_50px_rgba(16,185,129,0.35)]'
                   : 'bg-transparent shadow-2xl'
@@ -121,7 +168,7 @@ export default function StudentAttendanceFlow({
                 </div>
               )}
 
-              {/* State 3 & 4: Successful QR Scan Feedback (Requirement 6) */}
+              {/* State 3 & 4: Successful QR Scan Feedback */}
               {isScanSuccess && (
                 <div className="absolute inset-0 rounded-3xl bg-emerald-950/60 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 z-20 animate-in zoom-in-95 duration-200">
                   <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_30px_#10B981]">
@@ -137,17 +184,14 @@ export default function StudentAttendanceFlow({
                 </div>
               )}
 
-              {/* 
-                The 4 Emerald Green Corner Brackets:
-                When QR code is successfully scanned, they glow brightly with a smooth glow effect (Requirement 6)
-              */}
+              {/* The 4 Emerald Green Corner Brackets */}
               <div className="absolute inset-0 pointer-events-none z-10">
                 {/* Top-left corner */}
                 <div
                   className={`absolute top-0 left-0 w-9 h-9 border-t-[4px] border-l-[4px] rounded-tl-2xl transition-all duration-300 ${
                     isScanSuccess
                       ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
-                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                      : 'border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                   }`}
                 />
                 {/* Top-right corner */}
@@ -155,7 +199,7 @@ export default function StudentAttendanceFlow({
                   className={`absolute top-0 right-0 w-9 h-9 border-t-[4px] border-r-[4px] rounded-tr-2xl transition-all duration-300 ${
                     isScanSuccess
                       ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
-                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                      : 'border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                   }`}
                 />
                 {/* Bottom-left corner */}
@@ -163,7 +207,7 @@ export default function StudentAttendanceFlow({
                   className={`absolute bottom-0 left-0 w-9 h-9 border-b-[4px] border-l-[4px] rounded-bl-2xl transition-all duration-300 ${
                     isScanSuccess
                       ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
-                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                      : 'border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                   }`}
                 />
                 {/* Bottom-right corner */}
@@ -171,11 +215,11 @@ export default function StudentAttendanceFlow({
                   className={`absolute bottom-0 right-0 w-9 h-9 border-b-[4px] border-r-[4px] rounded-br-2xl transition-all duration-300 ${
                     isScanSuccess
                       ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
-                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                      : 'border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                   }`}
                 />
 
-                {/* Animated Green Laser Scanline with dynamic trailing glow */}
+                {/* Animated Green Laser Scanline */}
                 {scannerStage === 'SCANNING' && (
                   <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-beam shadow-[0_0_20px_#10B981] z-10 pointer-events-none">
                     <div className="w-full h-8 bg-gradient-to-b from-emerald-400/25 to-transparent pointer-events-none" />
@@ -184,14 +228,34 @@ export default function StudentAttendanceFlow({
               </div>
             </div>
 
-            {/* Instruction Below Frame (Phase 5 Requirement) */}
-            <p className="text-xs text-slate-300 font-medium text-center mt-6 tracking-wide">
-              Align the faculty's QR code within the frame.
+            {/* Instruction Below Frame */}
+            <p className="text-xs text-slate-300 font-medium text-center mt-5 tracking-wide drop-shadow-sm">
+              Align the faculty's QR code within the frame
             </p>
+
+            {/* Distance Zoom Selector (1x, 2x, 3x) for lecture hall distance scanning */}
+            <div className="mt-4 flex items-center justify-center pointer-events-auto">
+              <div className="flex items-center gap-1.5 p-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-white/20 shadow-xl">
+                {[1, 2, 3].map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => handleSetZoom(lvl)}
+                    className={`min-w-[40px] py-1.5 px-3 rounded-full text-xs font-black transition-all cursor-pointer ${
+                      zoomLevel === lvl
+                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-[0_0_12px_#10B981] scale-105'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {lvl}x
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Scanning Error Banner */}
             {qrScanError && (
-              <div className="mt-4 p-3.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2 shadow-lg">
+              <div className="mt-3 p-3.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2 shadow-lg pointer-events-auto">
                 <div className="flex items-center justify-center gap-1.5 text-rose-300 font-bold">
                   <AlertTriangle className="w-4 h-4 text-rose-400" />
                   <span>Scanning Notice</span>
@@ -201,7 +265,7 @@ export default function StudentAttendanceFlow({
                   type="button"
                   id="btn-retry-qr-scan"
                   onClick={onRetryQR}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs shadow transition"
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs shadow transition cursor-pointer"
                 >
                   Scan Again
                 </button>
@@ -209,8 +273,8 @@ export default function StudentAttendanceFlow({
             )}
           </div>
 
-          {/* Understated Identity at bottom (Phase 5 Requirement) */}
-          <div className="p-5 text-center text-[10px] text-slate-500 font-medium tracking-wider uppercase">
+          {/* Understated Identity at bottom */}
+          <div className="p-4 text-center text-[10px] text-slate-500 font-medium tracking-wider uppercase">
             SmartAttend-AI Anti-Proxy Engine
           </div>
         </div>
@@ -359,68 +423,94 @@ export default function StudentAttendanceFlow({
         </div>
       )}
 
-      {/* SCREEN 11: PROCESSING SCREEN */}
+      {/* SCREEN 11: PROCESSING SCREEN (Elevated Design & Matching with Records strictly in SECOND-LAST spot) */}
       {step === 'EVALUATING' && (
-        <div className="flex-1 flex flex-col justify-center items-center px-6 py-8 bg-[#111827]">
-          <div className="w-full max-w-xs space-y-6">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center mx-auto shadow-xl">
-                <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+        <div className="flex-1 flex flex-col justify-center items-center px-6 py-8 bg-gradient-to-b from-[#080E1A] via-[#0F172A] to-[#080E1A] text-white">
+          <div className="w-full max-w-sm space-y-6 animate-in zoom-in-95 duration-300">
+            {/* Header with High-Tech Glow Pulse */}
+            <div className="text-center space-y-3">
+              <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping pointer-events-none" />
+                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-emerald-950 via-[#1A4731] to-emerald-600 border border-emerald-400/50 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.35)] relative z-10">
+                  <RefreshCw className="w-8 h-8 text-emerald-300 animate-spin" />
+                </div>
               </div>
-              <h3 className="text-lg font-bold text-white tracking-tight">
-                Verifying your identity...
-              </h3>
-              <p className="text-xs text-slate-400">
-                Executing 5-gate anti-proxy verification
-              </p>
+              <div>
+                <h3 className="text-xl font-black text-white tracking-tight">
+                  Verifying your identity...
+                </h3>
+                <p className="text-xs text-emerald-400/80 font-medium mt-1">
+                  Executing 5-gate anti-proxy verification
+                </p>
+              </div>
             </div>
 
-            {/* Step-by-Step Checklist (Screen 11 Reference) */}
-            <div className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-3 text-xs">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                <span className="text-slate-200 font-medium">Face detected</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                <span className="text-slate-200 font-medium">Liveness check (eye blink)</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {gateProgress?.gate4 === 'PASSED' ? (
+            {/* Checklist with 'Matching with records...' strictly in the SECOND-LAST spot */}
+            <div className="bg-slate-900/90 rounded-3xl p-5 border border-slate-800 shadow-2xl space-y-3 text-xs backdrop-blur-md">
+              {/* Step 1: Validating session */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50">
+                <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                ) : (
-                  <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin shrink-0" />
-                )}
-                <span className="text-white font-semibold">Matching with records...</span>
+                  <span className="text-slate-200 font-semibold">Validating session</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Verified</span>
               </div>
 
-              <div className="flex items-center gap-3">
-                {gateProgress?.gate3 === 'PASSED' ? (
+              {/* Step 2: Checking location */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50">
+                <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0" />
-                )}
-                <span className="text-slate-400">Checking location</span>
+                  <span className="text-slate-200 font-semibold">Checking location (Geofence)</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">In Range</span>
               </div>
 
-              <div className="flex items-center gap-3">
-                {gateProgress?.gate2 === 'PASSED' ? (
+              {/* Step 3: Face detected */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50">
+                <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0" />
-                )}
-                <span className="text-slate-400">Validating session</span>
+                  <span className="text-slate-200 font-semibold">Face detected</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Passed</span>
               </div>
 
-              <div className="flex items-center gap-3">
-                {gateProgress?.gate5 === 'PASSED' ? (
+              {/* Step 4: Liveness check */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/50">
+                <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0" />
-                )}
-                <span className="text-slate-400">Marking attendance</span>
+                  <span className="text-slate-200 font-semibold">Liveness check (eye blink)</span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Passed</span>
+              </div>
+
+              {/* Step 5 (SECOND LAST): Matching with records... */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                <div className="flex items-center gap-3">
+                  {gateProgress?.gate4 === 'PASSED' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin shrink-0" />
+                  )}
+                  <span className="text-white font-bold tracking-tight">Matching with records...</span>
+                </div>
+                <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded-full border border-emerald-400/30 animate-pulse">
+                  {gateProgress?.gate4 === 'PASSED' ? 'Match 99%' : 'Processing'}
+                </span>
+              </div>
+
+              {/* Step 6 (FINAL): Marking attendance */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/20 border border-slate-800">
+                <div className="flex items-center gap-3">
+                  {gateProgress?.gate5 === 'PASSED' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-700 shrink-0" />
+                  )}
+                  <span className={gateProgress?.gate5 === 'PASSED' ? 'text-slate-200 font-semibold' : 'text-slate-500'}>
+                    Marking attendance
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium">Finalizing</span>
               </div>
             </div>
           </div>

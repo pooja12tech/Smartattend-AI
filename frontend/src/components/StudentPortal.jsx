@@ -559,6 +559,29 @@ export default function StudentPortal({ user, onLogout }) {
     startQRScanner();
   };
 
+  // Retry Attendance flow when verification fails (Try Again button)
+  const handleRetryAttendance = () => {
+    setAttendanceStep('SCAN_QR');
+    setScannerStage('INITIALIZING');
+    setSubmissionResult(null);
+    setGateProgress(null);
+    setQrScanError(null);
+    setCameraError(null);
+    setScannedToken('');
+    setSessionId('');
+    setSelfieCaptured(null);
+    setBlinkStatus('ALIGNING');
+    setBlinkFlash(false);
+    setIsTorchOn(false);
+    closedFrameBufferRef.current = null;
+    livenessChallengeRef.current = null;
+    qrProcessingRef.current = false;
+    captureTriggeredRef.current = false;
+
+    // Freshly start QR scanner
+    startQRScanner();
+  };
+
   // Haversine Distance Helper (Meters)
   const calculateHaversine = (lat1, lon1, lat2, lon2) => {
     const R = 6371000;
@@ -1531,7 +1554,7 @@ export default function StudentPortal({ user, onLogout }) {
           isTorchOn={isTorchOn}
           onToggleTorch={handleToggleTorch}
           onCancel={handleInAppBack}
-          onRetryQR={startQRScanner}
+          onRetryQR={handleRetryAttendance}
           onRetryCamera={() => startFrontCameraWithBlinkDetection(scannedToken, sessionId)}
           onManualCapture={() => captureSelfieAndProceed(scannedToken, sessionId)}
           onBackToHome={handleCloseScannerModal}

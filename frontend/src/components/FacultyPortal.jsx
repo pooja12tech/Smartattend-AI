@@ -67,6 +67,9 @@ export default function FacultyPortal({ user, onLogout }) {
   const [syndicateLoading, setSyndicateLoading] = useState(false);
   const [syndicateData, setSyndicateData] = useState(null);
 
+  // Faculty Notifications & Alerts Modal State
+  const [showFacultyNotifications, setShowFacultyNotifications] = useState(false);
+
   // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'profile')
   const getInitialFacultyTab = () => {
     const { role, tab } = parsePath();
@@ -184,6 +187,10 @@ export default function FacultyPortal({ user, onLogout }) {
         setShowPanoramicModal(false);
         return;
       }
+      if (showFacultyNotifications) {
+        setShowFacultyNotifications(false);
+        return;
+      }
       if (showSyndicateModal) {
         setShowSyndicateModal(false);
         return;
@@ -213,7 +220,7 @@ export default function FacultyPortal({ user, onLogout }) {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showPanoramicModal, showSyndicateModal, qrProjectorOpen, showLogoutConfirm]);
+  }, [showPanoramicModal, showSyndicateModal, showFacultyNotifications, qrProjectorOpen, showLogoutConfirm]);
 
   // Synchronize Android status bar theme-color
   useEffect(() => {
@@ -1092,7 +1099,7 @@ export default function FacultyPortal({ user, onLogout }) {
                 onOpenLiveQR={() => navigateToMobileTab('live')}
                 onOpenTimetable={() => navigateToMobileTab('classes')}
                 onOpenProfile={() => navigateToMobileTab('profile')}
-                onOpenNotifications={() => navigateToMobileTab('live')}
+                onOpenNotifications={() => setShowFacultyNotifications(true)}
               />
             )
           )}
@@ -1464,6 +1471,92 @@ export default function FacultyPortal({ user, onLogout }) {
                 Token: {qrData.qr_token.slice(0, 24)}...
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Faculty Mobile Notifications & Security Alerts Modal */}
+      {showFacultyNotifications && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#1A4731] flex items-center justify-center">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-[#111827]">
+                    Notifications & Alerts
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Security telemetry & session notifications</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFacultyNotifications(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-left">
+              {isSessionActive && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-start gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1 shrink-0 animate-ping" />
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-950">Active Lecture Session</h4>
+                    <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                      Session is actively broadcasting dynamic rotating QR codes with 150m geofencing.
+                    </p>
+                    <span className="text-[10px] font-semibold text-emerald-600 block mt-1">Live Telemetry</span>
+                  </div>
+                </div>
+              )}
+
+              {liveData?.counters?.alerts_count > 0 ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-rose-950">Security Alerts Flagged</h4>
+                    <p className="text-[11px] text-rose-800/80 mt-0.5">
+                      {liveData.counters.alerts_count} student verification attempts flagged for anti-proxy review.
+                    </p>
+                    <span className="text-[10px] font-semibold text-rose-600 block mt-1">Security Guardian</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-start gap-3">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">Zero Security Threats</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      No proxy attacks, spoofing attempts, or liveness failures detected.
+                    </p>
+                    <span className="text-[10px] font-semibold text-slate-400 block mt-1">Anti-Proxy Engine &bull; 100% Healthy</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-start gap-3">
+                <Radio className="w-4 h-4 text-[#1A4731] mt-0.5 shrink-0" />
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">Classroom GPS Geofence</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Faculty coordinates locked. Attendance outside 150m radius is automatically blocked.
+                  </p>
+                  <span className="text-[10px] font-semibold text-slate-400 block mt-1">Geofence Status &bull; Active</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFacultyNotifications(false)}
+              className="w-full min-h-[44px] py-2.5 rounded-2xl bg-[#1A4731] hover:bg-[#123323] text-white text-xs font-bold transition shadow-sm"
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

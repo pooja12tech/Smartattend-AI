@@ -23,20 +23,29 @@ export default function FacultyLiveSessionView({
 }) {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [countdown, setCountdown] = useState(qrData?.expires_in_seconds || 20);
+  const targetEndRef = React.useRef(Date.now() + (qrData?.expires_in_seconds || 20) * 1000);
 
-  // Smooth local countdown in between 2s polling ticks
+  // Smooth local countdown synchronized with window expiration
   useEffect(() => {
     if (qrData?.expires_in_seconds !== undefined) {
+      targetEndRef.current = Date.now() + qrData.expires_in_seconds * 1000;
       setCountdown(qrData.expires_in_seconds);
     }
   }, [qrData?.expires_in_seconds, qrData?.qr_token]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCountdown(prev => (prev > 1 ? prev - 1 : 1));
-    }, 1000);
+      const remainingMs = targetEndRef.current - Date.now();
+      const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      if (remainingSec <= 0) {
+        targetEndRef.current = Date.now() + (qrData?.refresh_interval_seconds || 20) * 1000;
+        setCountdown(qrData?.refresh_interval_seconds || 20);
+      } else {
+        setCountdown(remainingSec);
+      }
+    }, 250);
     return () => clearInterval(interval);
-  }, []);
+  }, [qrData?.refresh_interval_seconds]);
 
   // Compute live attendance statistics
   const presentCount = roster.filter(s => s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT').length;

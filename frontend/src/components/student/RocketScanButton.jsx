@@ -78,63 +78,63 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
   // Spawns wide rolling ground smoke bank across bottom
   const spawnRollingSmokeBank = (cx, cy) => {
     const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
-    const maxSpread = Math.min(screenW * 0.9, 380);
+    const maxSpread = Math.min(screenW * 0.92, 400);
 
-    // 36 dense, large rolling puffs (lightweight on CPU, visually full & majestic)
-    for (let i = 0; i < 36; i++) {
+    // 52 rich, billowing ground cloud puffs (lush coverage across screen bottom)
+    for (let i = 0; i < 52; i++) {
       const isMint = Math.random() > 0.65;
       const angle = Math.PI * (0.8 + Math.random() * 1.4);
-      const speed = 1.0 + Math.random() * 3.5;
+      const speed = 1.0 + Math.random() * 3.8;
 
       particlesRef.current.push({
         x: cx + (Math.random() - 0.5) * maxSpread,
-        y: cy + (Math.random() - 0.5) * 16,
-        vx: Math.cos(angle) * speed * 2.0,
-        vy: (Math.random() - 0.5) * 0.8,
-        size: 38 + Math.random() * 34,
-        maxSize: 125 + Math.random() * 80,
-        growRate: 2.2 + Math.random() * 1.8,
+        y: cy + (Math.random() - 0.5) * 20,
+        vx: Math.cos(angle) * speed * 2.2,
+        vy: (Math.random() - 0.5) * 1.0,
+        size: 45 + Math.random() * 40,
+        maxSize: 145 + Math.random() * 85,
+        growRate: 2.4 + Math.random() * 2.0,
         alpha: 0.98,
-        decay: 0.007 + Math.random() * 0.006,
+        decay: 0.005 + Math.random() * 0.004,
         isMint,
         curlAngle: Math.random() * Math.PI * 2,
         curlSpeed: 0.02 + Math.random() * 0.03,
-        curlRadius: 0.8 + Math.random() * 1.0
+        curlRadius: 0.8 + Math.random() * 1.2
       });
     }
   };
 
-  // Trailing Twin Jet Plumes: Compact, smooth emission that increases with altitude
+  // Trailing Twin Jet Plumes: Rich, expanding billows that increase with altitude
   const spawnJetSmokePuffs = (leftX, rightX, rocketY, intensity = 1.0) => {
     const nozzles = [leftX, rightX];
     nozzles.forEach((nx) => {
-      // 1-2 puffs per nozzle per pulse for lightweight 60fps performance
-      const count = intensity > 2.5 ? 2 : 1;
+      // 2-3 puffs per nozzle per pulse for lush billowing plume
+      const count = intensity > 2.2 ? 3 : 2;
       for (let i = 0; i < count; i++) {
-        const lateralSpread = (Math.random() - 0.5) * (24 * Math.min(intensity, 2.0));
+        const lateralSpread = (Math.random() - 0.5) * (30 * Math.min(intensity, 2.2));
         particlesRef.current.push({
           x: nx + lateralSpread,
-          y: rocketY + 28 + Math.random() * 8,
-          vx: (Math.random() - 0.5) * (3.0 * intensity),
-          vy: 2.0 + Math.random() * 3.0,
-          size: (30 + Math.random() * 24) * Math.min(intensity * 0.75, 1.4),
-          maxSize: (85 + Math.random() * 65) * Math.min(intensity * 0.8, 1.8),
-          growRate: 2.4 + Math.random() * 2.0,
-          alpha: Math.min(0.96, 0.85 + intensity * 0.04),
-          decay: 0.012 + Math.random() * 0.008,
-          isMint: Math.random() > 0.7,
+          y: rocketY + 28 + Math.random() * 10,
+          vx: (Math.random() - 0.5) * (3.5 * intensity),
+          vy: 2.2 + Math.random() * 3.2,
+          size: (36 + Math.random() * 28) * Math.min(intensity * 0.75, 1.5),
+          maxSize: (105 + Math.random() * 75) * Math.min(intensity * 0.85, 2.0),
+          growRate: 2.5 + Math.random() * 2.2,
+          alpha: Math.min(0.98, 0.88 + intensity * 0.03),
+          decay: 0.009 + Math.random() * 0.006,
+          isMint: Math.random() > 0.68,
           curlAngle: Math.random() * Math.PI * 2,
           curlSpeed: 0.025 + Math.random() * 0.035,
-          curlRadius: 0.7 + Math.random() * 1.1
+          curlRadius: 0.8 + Math.random() * 1.2
         });
       }
 
       // 1 quick spark beneath nozzle
       particlesRef.current.push({
-        x: nx + (Math.random() - 0.5) * 6,
+        x: nx + (Math.random() - 0.5) * 8,
         y: rocketY + 30 + Math.random() * 6,
-        vx: (Math.random() - 0.5) * 4.0,
-        vy: 6.0 + Math.random() * 7.0,
+        vx: (Math.random() - 0.5) * 4.5,
+        vy: 6.0 + Math.random() * 7.5,
         size: 2.5 + Math.random() * 2.0,
         alpha: 1,
         decay: 0.08 + Math.random() * 0.04,
@@ -163,7 +163,7 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
     const startTime = performance.now();
     const ignitionDuration = 260;
     const flightDuration = 2200;
-    const totalDuration = 3200;
+    const totalDuration = 3400;
     let frameCount = 0;
 
     const loop = (now) => {
@@ -193,10 +193,9 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
           opacity = Math.max(0, 1 - (flightProgress - 0.88) / 0.12);
         }
 
-        // Step 3: Trigger camera scanner as rocket reaches upper quarter
-        if (flightProgress >= 0.80 && !scanTriggeredRef.current) {
+        // Step 3: Mount camera scanner UNDERNEATH the dense smoke veil at ~75% climb
+        if (flightProgress >= 0.75 && !scanTriggeredRef.current) {
           scanTriggeredRef.current = true;
-          // Defer call slightly to prevent React render frame spikes
           if (onScanClick) {
             requestAnimationFrame(() => onScanClick());
           }
@@ -204,7 +203,7 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
 
         // Step 4: Smoke emission - throttled every 2 frames for silky smooth 60fps
         if (flightProgress < 0.98 && frameCount % 2 === 0) {
-          const intensity = 1.0 + Math.pow(flightProgress, 1.25) * 3.2;
+          const intensity = 1.0 + Math.pow(flightProgress, 1.25) * 3.4;
           const currentRocketScreenY = startScreenY + currentOffsetY;
           const nozzleOffset = 14 * rocketScale;
           const leftNozzleX = startScreenX - nozzleOffset;
@@ -220,11 +219,12 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
         rocketCraftRef.current.style.opacity = `${opacity}`;
       }
 
-      // Smoothly fade smoke canvas as scanner reveals underneath
+      // Smoothly part and dissipate smoke as rocket clears the screen ("smoke hate to qr wala page dikhe")
       if (canvasRef.current) {
         let canvasOpacity = 1.0;
-        if (elapsed > 1700) {
-          canvasOpacity = Math.max(0, 1.0 - (elapsed - 1700) / 700);
+        // Keep smoke dense while rocket flies, then part and fade away as scanner reveals underneath
+        if (elapsed > 2250) {
+          canvasOpacity = Math.max(0, 1.0 - (elapsed - 2250) / 950);
         }
         canvasRef.current.style.opacity = `${canvasOpacity}`;
       }

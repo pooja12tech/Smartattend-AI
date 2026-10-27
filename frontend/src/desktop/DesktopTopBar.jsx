@@ -15,6 +15,7 @@ export default function DesktopTopBar({
   onLogout,
   onOpenProfile
 }) {
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const facultyName = user?.name || 'Prof. Faculty';
   const facultyDept = user?.department || 'Computer Science & Engineering';
@@ -92,20 +93,103 @@ export default function DesktopTopBar({
         {/* PWA Install App Button */}
         <InstallAppButton />
 
-        {/* Security / Anti-Proxy Alerts Bell */}
-        <button
-          type="button"
-          className="relative p-2.5 rounded-2xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px] min-w-[44px] flex items-center justify-center"
-          title="System & Proxy Alerts"
-          aria-label="System & Proxy Alerts"
-        >
-          <Bell className="w-4 h-4" />
-          {alertsCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
-              {alertsCount > 9 ? '9+' : alertsCount}
-            </span>
+        {/* Security / Anti-Proxy Alerts Bell & Popover */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setNotificationsOpen(!notificationsOpen);
+              setProfileDropdownOpen(false);
+            }}
+            className={`relative p-2.5 rounded-2xl border transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer ${
+              notificationsOpen
+                ? 'border-[#1A4731] bg-emerald-50/70 text-[#1A4731]'
+                : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+            title="System & Proxy Alerts"
+            aria-label="System & Proxy Alerts"
+            aria-expanded={notificationsOpen}
+          >
+            <Bell className="w-4 h-4" />
+            {alertsCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                {alertsCount > 9 ? '9+' : alertsCount}
+              </span>
+            )}
+          </button>
+
+          {/* Notifications & System Alerts Dropdown Panel */}
+          {notificationsOpen && (
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-3xl border border-slate-200 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-3">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-[#1A4731] flex items-center justify-center">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-extrabold text-[#111827]">
+                    Notifications & Alerts
+                  </h3>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                  {alertsCount > 0 ? `${alertsCount} Active` : 'All Clear'}
+                </span>
+              </div>
+
+              {/* Alert items list */}
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {isSessionActive && (
+                  <div className="p-3 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-2.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0 animate-ping" />
+                    <div className="text-left">
+                      <p className="text-xs font-bold text-emerald-950">Active Session in Progress</p>
+                      <p className="text-[11px] text-emerald-800/80 mt-0.5">Dynamic rotating QR code and GPS geofence broadcasting normally.</p>
+                      <span className="text-[10px] font-semibold text-emerald-700/60 block mt-1">Live Telemetry &bull; Just now</span>
+                    </div>
+                  </div>
+                )}
+
+                {alertsCount > 0 ? (
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-xs font-bold text-rose-950">Security & Proxy Flags Detected</p>
+                      <p className="text-[11px] text-rose-800/80 mt-0.5">{alertsCount} student verification attempts flagged for review by anti-proxy AI.</p>
+                      <span className="text-[10px] font-semibold text-rose-600/70 block mt-1">Anti-Proxy Engine &bull; Requires review</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-start gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-xs font-bold text-slate-900">System Integrity 100% Verified</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">No suspicious GPS spoofing, proxy rings, or photo bypass attempts recorded.</p>
+                      <span className="text-[10px] font-semibold text-slate-400 block mt-1">Security Guardian &bull; Healthy</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 rounded-2xl bg-slate-50/80 border border-slate-100 flex items-start gap-2.5">
+                  <Radio className="w-4 h-4 text-[#1A4731] mt-0.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="text-xs font-bold text-slate-900">Classroom Geofence Active</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Anchor coordinates locked within 150m perimeter. Outside attempts blocked.</p>
+                    <span className="text-[10px] font-semibold text-slate-400 block mt-1">GPS Lock &bull; Today</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen(false)}
+                  className="w-full text-center py-1.5 rounded-xl text-xs font-bold text-[#1A4731] hover:bg-emerald-50 transition"
+                >
+                  Close Notifications
+                </button>
+              </div>
+            </div>
           )}
-        </button>
+        </div>
 
         {/* Profile Avatar / Dropdown */}
         <div className="relative">
