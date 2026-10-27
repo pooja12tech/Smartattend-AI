@@ -111,17 +111,29 @@ export default function DesktopStudentHome({
               </div>
             </div>
 
-            {/* Right Action: Mark Attendance CTA */}
+            {/* Right Action: Mark Attendance CTA or Verified Recorded Badge */}
             <div className="flex flex-col sm:flex-row lg:flex-col items-start lg:items-end gap-3 shrink-0">
-              <button
-                type="button"
-                id="hero-scan-cta"
-                onClick={onStartScan}
-                className="px-6 py-3.5 rounded-2xl bg-[#10B981] hover:bg-[#059669] active:scale-95 text-white font-extrabold text-sm shadow-xl shadow-black/20 flex items-center justify-center gap-2.5 transition cursor-pointer"
-              >
-                <Smartphone className="w-5 h-5 stroke-[2.4]" />
-                <span>Mark Attendance (Phone Required)</span>
-              </button>
+              {activeSession.already_marked ? (
+                <div className="px-5 py-3 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 flex items-center gap-3 shadow-md backdrop-blur-xs">
+                  <div className="w-8 h-8 rounded-full bg-emerald-400/30 flex items-center justify-center text-emerald-300">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wider text-emerald-300">Attendance Recorded</p>
+                    <p className="text-[11px] text-emerald-100/90 font-medium">Status: {activeSession.attendance_status || 'Verified Present'}</p>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  id="hero-scan-cta"
+                  onClick={onStartScan}
+                  className="px-6 py-3.5 rounded-2xl bg-[#10B981] hover:bg-[#059669] active:scale-95 text-white font-extrabold text-sm shadow-xl shadow-black/20 flex items-center justify-center gap-2.5 transition cursor-pointer"
+                >
+                  <Smartphone className="w-5 h-5 stroke-[2.4]" />
+                  <span>Mark Attendance (Phone Required)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

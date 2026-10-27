@@ -1164,6 +1164,7 @@ export default function StudentPortal({ user, onLogout }) {
       }
 
       fetchDashboardData();
+      fetchActiveSession();
     } catch (err) {
       const faceCode = err.detail?.code;
       const friendlyMsg = faceCode ? getFaceErrorMessage(faceCode, err.message) : (err.message || 'Verification failed');

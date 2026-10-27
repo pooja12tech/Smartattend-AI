@@ -175,8 +175,22 @@ export default function FacultyPortal({ user, onLogout }) {
     }
   };
 
+  // Restore ongoing active lecture session for this faculty if one is running in DB
+  const checkActiveFacultySession = async () => {
+    try {
+      const res = await api.getFacultyActiveSession();
+      if (res?.active_session) {
+        setActiveSession(res.active_session);
+        setSubject(res.active_session.subject_name || res.active_session.subject_code || subject);
+      }
+    } catch (e) {
+      console.warn('Could not restore active faculty session:', e);
+    }
+  };
+
   useEffect(() => {
     loadTodaySchedule();
+    checkActiveFacultySession();
   }, []);
 
   // Modal & sheet back button handler

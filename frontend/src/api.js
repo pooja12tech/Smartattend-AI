@@ -483,6 +483,13 @@ export const api = {
     return safeParse(res, 'Failed to fetch student active session');
   },
 
+  async getFacultyActiveSession() {
+    const res = await fetch(`${API_BASE}/api/faculty/active-session`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch faculty active session');
+  },
+
   async getAdminPendingReviews() {
     const res = await fetch(`${API_BASE}/api/admin/pending-reviews`, {
       headers: getHeaders()

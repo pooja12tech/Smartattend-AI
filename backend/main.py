@@ -4197,6 +4197,31 @@ def get_student_today_timetable(
     }
 
 
+@app.get("/api/faculty/active-session")
+def get_faculty_active_session(
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns the currently ACTIVE lecture session started by this faculty member.
+    Allows the faculty portal to resume live session upon page reload.
+    """
+    now = datetime.now(timezone.utc)
+    auto_close_expired_sessions(db, now)
+
+    query = db.query(LectureSession).filter(LectureSession.status == "ACTIVE")
+    if current_user.role != "admin":
+        query = query.filter(LectureSession.faculty_id == current_user.roll_no)
+
+    active_session = query.order_by(LectureSession.started_at.desc()).first()
+    if not active_session:
+        return {"active_session": None}
+
+    sess_dict = active_session.to_dict()
+    sess_dict["faculty_name"] = current_user.name
+    return {"active_session": sess_dict}
+
+
 @app.get("/api/student/active-session")
 def get_student_active_session(
     current_user: User = Depends(require_student),
@@ -4204,6 +4229,7 @@ def get_student_active_session(
 ):
     """
     Returns the currently ACTIVE lecture session for the student if faculty has started one.
+    Also returns whether this student has already marked attendance for it.
     Returns {"active_session": null} if no live attendance has been started.
     """
     now = datetime.now(timezone.utc)
@@ -4216,13 +4242,47 @@ def get_student_active_session(
     if not active_sessions:
         return {"active_session": None}
 
-    for s in active_sessions:
-        fac = db.query(User).filter(User.roll_no == s.faculty_id).first()
-        sess_dict = s.to_dict()
-        sess_dict["faculty_name"] = fac.name if fac else "Prof. Faculty"
-        return {"active_session": sess_dict}
+    # Find student enrolled subjects
+    student_enrollments = db.query(StudentSubjectEnrollment).filter(
+        StudentSubjectEnrollment.roll_no == current_user.roll_no
+    ).all()
+    enrolled_codes = {e.subject_code.upper() for e in student_enrollments}
+    enrolled_names = {e.subject_name.upper() for e in student_enrollments}
 
-    return {"active_session": None}
+    target_session = None
+    for s in active_sessions:
+        subj_code_prefix = s.subject_name.split(" ")[0].strip().upper() if " " in s.subject_name else s.subject_name.upper()
+        subj_name_upper = s.subject_name.upper()
+        if not enrolled_codes or subj_code_prefix in enrolled_codes or subj_name_upper in enrolled_names or any(code in subj_name_upper for code in enrolled_codes):
+            target_session = s
+            break
+
+    # If student has no enrollments populated yet, fall back to active session
+    if not target_session and not enrolled_codes and active_sessions:
+        target_session = active_sessions[0]
+
+    if not target_session:
+        return {"active_session": None}
+
+    fac = db.query(User).filter(User.roll_no == target_session.faculty_id).first()
+    sess_dict = target_session.to_dict()
+    sess_dict["faculty_name"] = fac.name if fac else "Prof. Faculty"
+
+    # Check if student already marked attendance for this session
+    attendance_rec = db.query(AttendanceRecord).filter(
+        AttendanceRecord.session_id == target_session.session_id,
+        AttendanceRecord.roll_no == current_user.roll_no
+    ).first()
+
+    if attendance_rec:
+        sess_dict["already_marked"] = True
+        sess_dict["attendance_status"] = attendance_rec.status
+        sess_dict["marked_at"] = attendance_rec.marked_at.isoformat() if attendance_rec.marked_at else None
+    else:
+        sess_dict["already_marked"] = False
+        sess_dict["attendance_status"] = None
+
+    return {"active_session": sess_dict}
 
 
 @app.get("/api/admin/timetable")

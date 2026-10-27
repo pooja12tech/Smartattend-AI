@@ -83,8 +83,14 @@ export default function StudentHomeView({
       {/* Active Session Notification Card (if ongoing lecture session) */}
       {activeSession ? (
         <div
-          onClick={() => onOpenActiveSession(activeSession)}
-          className="cursor-pointer bg-gradient-to-r from-emerald-950 via-[#1A4731] to-emerald-900 text-white rounded-2xl p-4 shadow-lg shadow-emerald-950/25 relative overflow-hidden touch-card-interactive border border-emerald-400/20"
+          onClick={() => {
+            if (!activeSession.already_marked && onOpenActiveSession) {
+              onOpenActiveSession(activeSession);
+            }
+          }}
+          className={`bg-gradient-to-r from-emerald-950 via-[#1A4731] to-emerald-900 text-white rounded-2xl p-4 shadow-lg shadow-emerald-950/25 relative overflow-hidden border border-emerald-400/20 ${
+            activeSession.already_marked ? 'cursor-default' : 'cursor-pointer touch-card-interactive'
+          }`}
         >
           {/* Subtle light sweep shimmer */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer-sweep pointer-events-none" />
@@ -92,19 +98,34 @@ export default function StudentHomeView({
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-2">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 flex items-center gap-1.5 shadow-xs">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
-                </span>
-                Live Attendance Active
+                {activeSession.already_marked ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                    Attendance Marked
+                  </>
+                ) : (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                    </span>
+                    Live Attendance Active
+                  </>
+                )}
               </span>
               <span className="text-xs text-emerald-200 font-mono flex items-center gap-1 font-semibold">
-                Tap to Scan <ChevronRight className="w-3.5 h-3.5 translate-x-0 group-hover:translate-x-0.5 transition-transform" />
+                {activeSession.already_marked ? (
+                  <span className="text-emerald-300 font-bold">Verified Present ✓</span>
+                ) : (
+                  <>
+                    Tap to Scan <ChevronRight className="w-3.5 h-3.5 translate-x-0 group-hover:translate-x-0.5 transition-transform" />
+                  </>
+                )}
               </span>
             </div>
             <h3 className="font-extrabold text-base text-white tracking-tight">{activeSession.subject_name || 'Class Attendance'}</h3>
             <p className="text-xs text-emerald-100/90 mt-0.5">
-              {activeSession.room_no ? `Room ${activeSession.room_no} &bull; ` : ''}Faculty: {activeSession.faculty_name || 'Faculty in room'}
+              {activeSession.room_no ? `Room ${activeSession.room_no} • ` : ''}Faculty: {activeSession.faculty_name || 'Faculty in room'}
             </p>
           </div>
         </div>

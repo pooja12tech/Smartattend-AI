@@ -46,18 +46,22 @@ export default function DesktopFacultyHome({
   // Filtered Roster for interactive preview table
   const displayedRoster = useMemo(() => {
     let list = roster;
-    // If roster is empty (e.g. before session start), create placeholder student records for realistic class preview
+    // If roster is empty (e.g. before session start or while fetching), show student cohort awaiting scan
     if (!list || list.length === 0) {
-      list = [
-        { roll_no: 'STU01', name: 'Aarav Sharma', status: isSessionActive ? 'PRESENT' : 'UNMARKED', verification_method: 'Dynamic QR + Face Liveness', timestamp: '09:05 AM', confidence: '99.2%' },
-        { roll_no: 'STU02', name: 'Ananya Verma', status: isSessionActive ? 'PRESENT' : 'UNMARKED', verification_method: 'Dynamic QR + Face Liveness', timestamp: '09:08 AM', confidence: '98.7%' },
-        { roll_no: 'STU03', name: 'Rohan Mehta', status: isSessionActive ? 'PRESENT' : 'UNMARKED', verification_method: 'Dynamic QR + Face Liveness', timestamp: '09:12 AM', confidence: '97.5%' },
-        { roll_no: 'STU04', name: 'Ishita Patel', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
-        { roll_no: 'STU05', name: 'Kavya Nair', status: isSessionActive ? 'PRESENT' : 'UNMARKED', verification_method: 'Dynamic QR + Face Liveness', timestamp: '09:15 AM', confidence: '99.0%' },
-        { roll_no: 'STU06', name: 'Vikram Joshi', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
-        { roll_no: 'STU07', name: 'Pooja Iyer', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
-        { roll_no: 'STU08', name: 'Aditya Singh', status: isSessionActive ? 'PRESENT' : 'UNMARKED', verification_method: 'Dynamic QR + Face Liveness', timestamp: '09:18 AM', confidence: '98.1%' }
-      ];
+      if (isSessionActive) {
+        list = [];
+      } else {
+        list = [
+          { roll_no: 'STU01', name: 'Aarav Sharma', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU02', name: 'Ananya Verma', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU03', name: 'Rohan Mehta', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU04', name: 'Ishita Patel', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU05', name: 'Kavya Nair', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU06', name: 'Vikram Joshi', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU07', name: 'Pooja Iyer', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null },
+          { roll_no: 'STU08', name: 'Aditya Singh', status: 'UNMARKED', verification_method: null, timestamp: null, confidence: null }
+        ];
+      }
     }
 
     if (rosterFilter === 'PRESENT') {
@@ -293,12 +297,16 @@ export default function DesktopFacultyHome({
                           </td>
                           <td className="py-2.5 px-3 text-slate-500">
                             {isPresent ? (
-                              <span className="inline-flex items-center gap-1.5 text-emerald-800 font-medium">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Dynamic QR + Face Liveness {st.confidence ? `(${st.confidence})` : ''}</span>
+                              <span className="inline-flex items-center gap-1.5 text-emerald-800 font-medium text-xs">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>
+                                  {st.remarks || 'Dynamic QR + Face Liveness'}
+                                  {st.marked_at ? ` • ${new Date(st.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                  {st.distance_meters != null ? ` (±${st.distance_meters}m)` : ''}
+                                </span>
                               </span>
                             ) : (
-                              <span className="text-slate-400">Awaiting scan</span>
+                              <span className="text-slate-400 text-xs">Awaiting scan</span>
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
