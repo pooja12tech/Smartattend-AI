@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { QrCode } from 'lucide-react';
@@ -5,15 +6,14 @@ import { QrCode } from 'lucide-react';
 /**
  * RocketScanButton
  * 
- * Final Refinement matching user specifications & feedback:
- * 1. Button shape remains a 100% PERFECT CIRCLE (never morphs into an oblong pill/capsule).
- * 2. Size expands smoothly (scale: 1.0 -> 1.22) on liftoff.
- * 3. Thrusters are sleek, miniature, and elegant (no large bulky rectangular blocks).
- * 4. Massive billowing volumetric smoke matching reference photo:
- *    - Rolling cauliflower/mushroom curls with volumetric white & pale cloud shading.
- *    - Escalates heavily as rocket climbs ("jaise jaise rocket upar jayega waise waise smoke badhega").
- * 5. Rocket and canvas are driven in the exact same requestAnimationFrame loop for 100% precision.
- * 6. Smooth scanner reveal as rocket reaches top.
+ * Refinements:
+ * 1. Button shape remains a 100% PERFECT CIRCLE (never morphs into pill/capsule).
+ * 2. Thrusters are positioned strictly UNDERNEATH the circle (z-index behind circle, top: 50px).
+ *    NEVER cuts through or overlaps the QR code in the middle.
+ * 3. Thruster nozzles & flames are sleek and compact ("jada bade nhi dikhne chahiye").
+ * 4. High-performance particle rendering: Pre-rendered offscreen sprite cache for zero-hang 60fps translation.
+ * 5. Full viewport canvas blur filter removed to eliminate GPU compositing stalls.
+ * 6. Smooth scanner reveal as rocket ascends towards the top.
  */
 export default function RocketScanButton({ onScanClick, disabled = false }) {
   const [animState, setAnimState] = useState('idle'); // 'idle' | 'launching'
@@ -24,6 +24,7 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
   const isLaunchingRef = useRef(false);
   const scanTriggeredRef = useRef(false);
   const particlesRef = useRef([]);
+  const spriteCacheRef = useRef(null);
 
   // Check prefers-reduced-motion
   const prefersReducedMotion =
@@ -31,95 +32,125 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // Spawns wide rolling cauliflower/mushroom ground smoke bank (matching user reference image)
-  const spawnRollingSmokeBank = (cx, cy, count = 110) => {
-    const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
-    const maxSpread = Math.min(screenW * 0.92, 400);
+  // Initialize pre-rendered offscreen canvas sprites once (hardware-accelerated blitting)
+  const getSprites = () => {
+    if (spriteCacheRef.current) return spriteCacheRef.current;
 
-    for (let i = 0; i < count; i++) {
-      const isPureWhite = Math.random() > 0.28;
-      const angle = Math.PI * (0.8 + Math.random() * 1.4); // Wide lateral roll
-      const speed = 1.2 + Math.random() * 4.6;
+    // 1. Volumetric White/Cloud Cauliflower Puff Sprite
+    const whiteCanvas = document.createElement('canvas');
+    whiteCanvas.width = 128;
+    whiteCanvas.height = 128;
+    const wCtx = whiteCanvas.getContext('2d');
+    if (wCtx) {
+      const grad = wCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.98)');
+      grad.addColorStop(0.35, 'rgba(250, 252, 250, 0.92)');
+      grad.addColorStop(0.68, 'rgba(226, 232, 240, 0.65)');
+      grad.addColorStop(0.88, 'rgba(167, 243, 208, 0.22)');
+      grad.addColorStop(1, 'rgba(167, 243, 208, 0)');
+      wCtx.fillStyle = grad;
+      wCtx.beginPath();
+      wCtx.arc(64, 64, 64, 0, Math.PI * 2);
+      wCtx.fill();
+    }
+
+    // 2. Soft Mint-Tinted Ambient Cloud Sprite
+    const mintCanvas = document.createElement('canvas');
+    mintCanvas.width = 128;
+    mintCanvas.height = 128;
+    const mCtx = mintCanvas.getContext('2d');
+    if (mCtx) {
+      const mGrad = mCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      mGrad.addColorStop(0, 'rgba(240, 253, 244, 0.95)');
+      mGrad.addColorStop(0.35, 'rgba(209, 250, 229, 0.82)');
+      mGrad.addColorStop(0.70, 'rgba(167, 243, 208, 0.45)');
+      mGrad.addColorStop(1, 'rgba(167, 243, 208, 0)');
+      mCtx.fillStyle = mGrad;
+      mCtx.beginPath();
+      mCtx.arc(64, 64, 64, 0, Math.PI * 2);
+      mCtx.fill();
+    }
+
+    spriteCacheRef.current = { white: whiteCanvas, mint: mintCanvas };
+    return spriteCacheRef.current;
+  };
+
+  // Spawns wide rolling ground smoke bank across bottom
+  const spawnRollingSmokeBank = (cx, cy) => {
+    const screenW = typeof window !== 'undefined' ? window.innerWidth : 390;
+    const maxSpread = Math.min(screenW * 0.9, 380);
+
+    // 36 dense, large rolling puffs (lightweight on CPU, visually full & majestic)
+    for (let i = 0; i < 36; i++) {
+      const isMint = Math.random() > 0.65;
+      const angle = Math.PI * (0.8 + Math.random() * 1.4);
+      const speed = 1.0 + Math.random() * 3.5;
 
       particlesRef.current.push({
         x: cx + (Math.random() - 0.5) * maxSpread,
-        y: cy + (Math.random() - 0.5) * 20,
-        vx: Math.cos(angle) * speed * 2.4,
-        vy: (Math.random() - 0.5) * 1.2,
-        size: 32 + Math.random() * 30,
-        maxSize: 110 + Math.random() * 85, // huge billowing cauliflower cloud puffs
-        growRate: 2.2 + Math.random() * 2.2,
+        y: cy + (Math.random() - 0.5) * 16,
+        vx: Math.cos(angle) * speed * 2.0,
+        vy: (Math.random() - 0.5) * 0.8,
+        size: 38 + Math.random() * 34,
+        maxSize: 125 + Math.random() * 80,
+        growRate: 2.2 + Math.random() * 1.8,
         alpha: 0.98,
-        decay: 0.0035 + Math.random() * 0.0035, // dense, lingers majestically
-        colorR: isPureWhite ? 255 : 242,
-        colorG: isPureWhite ? 255 : 248,
-        colorB: isPureWhite ? 255 : 244,
-        rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.035,
+        decay: 0.007 + Math.random() * 0.006,
+        isMint,
         curlAngle: Math.random() * Math.PI * 2,
-        curlSpeed: 0.02 + Math.random() * 0.035,
-        curlRadius: 0.8 + Math.random() * 1.2
+        curlSpeed: 0.02 + Math.random() * 0.03,
+        curlRadius: 0.8 + Math.random() * 1.0
       });
     }
   };
 
-  // Trailing Twin Jet Plumes: Spawns dense curling smoke that INCREASES with altitude
+  // Trailing Twin Jet Plumes: Compact, smooth emission that increases with altitude
   const spawnJetSmokePuffs = (leftX, rightX, rocketY, intensity = 1.0) => {
-    // Number of particles increases heavily as rocket climbs ("jaise jaise rocket upar jayega waise waise smoke badhega")
-    const pCount = Math.round(6 * intensity);
-
     const nozzles = [leftX, rightX];
     nozzles.forEach((nx) => {
-      for (let i = 0; i < pCount; i++) {
-        const isPureWhite = Math.random() > 0.25;
-        const lateralSpread = (Math.random() - 0.5) * (45 * intensity);
-        const lateralVel = (Math.random() - 0.5) * (5.5 * intensity);
-
+      // 1-2 puffs per nozzle per pulse for lightweight 60fps performance
+      const count = intensity > 2.5 ? 2 : 1;
+      for (let i = 0; i < count; i++) {
+        const lateralSpread = (Math.random() - 0.5) * (24 * Math.min(intensity, 2.0));
         particlesRef.current.push({
           x: nx + lateralSpread,
-          y: rocketY + 22 + Math.random() * 12,
-          vx: lateralVel,
-          vy: (2.0 + Math.random() * 3.8) * Math.min(intensity * 0.75, 1.8), // downward exhaust plume
-          size: (28 + Math.random() * 26) * Math.min(intensity * 0.7, 1.6),
-          maxSize: (90 + Math.random() * 80) * Math.min(intensity * 0.8, 2.2),
-          growRate: 2.2 + Math.random() * 2.2,
-          alpha: Math.min(0.98, 0.90 + intensity * 0.03),
-          decay: 0.005 + Math.random() * 0.0045,
-          colorR: isPureWhite ? 255 : 242,
-          colorG: isPureWhite ? 255 : 248,
-          colorB: isPureWhite ? 255 : 244,
-          rotation: Math.random() * Math.PI * 2,
-          rotSpeed: (Math.random() - 0.5) * 0.04,
+          y: rocketY + 28 + Math.random() * 8,
+          vx: (Math.random() - 0.5) * (3.0 * intensity),
+          vy: 2.0 + Math.random() * 3.0,
+          size: (30 + Math.random() * 24) * Math.min(intensity * 0.75, 1.4),
+          maxSize: (85 + Math.random() * 65) * Math.min(intensity * 0.8, 1.8),
+          growRate: 2.4 + Math.random() * 2.0,
+          alpha: Math.min(0.96, 0.85 + intensity * 0.04),
+          decay: 0.012 + Math.random() * 0.008,
+          isMint: Math.random() > 0.7,
           curlAngle: Math.random() * Math.PI * 2,
-          curlSpeed: 0.025 + Math.random() * 0.04,
-          curlRadius: 0.8 + Math.random() * 1.4
+          curlSpeed: 0.025 + Math.random() * 0.035,
+          curlRadius: 0.7 + Math.random() * 1.1
         });
       }
 
-      // Bright fiery thrust sparks for energetic liftoff
-      for (let i = 0; i < 2; i++) {
-        particlesRef.current.push({
-          x: nx + (Math.random() - 0.5) * 12,
-          y: rocketY + 24 + Math.random() * 8,
-          vx: (Math.random() - 0.5) * 5.5,
-          vy: 8.0 + Math.random() * 9.0,
-          size: 3.5 + Math.random() * 2.5,
-          maxSize: 6,
-          growRate: 0,
-          alpha: 1,
-          decay: 0.05 + Math.random() * 0.04,
-          isSpark: true
-        });
-      }
+      // 1 quick spark beneath nozzle
+      particlesRef.current.push({
+        x: nx + (Math.random() - 0.5) * 6,
+        y: rocketY + 30 + Math.random() * 6,
+        vx: (Math.random() - 0.5) * 4.0,
+        vy: 6.0 + Math.random() * 7.0,
+        size: 2.5 + Math.random() * 2.0,
+        alpha: 1,
+        decay: 0.08 + Math.random() * 0.04,
+        isSpark: true
+      });
     });
   };
 
-  // Full-screen Smoke & Rocket Physics Loop (100% synchronized at 60fps)
+  // Synchronized 60fps Animation Loop (Optimized for buttery smooth translation without hangs)
   const startLaunchAnimation = (startScreenX, startScreenY) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    const sprites = getSprites();
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -127,14 +158,16 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
     scanTriggeredRef.current = false;
 
     // Initial rolling ground cloud bank across bottom
-    spawnRollingSmokeBank(startScreenX, startScreenY, 110);
+    spawnRollingSmokeBank(startScreenX, startScreenY);
 
     const startTime = performance.now();
-    const ignitionDuration = 260; // Button scale expansion & thruster ignition buildup
-    const flightDuration = 2200; // Calmer, smoother ascent duration (2.2s)
-    const totalDuration = 3400; // Lingering clouds time
+    const ignitionDuration = 260;
+    const flightDuration = 2200;
+    const totalDuration = 3200;
+    let frameCount = 0;
 
     const loop = (now) => {
+      frameCount++;
       const elapsed = now - startTime;
 
       let rocketScale = 1.0;
@@ -145,34 +178,35 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
         // Step 1: Ignition - Button expands smoothly in size from 1.0 to 1.15
         const ignProgress = elapsed / ignitionDuration;
         rocketScale = 1.0 + ignProgress * 0.15;
-        currentOffsetY = Math.sin(ignProgress * Math.PI) * 1.5; // slight engine prep rumble
+        currentOffsetY = Math.sin(ignProgress * Math.PI) * 1.2;
       } else {
-        // Step 2: Smooth calm ascent ("aram se jayega thoda", "speed thoda km kr")
+        // Step 2: Smooth calm ascent
         const flightProgress = Math.min((elapsed - ignitionDuration) / flightDuration, 1.0);
-        // Calm ease-in curve: gentle liftoff accelerating smoothly upwards
         const easeCurve = Math.pow(flightProgress, 1.85);
-        const totalDist = startScreenY + 220; // from bottom all the way off top
+        const totalDist = startScreenY + 220;
         currentOffsetY = -easeCurve * totalDist;
 
         // Button continues expanding into prominent circle craft (scales up to 1.22x)
         rocketScale = 1.15 + flightProgress * 0.07;
 
         if (flightProgress > 0.88) {
-          // Softly fade rocket as it exits beyond the top
           opacity = Math.max(0, 1 - (flightProgress - 0.88) / 0.12);
         }
 
-        // Step 3: Reveal Camera Scanner as rocket reaches upper quarter (~78% of climb)
-        if (flightProgress >= 0.78 && !scanTriggeredRef.current) {
+        // Step 3: Trigger camera scanner as rocket reaches upper quarter
+        if (flightProgress >= 0.80 && !scanTriggeredRef.current) {
           scanTriggeredRef.current = true;
-          if (onScanClick) onScanClick();
+          // Defer call slightly to prevent React render frame spikes
+          if (onScanClick) {
+            requestAnimationFrame(() => onScanClick());
+          }
         }
 
-        // Step 4: Smoke escalates heavily as rocket climbs ("jaise jaise rocket upar jayega waise waise smoke badhega")
-        if (flightProgress < 0.98) {
-          const intensity = 1.0 + Math.pow(flightProgress, 1.25) * 3.6;
+        // Step 4: Smoke emission - throttled every 2 frames for silky smooth 60fps
+        if (flightProgress < 0.98 && frameCount % 2 === 0) {
+          const intensity = 1.0 + Math.pow(flightProgress, 1.25) * 3.2;
           const currentRocketScreenY = startScreenY + currentOffsetY;
-          const nozzleOffset = 15 * rocketScale;
+          const nozzleOffset = 14 * rocketScale;
           const leftNozzleX = startScreenX - nozzleOffset;
           const rightNozzleX = startScreenX + nozzleOffset;
 
@@ -180,7 +214,7 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
         }
       }
 
-      // Update circular rocket craft DOM node directly in sync with smoke particles
+      // Update circular rocket craft DOM node via GPU transform
       if (rocketCraftRef.current) {
         rocketCraftRef.current.style.transform = `translate3d(0, ${currentOffsetY}px, 0) scale(${rocketScale})`;
         rocketCraftRef.current.style.opacity = `${opacity}`;
@@ -189,65 +223,54 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
       // Smoothly fade smoke canvas as scanner reveals underneath
       if (canvasRef.current) {
         let canvasOpacity = 1.0;
-        if (elapsed > 1850) {
-          canvasOpacity = Math.max(0, 1.0 - (elapsed - 1850) / 750);
+        if (elapsed > 1700) {
+          canvasOpacity = Math.max(0, 1.0 - (elapsed - 1700) / 700);
         }
         canvasRef.current.style.opacity = `${canvasOpacity}`;
       }
 
-      // Clear & render canvas clouds
+      // Clear & render canvas clouds using pre-rendered texture blits
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const active = [];
+      const len = particlesRef.current.length;
 
-      for (let i = 0; i < particlesRef.current.length; i++) {
+      for (let i = 0; i < len; i++) {
         const p = particlesRef.current[i];
 
         // Curl-noise vortex physics: authentic rolling mushroom / cauliflower curls
         p.curlAngle += p.curlSpeed;
         p.x += p.vx + Math.cos(p.curlAngle) * p.curlRadius;
-        p.y += p.vy - Math.sin(p.curlAngle) * p.curlRadius * 0.45;
+        p.y += p.vy - Math.sin(p.curlAngle) * p.curlRadius * 0.4;
 
-        p.size = Math.min(p.size + p.growRate, p.maxSize);
+        if (p.growRate) {
+          p.size = Math.min(p.size + p.growRate, p.maxSize);
+        }
         p.alpha -= p.decay;
-        if (p.rotation !== undefined) p.rotation += p.rotSpeed;
 
-        if (p.alpha > 0.01) {
+        if (p.alpha > 0.02) {
           ctx.save();
           ctx.globalAlpha = Math.max(0, p.alpha);
 
           if (p.isSpark) {
-            // Bright white-hot fiery spark core
-            ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+            ctx.fillStyle = '#ffffff';
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
             ctx.fill();
           } else {
-            // Volumetric billowing cauliflower puff (matching reference photo: white/cloud body with soft contours)
-            ctx.translate(p.x, p.y);
-            if (p.rotation) ctx.rotate(p.rotation);
-
-            const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
-            // Core highlight (pure cloud white)
-            grad.addColorStop(0, `rgba(${p.colorR}, ${p.colorG}, ${p.colorB}, 0.98)`);
-            // Inner cloud body (bright cloud white)
-            grad.addColorStop(0.35, `rgba(252, 253, 252, 0.95)`);
-            // Volumetric 3D cauliflower contour shadow (giving natural curl definition)
-            grad.addColorStop(0.68, `rgba(226, 232, 240, 0.65)`);
-            // Ambient fresh mint rim glow
-            grad.addColorStop(0.88, `rgba(167, 243, 208, 0.22)`);
-            // Soft transparent edge
-            grad.addColorStop(1, `rgba(167, 243, 208, 0)`);
-
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-            ctx.fill();
+            // Hardware-accelerated image blit: ultra-fast, zero GC allocations
+            const sprite = p.isMint ? sprites.mint : sprites.white;
+            ctx.drawImage(sprite, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
           }
 
           ctx.restore();
           active.push(p);
         }
+      }
+
+      // Keep active array bounded (prevent memory spikes)
+      if (active.length > 70) {
+        active.splice(0, active.length - 70);
       }
       particlesRef.current = active;
 
@@ -312,18 +335,18 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
       */}
       {isLaunching && buttonOrigin && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 9999 }}>
-          {/* 1. Full-Viewport Volumetric Cloud Smoke Canvas (rendered behind rocket craft) */}
+          {/* 1. Full-Viewport Volumetric Cloud Smoke Canvas (rendered behind rocket craft, NO laggy CSS filter blur) */}
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ width: '100vw', height: '100vh', zIndex: 1, filter: 'blur(1.5px)' }}
+            style={{ width: '100vw', height: '100vh', zIndex: 1 }}
           />
 
           {/* 
             2. Scaled Rocket Craft:
             - EXACT SAME CIRCULAR SHAPE as the navbar button (w-[52px] h-[52px] rounded-full aspect-square).
-            - NO weird pill/capsule oval distortion.
-            - Sleek, tiny thruster nozzles (no huge bulky blocks).
+            - Thrusters are strictly UNDER the circle (never overlapping QR code).
+            - Sleek, compact size ("jada bade nhi dikhne chahiye").
           */}
           <div
             ref={rocketCraftRef}
@@ -339,29 +362,31 @@ export default function RocketScanButton({ onScanClick, disabled = false }) {
             }}
           >
             {/* The Perfect Circle Rocket Button Body */}
-            <div className="relative w-[52px] h-[52px] min-w-[52px] min-h-[52px] rounded-full aspect-square bg-gradient-to-b from-[#10B981] via-[#15803D] to-[#1A4731] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(16,185,129,0.5)] ring-3 ring-white">
+            <div className="relative z-10 w-[52px] h-[52px] min-w-[52px] min-h-[52px] rounded-full aspect-square bg-gradient-to-b from-[#10B981] via-[#15803D] to-[#1A4731] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(16,185,129,0.5)] ring-3 ring-white">
               {/* Subtle glass reflection sheen */}
               <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/25 to-transparent pointer-events-none" />
 
-              {/* Centered QR Code Icon */}
-              <QrCode className="w-6 h-6 stroke-[2.2] text-white" />
+              {/* Centered QR Code Icon: Completely pristine and clean */}
+              <QrCode className="w-6 h-6 stroke-[2.2] text-white relative z-2" />
+            </div>
 
-              {/* 
-                Sleek, Tiny Thruster Pods (Nestled under the bottom curve of the circle)
-                - Tiny: only 9px wide by 5px high
-                - No giant black rectangular blocks!
-              */}
-              <div className="absolute -bottom-1 inset-x-0 flex justify-between px-3 pointer-events-none">
-                {/* Left Pod */}
-                <div className="flex flex-col items-center">
-                  <span className="w-2.5 h-1.5 rounded-b-xs bg-[#0b2416] border-t border-emerald-400/80 shadow-xs" />
-                  <span className="w-2 h-7 -mt-0.5 rounded-b-full bg-gradient-to-b from-white via-emerald-300 to-transparent shadow-[0_0_12px_#10B981] animate-pulse" />
-                </div>
-                {/* Right Pod */}
-                <div className="flex flex-col items-center">
-                  <span className="w-2.5 h-1.5 rounded-b-xs bg-[#0b2416] border-t border-emerald-400/80 shadow-xs" />
-                  <span className="w-2 h-7 -mt-0.5 rounded-b-full bg-gradient-to-b from-white via-emerald-300 to-transparent shadow-[0_0_12px_#10B981] animate-pulse" />
-                </div>
+            {/* 
+              Sleek, Miniature Thruster Pods - Positioned strictly UNDER the circle 
+              - Placed at top: 49px (emerges from bottom rim of the 52px circle)
+              - Small & sleek ("jada bade nhi dikhne chahiye")
+              - Positioned behind the circle white ring (z-0 behind z-10)
+              - ZERO thrusters on or inside the QR code face
+            */}
+            <div className="absolute top-[49px] inset-x-0 flex justify-between px-3.5 pointer-events-none z-0">
+              {/* Left Thruster Pod & Flame */}
+              <div className="flex flex-col items-center">
+                <span className="w-2 h-1 rounded-b-xs bg-[#092215] border-t border-emerald-400/80 shadow-xs" />
+                <span className="w-1.5 h-4.5 -mt-0.5 rounded-b-full bg-gradient-to-b from-white via-emerald-300 to-transparent shadow-[0_0_8px_#10B981]" />
+              </div>
+              {/* Right Thruster Pod & Flame */}
+              <div className="flex flex-col items-center">
+                <span className="w-2 h-1 rounded-b-xs bg-[#092215] border-t border-emerald-400/80 shadow-xs" />
+                <span className="w-1.5 h-4.5 -mt-0.5 rounded-b-full bg-gradient-to-b from-white via-emerald-300 to-transparent shadow-[0_0_8px_#10B981]" />
               </div>
             </div>
           </div>
