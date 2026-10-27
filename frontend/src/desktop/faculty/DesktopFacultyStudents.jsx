@@ -179,10 +179,10 @@ export default function DesktopFacultyStudents({ user, onGoHome }) {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="sticky top-0 bg-white/95 backdrop-blur-xs z-10 border-b border-slate-100">
+              <tr className="text-slate-400 uppercase text-[11px] tracking-wider font-bold">
                 <th className="py-3 px-3">Student</th>
                 <th className="py-3 px-3">Roll No</th>
                 <th className="py-3 px-3">Department</th>
@@ -192,59 +192,85 @@ export default function DesktopFacultyStudents({ user, onGoHome }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredStudents.map((st, idx) => {
-                const pct = Math.round(st.overall_attendance_pct || st.attendance_pct || 80);
-                const isSafe = pct >= 75;
-
-                return (
-                  <tr key={st.roll_no || idx} className="hover:bg-slate-50/80 transition">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#EBF4EE] text-[#1A4731] font-extrabold text-xs flex items-center justify-center shrink-0">
-                          {(st.name || 'S').substring(0, 1)}
-                        </div>
-                        <span className="font-extrabold text-slate-800">{st.name}</span>
+                        <div className="w-8 h-8 rounded-xl bg-slate-200" />
+                        <div className="h-4 bg-slate-200 rounded w-28" />
                       </div>
                     </td>
-                    <td className="py-3 px-3 font-mono font-bold text-slate-600">
-                      {st.roll_no}
-                    </td>
-                    <td className="py-3 px-3 text-slate-500">
-                      {st.department || 'Computer Science & Engineering'}
-                    </td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 bg-slate-200 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${isSafe ? 'bg-emerald-600' : 'bg-rose-500'}`}
-                            style={{ width: `${Math.min(100, pct)}%` }}
-                          />
-                        </div>
-                        <span className={`font-mono font-bold ${isSafe ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {pct}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-slate-500">
-                      <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
-                        <Smartphone className="w-3 h-3 text-[#1A4731]" />
-                        {st.device_id || 'Bound Device'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      {isSafe ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-bold">
-                          Eligible
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-300 text-[11px] font-bold">
-                          Deficit (&lt;75%)
-                        </span>
-                      )}
-                    </td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-16" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-36" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-200 rounded w-20" /></td>
+                    <td className="py-3 px-3"><div className="h-5 bg-slate-100 rounded-lg w-28" /></td>
+                    <td className="py-3 px-3 text-right"><div className="h-5 bg-slate-100 rounded-full w-16 ml-auto" /></td>
                   </tr>
-                );
-              })}
+                ))
+              ) : filteredStudents.length > 0 ? (
+                filteredStudents.map((st, idx) => {
+                  const pct = Math.round(st.overall_attendance_pct || st.attendance_pct || 80);
+                  const isSafe = pct >= 75;
+
+                  return (
+                    <tr key={st.roll_no || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-3 min-w-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-[#EBF4EE] text-[#1A4731] font-extrabold text-xs flex items-center justify-center shrink-0">
+                            {(st.name || 'S').substring(0, 1)}
+                          </div>
+                          <span className="font-extrabold text-slate-800 truncate max-w-[180px]">{st.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-600 whitespace-nowrap">
+                        {st.roll_no}
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 truncate max-w-[220px]">
+                        {st.department || 'Computer Science & Engineering'}
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-slate-200 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${isSafe ? 'bg-emerald-600' : 'bg-rose-500'}`}
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                          <span className={`font-mono font-bold ${isSafe ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {pct}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                          <Smartphone className="w-3 h-3 text-[#1A4731]" />
+                          {st.device_id || 'Bound Device'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        {isSafe ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-bold">
+                            Eligible
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-300 text-[11px] font-bold">
+                            Deficit (&lt;75%)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan="6" className="py-12 text-center text-slate-400 space-y-1">
+                    <Users className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="font-bold text-sm text-slate-600">No students found matching your search</p>
+                    <p className="text-xs">Try adjusting your department filter or query</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -200,7 +200,7 @@ export default function FacultyTimetableMobileView({
                 }`}
               >
                 <span>{DAY_LABELS[d]}</span>
-                <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-emerald-200' : 'text-slate-400 font-normal'}`}>
+                <span className={`text-[11px] mt-0.5 ${isSelected ? 'text-emerald-200' : 'text-slate-400 font-normal'}`}>
                   {count} {count === 1 ? 'class' : 'classes'}
                 </span>
                 {isToday && (
@@ -215,9 +215,16 @@ export default function FacultyTimetableMobileView({
       {/* Classes List */}
       <div className="space-y-2.5">
         {loading ? (
-          <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/90 text-slate-500 space-y-2">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#1A4731]" />
-            <p className="text-xs font-semibold text-slate-700">Loading lecture schedule...</p>
+          <div className="space-y-2.5">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200/90 animate-pulse space-y-2">
+                <div className="flex justify-between">
+                  <div className="h-4 w-32 bg-slate-200 rounded" />
+                  <div className="h-4 w-16 bg-slate-200 rounded-full" />
+                </div>
+                <div className="h-3 w-48 bg-slate-100 rounded" />
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="bg-white rounded-2xl p-6 text-center border border-rose-200 text-rose-600 space-y-2">
@@ -225,7 +232,7 @@ export default function FacultyTimetableMobileView({
             <button
               type="button"
               onClick={loadTimetable}
-              className="text-xs font-bold px-3 py-1 bg-rose-50 text-rose-700 rounded-lg hover:underline"
+              className="text-xs font-bold px-3 py-1 bg-rose-50 text-rose-700 rounded-lg hover:underline active:scale-[0.97]"
             >
               Retry
             </button>
@@ -238,7 +245,7 @@ export default function FacultyTimetableMobileView({
               <div
                 key={slot.id || idx}
                 onClick={() => onSelectClassForSession(slot)}
-                className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer ${
+                className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer active:scale-[0.97] ${
                   st.isLive
                     ? 'border-emerald-300 ring-1 ring-emerald-300 shadow-sm'
                     : 'border-slate-200/90 hover:border-slate-300'
@@ -269,17 +276,17 @@ export default function FacultyTimetableMobileView({
 
                   <div className="shrink-0 flex items-center gap-2">
                     {st.isLive ? (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Live
                       </span>
                     ) : st.isCompleted ? (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                         Completed
                       </span>
                     ) : (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                         {st.label}
                       </span>
                     )}

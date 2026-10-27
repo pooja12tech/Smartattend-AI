@@ -95,7 +95,7 @@ export default function StudentClassesView({
               <div
                 key={cls.id || idx}
                 onClick={() => onOpenSession && onOpenSession(cls)}
-                className={`bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm transition hover:border-slate-300 ${
+                className={`bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm transition active:scale-[0.97] hover:border-slate-300 ${
                   isOngoing ? 'ring-1 ring-emerald-400 bg-emerald-50/20 cursor-pointer' : ''
                 }`}
               >
@@ -120,7 +120,7 @@ export default function StudentClassesView({
                         </span>
                       </div>
                       {cls.day_of_week && filterTab !== 'today' && (
-                        <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded mt-1 inline-block">
+                        <span className="text-[11px] text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded mt-1 inline-block">
                           {cls.day_of_week}
                         </span>
                       )}

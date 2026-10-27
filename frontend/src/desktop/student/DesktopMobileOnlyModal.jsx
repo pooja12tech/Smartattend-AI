@@ -21,7 +21,7 @@ export default function DesktopMobileOnlyModal({ isOpen, onClose }) {
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <img src="/smartattend_logo.png" alt="SmartAttend" className="w-11 h-11 object-contain shrink-0" />
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wider">
               Anti-Proxy Security Policy
             </span>
           </div>

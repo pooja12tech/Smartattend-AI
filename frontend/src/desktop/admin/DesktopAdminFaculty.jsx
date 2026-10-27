@@ -111,10 +111,10 @@ export default function DesktopAdminFaculty({
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="sticky top-0 bg-white/95 backdrop-blur-xs z-10 border-b border-slate-100">
+              <tr className="text-slate-400 uppercase text-[11px] tracking-wider font-bold">
                 <th className="py-3 px-3">Faculty Member</th>
                 <th className="py-3 px-3">Faculty ID</th>
                 <th className="py-3 px-3">Department</th>
@@ -123,39 +123,64 @@ export default function DesktopAdminFaculty({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredFaculty.map((f, idx) => (
-                <tr key={f.faculty_id || f.id || idx} className="hover:bg-slate-50/80 transition">
-                  <td className="py-3 px-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">
-                        {(f.name || 'P').substring(0, 1)}
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-slate-200" />
+                        <div className="h-4 bg-slate-200 rounded w-28" />
                       </div>
-                      <span className="font-extrabold text-slate-800">{f.name}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-slate-600">
-                    {f.faculty_id || f.id}
-                  </td>
-                  <td className="py-3 px-3 text-slate-500">
-                    {f.department || 'Computer Science & Engineering'}
-                  </td>
-                  <td className="py-3 px-3 font-mono text-slate-500">
-                    {f.email || `${(f.faculty_id || 'faculty').toLowerCase()}@smartattend.edu`}
-                  </td>
-                  <td className="py-3 px-3 text-right">
-                    {onDeleteFaculty && (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteFaculty(f.faculty_id || f.id, f.name, 'faculty')}
-                        className="p-1.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                        title={`Delete faculty ${f.name}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                    </td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-16" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-36" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-32" /></td>
+                    <td className="py-3 px-3 text-right"><div className="h-6 bg-slate-100 rounded-xl w-6 ml-auto" /></td>
+                  </tr>
+                ))
+              ) : filteredFaculty.length > 0 ? (
+                filteredFaculty.map((f, idx) => (
+                  <tr key={f.faculty_id || f.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-3 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-[#EBF4EE] text-[#1A4731] font-extrabold text-xs flex items-center justify-center shrink-0">
+                          {(f.name || 'P').substring(0, 1)}
+                        </div>
+                        <span className="font-extrabold text-slate-800 truncate max-w-[180px]">{f.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-600 whitespace-nowrap">
+                      {f.faculty_id || f.id}
+                    </td>
+                    <td className="py-3 px-3 text-slate-500 truncate max-w-[200px]">
+                      {f.department || 'Computer Science & Engineering'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-slate-500 truncate max-w-[220px]">
+                      {f.email || `${(f.faculty_id || 'faculty').toLowerCase()}@smartattend.edu`}
+                    </td>
+                    <td className="py-3 px-3 text-right whitespace-nowrap">
+                      {onDeleteFaculty && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteFaculty(f.faculty_id || f.id, f.name, 'faculty')}
+                          className="p-1.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title={`Delete faculty ${f.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="py-12 text-center text-slate-400 space-y-1">
+                    <GraduationCap className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="font-bold text-sm text-slate-600">No faculty members found matching your search</p>
+                    <p className="text-xs">Try selecting a different department or clear search</p>
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

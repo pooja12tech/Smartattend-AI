@@ -76,7 +76,7 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
       style={{
         transform: 'translateZ(0)',
         willChange: 'transform',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.25rem)'
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.5rem)'
       }}
     >
       {/* Curved SVG Surface Background with Top Border and Restrained Shadow */}
@@ -138,7 +138,7 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
                 </button>
 
                 {/* Harmonized Label matching adjacent baselines */}
-                <span className="text-[10px] font-bold text-[#1A4731] tracking-tight pb-0.5">
+                <span className="text-[11px] font-bold text-[#1A4731] tracking-tight pb-0.5">
                   Scan
                 </span>
               </div>
@@ -154,7 +154,7 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
               type="button"
               id={`nav-tab-${tab.id}`}
               onClick={() => onTabChange(tab.id)}
-              className={`flex flex-col items-center justify-end h-full pb-0.5 transition-all duration-200 focus:outline-none cursor-pointer active:scale-90 ${
+              className={`flex flex-col items-center justify-end h-full min-h-[44px] pb-0.5 transition-all duration-200 focus:outline-none cursor-pointer active:scale-90 ${
                 isActive ? 'text-[#1A4731]' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
@@ -169,7 +169,7 @@ export default function StudentBottomNav({ activeTab, onTabChange, onScanClick }
                 )}
               </div>
               <span
-                className={`text-[10px] mt-1 transition-all ${
+                className={`text-[11px] mt-1 transition-all ${
                   isActive ? 'font-bold text-[#1A4731]' : 'font-medium text-slate-400'
                 }`}
               >

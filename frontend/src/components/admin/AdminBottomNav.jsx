@@ -39,11 +39,11 @@ export default function AdminBottomNav({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:hidden transition-all duration-200"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:hidden select-none transition-all duration-200"
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
       aria-label="Admin Mobile Navigation"
     >
-      <div className="max-w-md mx-auto px-3 pt-1.5 flex items-center justify-around">
+      <div className="max-w-md mx-auto px-2 flex items-center justify-around h-[64px]">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -53,7 +53,7 @@ export default function AdminBottomNav({
               key={tab.id}
               type="button"
               onClick={() => onTabChange(tab.id)}
-              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all duration-200 min-w-[56px] ${
+              className={`relative flex flex-col items-center justify-center h-full min-h-[44px] min-w-[52px] px-1 rounded-2xl transition-all duration-200 active:scale-95 cursor-pointer ${
                 isActive
                   ? 'text-[#1A4731] font-bold'
                   : 'text-slate-400 hover:text-slate-600 font-medium'
@@ -68,7 +68,7 @@ export default function AdminBottomNav({
 
                 {/* Badge for pending reviews */}
                 {tab.badge && (
-                  <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+                  <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-4 px-1 rounded-full bg-amber-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
                     {tab.badge}
                   </span>
                 )}
@@ -79,13 +79,13 @@ export default function AdminBottomNav({
                 )}
               </div>
 
-              <span className={`text-[10px] mt-1 tracking-tight ${isActive ? 'font-extrabold text-[#1A4731]' : 'text-slate-400'}`}>
+              <span className={`text-[11px] mt-1 tracking-tight ${isActive ? 'font-extrabold text-[#1A4731]' : 'text-slate-400'}`}>
                 {tab.label}
               </span>
 
-              {/* Active Underline Pill */}
+              {/* Active Indicator Dot */}
               {isActive && (
-                <span className="absolute bottom-0 w-5 h-1 rounded-full bg-[#1A4731] transition-all" />
+                <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#1A4731] transition-all" />
               )}
             </button>
           );

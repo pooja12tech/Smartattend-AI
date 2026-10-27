@@ -4197,6 +4197,34 @@ def get_student_today_timetable(
     }
 
 
+@app.get("/api/student/active-session")
+def get_student_active_session(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns the currently ACTIVE lecture session for the student if faculty has started one.
+    Returns {"active_session": null} if no live attendance has been started.
+    """
+    now = datetime.now(timezone.utc)
+    auto_close_expired_sessions(db, now)
+
+    active_sessions = db.query(LectureSession).filter(
+        LectureSession.status == "ACTIVE"
+    ).all()
+
+    if not active_sessions:
+        return {"active_session": None}
+
+    for s in active_sessions:
+        fac = db.query(User).filter(User.roll_no == s.faculty_id).first()
+        sess_dict = s.to_dict()
+        sess_dict["faculty_name"] = fac.name if fac else "Prof. Faculty"
+        return {"active_session": sess_dict}
+
+    return {"active_session": None}
+
+
 @app.get("/api/admin/timetable")
 def get_admin_timetable(
     department: Optional[str] = None,

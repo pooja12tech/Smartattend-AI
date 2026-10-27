@@ -3,6 +3,8 @@ import {
   ArrowLeft, Moon, Bell, Shield, Globe, Trash2, HelpCircle,
   Info, LogOut, ChevronRight, Check, Sparkles
 } from 'lucide-react';
+import Modal from '../ui/Modal';
+import InstallAppButton from '../InstallAppButton';
 
 export default function StudentSettingsView({
   onBack,
@@ -26,11 +28,11 @@ export default function StudentSettingsView({
   return (
     <div className="space-y-5">
       {/* Top Header: < Settings (Screen 19 Reference) */}
-      <div className="flex items-center justify-between pt-1">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-2 text-[#111827] font-extrabold text-base focus:outline-none"
+          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-[#111827] active:scale-[0.97] font-extrabold text-base focus:outline-none transition"
         >
           <ArrowLeft className="w-5 h-5 text-slate-700" />
           <span>Settings</span>
@@ -126,6 +128,9 @@ export default function StudentSettingsView({
         </div>
       </div>
 
+      {/* PWA Install Button (Shown on phone if not installed) */}
+      <InstallAppButton variant="profile" />
+
       {/* Red Logout Button (Screen 19 Reference) */}
       <div className="pt-2">
         <button
@@ -138,46 +143,48 @@ export default function StudentSettingsView({
         </button>
       </div>
 
-      {/* Logout Confirmation Dialog Modal */}
-      {showLogoutModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm border border-slate-200 shadow-2xl space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
-              <LogOut className="w-6 h-6" />
-            </div>
+      {/* Logout Confirmation Bottom Sheet */}
+      <Modal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        variant="sheet"
+      >
+        <div className="space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+            <LogOut className="w-6 h-6" />
+          </div>
 
-            <div className="text-center space-y-1">
-              <h3 className="text-base font-extrabold text-[#111827]">
-                Log Out of SmartAttend?
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Are you sure you want to sign out? You will need your roll number and password to sign back in.
-              </p>
-            </div>
+          <div className="text-center space-y-1">
+            <h3 className="text-base font-extrabold text-[#111827]">
+              Log Out of SmartAttend?
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Are you sure you want to sign out? You will need your roll number and password to sign back in.
+            </p>
+          </div>
 
-            <div className="grid grid-cols-2 gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowLogoutModal(false)}
-                className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition focus:outline-none"
-              >
-                Cancel
-              </button>
+          <div className="grid grid-cols-2 gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowLogoutModal(false)}
+              className="min-h-[44px] py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition active:scale-[0.97] focus:outline-none"
+            >
+              Cancel
+            </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLogoutModal(false);
-                  if (onLogout) onLogout();
-                }}
-                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition focus:outline-none"
-              >
-                Yes, Log Out
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowLogoutModal(false);
+                if (onLogout) onLogout();
+              }}
+              className="min-h-[44px] py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition active:scale-[0.97] focus:outline-none"
+            >
+              Yes, Log Out
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

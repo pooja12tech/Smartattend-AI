@@ -56,7 +56,7 @@ export default function DesktopStudentClasses({
       <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF4EE] text-[#1A4731] border border-[#1A4731]/15 uppercase tracking-wide">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#EBF4EE] text-[#1A4731] border border-[#1A4731]/15 uppercase tracking-wide">
               Timetable Schedule
             </span>
             <span className="text-xs text-slate-400 font-medium">Semester 6 &bull; Section A</span>
@@ -138,7 +138,7 @@ export default function DesktopStudentClasses({
                       <BookOpen className="w-5 h-5" />
                     </div>
                     <div>
-                      <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                      <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">
                         {cls.subject_code || 'CS301'}
                       </span>
                       <h3 className="font-extrabold text-sm text-[#111827] leading-tight">
@@ -148,7 +148,7 @@ export default function DesktopStudentClasses({
                   </div>
 
                   {isCurrent && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white uppercase tracking-wider animate-pulse">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500 text-white uppercase tracking-wider animate-pulse">
                       Live
                     </span>
                   )}

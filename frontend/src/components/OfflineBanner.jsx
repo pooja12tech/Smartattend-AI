@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { WifiOff, AlertTriangle } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
 
 export default function OfflineBanner() {
   const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
@@ -20,10 +20,14 @@ export default function OfflineBanner() {
   if (!isOffline) return null;
 
   return (
-    <div className="bg-rose-500/15 border-b border-rose-500/30 px-4 py-2 text-center text-xs text-rose-300 flex items-center justify-center gap-2 z-40 sticky top-16 backdrop-blur-md">
-      <WifiOff className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+    <div
+      role="status"
+      aria-live="assertive"
+      className="sticky top-0 z-50 bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-center text-xs text-amber-900 flex items-center justify-center gap-2 shadow-sm"
+    >
+      <WifiOff className="w-4 h-4 text-amber-600 shrink-0" />
       <span className="font-medium">
-        <strong>Offline Mode:</strong> Internet connection lost. Real-time biometric attendance and dynamic QR verification require an active network connection.
+        <strong>Offline Mode:</strong> Internet connection lost. Real-time biometric attendance and dynamic QR verification require an active connection.
       </span>
     </div>
   );

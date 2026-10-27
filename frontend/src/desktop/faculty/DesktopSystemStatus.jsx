@@ -49,7 +49,7 @@ export default function DesktopSystemStatus({
           </div>
 
           {isSessionActive && (
-            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
               Rotating Every {refreshInterval}s
             </span>
           )}
@@ -58,7 +58,7 @@ export default function DesktopSystemStatus({
         {isSessionActive && qrData ? (
           <div className="flex flex-col items-center text-center space-y-4 pt-1">
             {/* Realtime QR display */}
-            <div className="p-4 rounded-2xl bg-white border-2 border-slate-900 shadow-md">
+            <div className="p-4 rounded-2xl bg-white border-2 border-[#1A4731] shadow-md">
               <QRCodeSVG
                 value={qrData.qr_token || 'smartattend-token'}
                 size={180}
@@ -86,7 +86,7 @@ export default function DesktopSystemStatus({
               <button
                 type="button"
                 onClick={onOpenProjector}
-                className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-xs"
+                className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-xs"
               >
                 <Maximize2 className="w-4 h-4" />
                 <span>Fullscreen Classroom Wall</span>
@@ -120,7 +120,7 @@ export default function DesktopSystemStatus({
             <h3 className="text-sm font-extrabold text-[#111827]">
               System Integrity
             </h3>
-            <span className="text-[10px] text-slate-400 font-semibold block">
+            <span className="text-[11px] text-slate-400 font-semibold block">
               Multi-Layered Anti-Proxy Verification
             </span>
           </div>
@@ -138,7 +138,7 @@ export default function DesktopSystemStatus({
                   <h4 className="text-xs font-extrabold text-[#111827]">
                     Classroom Geofence
                   </h4>
-                  <span className="text-[10px] text-slate-500 font-medium block">
+                  <span className="text-[11px] text-slate-500 font-medium block">
                     150m Perimeter Lock
                   </span>
                 </div>
@@ -157,7 +157,7 @@ export default function DesktopSystemStatus({
               )}
             </div>
 
-            <div className="text-[10px] text-slate-500 font-mono bg-white p-2 rounded-xl border border-slate-200/60 flex items-center justify-between">
+            <div className="text-[11px] text-slate-500 font-mono bg-white p-2 rounded-xl border border-slate-200/60 flex items-center justify-between">
               <span>Status: <strong className="text-emerald-700">{facultyGps?.status || 'CALIBRATED'}</strong></span>
               <span>Acc: ±{facultyGps?.accuracy || 18}m</span>
             </div>
@@ -174,7 +174,7 @@ export default function DesktopSystemStatus({
                   <h4 className="text-xs font-extrabold text-[#111827]">
                     Acoustic Beacon
                   </h4>
-                  <span className="text-[10px] text-slate-500 font-medium block">
+                  <span className="text-[11px] text-slate-500 font-medium block">
                     18.8 kHz Ultra-High Frequency
                   </span>
                 </div>
@@ -195,7 +195,7 @@ export default function DesktopSystemStatus({
               )}
             </div>
 
-            <p className="text-[10px] text-slate-500 leading-relaxed">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
               Emits an inaudible ultrasonic token verifying students are physically situated inside this lecture hall.
             </p>
           </div>

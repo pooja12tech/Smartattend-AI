@@ -155,7 +155,7 @@ export default function DesktopAdminOverview({
                         <h4 className="text-sm font-extrabold text-[#111827]">
                           {sess.subject_name || 'Operating Systems'}
                         </h4>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                           Live Broadcast
                         </span>
@@ -177,7 +177,7 @@ export default function DesktopAdminOverview({
                       <span className="font-mono text-sm font-black text-emerald-800">
                         {sess.present_count || 0} Students Verified
                       </span>
-                      <span className="text-[10px] text-slate-400 block font-semibold">
+                      <span className="text-[11px] text-slate-400 block font-semibold">
                         Geofence: 150m Lock Active
                       </span>
                     </div>
@@ -232,7 +232,7 @@ export default function DesktopAdminOverview({
                     <span className="font-mono font-black text-rose-600 text-sm">
                       {Math.round(st.overall_attendance_pct || st.attendance_pct || 65)}%
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold">
                       Deficit Risk
                     </span>
                   </div>
@@ -251,7 +251,7 @@ export default function DesktopAdminOverview({
                 <Smartphone className="w-4 h-4 text-[#1A4731]" />
                 <span>Pending Biometric Reviews</span>
               </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
                 {pendingReviews.length} Requests
               </span>
             </div>
@@ -271,7 +271,7 @@ export default function DesktopAdminOverview({
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-800">{rev.student_name || rev.name}</span>
-                      <span className="font-mono text-[10px] text-slate-400">{rev.roll_no}</span>
+                      <span className="font-mono text-[11px] text-slate-400">{rev.roll_no}</span>
                     </div>
                     <p className="text-[11px] text-slate-500">Reason: {rev.reason || 'Phone hardware replacement unbind'}</p>
                     <div className="flex items-center gap-2 pt-1">

@@ -129,7 +129,7 @@ export default function DesktopStudentHome({
         <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF4EE] text-[#1A4731] border border-[#1A4731]/15 uppercase tracking-wide">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#EBF4EE] text-[#1A4731] border border-[#1A4731]/15 uppercase tracking-wide">
                 Academic Dashboard
               </span>
               <span className="text-xs text-slate-400 font-medium font-mono">
@@ -332,7 +332,7 @@ export default function DesktopStudentHome({
                               {cls.subject_name || cls.subject_code}
                             </h3>
                             {isCurrent && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white uppercase tracking-wider animate-pulse">
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-500 text-white uppercase tracking-wider animate-pulse">
                                 Ongoing
                               </span>
                             )}
@@ -421,7 +421,7 @@ export default function DesktopStudentHome({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                        <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">
                           {sub.subject_code || sub.code || 'CS301'}
                         </span>
                         <h4 className="font-extrabold text-sm text-[#111827] leading-tight">
@@ -430,7 +430,7 @@ export default function DesktopStudentHome({
                       </div>
                       <div className={`text-right ${isSafe ? 'text-emerald-700' : 'text-rose-600'}`}>
                         <span className="text-xl font-black">{sub.pct}%</span>
-                        <span className="block text-[10px] font-mono text-slate-400">
+                        <span className="block text-[11px] font-mono text-slate-400">
                           {attended}/{total} classes
                         </span>
                       </div>
@@ -485,7 +485,7 @@ export default function DesktopStudentHome({
                   <p className="text-[11px] text-slate-500">Interactive What-If Matrix</p>
                 </div>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
                 Live Tool
               </span>
             </div>
@@ -584,7 +584,7 @@ export default function DesktopStudentHome({
                         {log.timestamp ? new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '09:02 AM'} &bull; {log.room || 'LAB-302'}
                       </span>
                     </div>
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#EBF4EE] text-emerald-800 border border-emerald-200">
+                    <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#EBF4EE] text-emerald-800 border border-emerald-200">
                       Present (Phone)
                     </span>
                   </div>

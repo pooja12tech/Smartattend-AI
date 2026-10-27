@@ -183,7 +183,7 @@ export default function DesktopFacultyClasses({ user, onStartSession, onGoHome }
               }`}
             >
               <span>{DAY_LABELS[day]}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-black ${
                 isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
               }`}>
                 {count}
@@ -228,7 +228,7 @@ export default function DesktopFacultyClasses({ user, onStartSession, onGoHome }
                       {slot.subject_name}
                     </h4>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold">
                     Section {slot.section || 'A'}
                   </span>
                 </div>

@@ -476,6 +476,13 @@ export const api = {
     return safeParse(res, 'Failed to fetch today student timetable');
   },
 
+  async getStudentActiveSession() {
+    const res = await fetch(`${API_BASE}/api/student/active-session`, {
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to fetch student active session');
+  },
+
   async getAdminPendingReviews() {
     const res = await fetch(`${API_BASE}/api/admin/pending-reviews`, {
       headers: getHeaders()

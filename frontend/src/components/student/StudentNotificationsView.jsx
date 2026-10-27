@@ -22,11 +22,11 @@ export default function StudentNotificationsView({
   return (
     <div className="space-y-4">
       {/* Top Header: < Notifications (Screen 20 Reference) */}
-      <div className="flex items-center justify-between pt-1">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-2 text-[#111827] font-extrabold text-base focus:outline-none"
+          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-[#111827] active:scale-[0.97] font-extrabold text-base focus:outline-none transition"
         >
           <ArrowLeft className="w-5 h-5 text-slate-700" />
           <span>Notifications</span>
@@ -36,7 +36,7 @@ export default function StudentNotificationsView({
           <button
             type="button"
             onClick={onMarkAllRead}
-            className="text-xs font-semibold text-[#1A4731] hover:underline"
+            className="min-h-[44px] px-2 text-xs font-semibold text-[#1A4731] hover:underline active:scale-[0.97] transition"
           >
             Mark all read
           </button>
@@ -48,7 +48,7 @@ export default function StudentNotificationsView({
         <button
           type="button"
           onClick={() => setFilterTab('ALL')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             filterTab === 'ALL'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -60,7 +60,7 @@ export default function StudentNotificationsView({
         <button
           type="button"
           onClick={() => setFilterTab('CLASSES')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             filterTab === 'CLASSES'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -72,7 +72,7 @@ export default function StudentNotificationsView({
         <button
           type="button"
           onClick={() => setFilterTab('SYSTEM')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             filterTab === 'SYSTEM'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -107,7 +107,7 @@ export default function StudentNotificationsView({
                     <h4 className="text-xs font-bold text-[#111827] leading-snug">
                       {notif.title || 'Attendance Notification'}
                     </h4>
-                    <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+                    <span className="text-[11px] text-slate-400 shrink-0 whitespace-nowrap">
                       {timeAgo}
                     </span>
                   </div>

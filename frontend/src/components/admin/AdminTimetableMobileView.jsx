@@ -102,7 +102,7 @@ export default function AdminTimetableMobileView({
       </div>
 
       {/* Horizontal Day Selector Pills (Reference Screen 12) */}
-      <div className="grid grid-cols-5 gap-1.5 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-2xs">
+      <div className="grid grid-cols-5 gap-1 min-[360px]:gap-1.5 bg-white p-1.5 min-[360px]:p-2 rounded-2xl border border-slate-200/80 shadow-2xs">
         {days.map((item, idx) => {
           const isSelected = selectedDayIndex === idx;
           return (
@@ -110,14 +110,14 @@ export default function AdminTimetableMobileView({
               key={item.day}
               type="button"
               onClick={() => setSelectedDayIndex(idx)}
-              className={`flex flex-col items-center py-2 rounded-xl transition ${
+              className={`flex flex-col items-center py-1.5 min-[360px]:py-2 px-0.5 rounded-xl transition active:scale-[0.97] ${
                 isSelected
                   ? 'bg-[#1A4731] text-white font-extrabold shadow-xs'
                   : 'text-slate-500 hover:bg-slate-50 font-bold'
               }`}
             >
-              <span className="text-[10px] uppercase tracking-wider">{item.day}</span>
-              <span className="text-sm font-black mt-0.5">{item.date}</span>
+              <span className="text-[11px] uppercase font-bold">{item.day}</span>
+              <span className="text-xs min-[360px]:text-sm font-black mt-0.5">{item.date}</span>
             </button>
           );
         })}
@@ -126,9 +126,19 @@ export default function AdminTimetableMobileView({
       {/* Timetable Slots Chronological List (Reference Screen 12) */}
       <div className="space-y-3">
         {loading ? (
-          <div className="py-12 text-center text-xs text-slate-400 font-semibold flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-[#1A4731]" />
-            Loading timetable slots...
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-start gap-3 animate-pulse">
+                <div className="w-16 shrink-0 pt-1 space-y-1">
+                  <div className="h-3 w-12 bg-slate-200 rounded ml-auto" />
+                  <div className="h-3 w-10 bg-slate-100 rounded ml-auto" />
+                </div>
+                <div className="flex-1 bg-white rounded-2xl p-3.5 border border-slate-200/90 space-y-2">
+                  <div className="h-4 w-32 bg-slate-200 rounded" />
+                  <div className="h-3 w-24 bg-slate-100 rounded" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : displaySlots.length === 0 ? (
           <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-6 space-y-1">
@@ -147,7 +157,7 @@ export default function AdminTimetableMobileView({
                 <span className="text-[11px] font-black text-slate-800 block leading-tight">
                   {slot.start_time || '09:00 AM'}
                 </span>
-                <span className="text-[10px] font-semibold text-slate-400 block mt-0.5">
+                <span className="text-[11px] font-semibold text-slate-400 block mt-0.5">
                   {slot.end_time || '10:00 AM'}
                 </span>
               </div>
@@ -162,7 +172,7 @@ export default function AdminTimetableMobileView({
                   <span>&bull;</span>
                   <span>{slot.faculty_name || 'Prof. Sharma'}</span>
                 </p>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400 font-semibold pt-0.5">
+                <div className="flex items-center gap-1 text-[11px] text-slate-400 font-semibold pt-0.5">
                   <MapPin className="w-3 h-3 text-[#1A4731]" />
                   <span>{slot.room || 'CSE Block, Room 304'}</span>
                 </div>

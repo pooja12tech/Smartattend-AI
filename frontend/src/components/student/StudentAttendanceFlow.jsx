@@ -58,12 +58,12 @@ export default function StudentAttendanceFlow({
         {step === 'SCAN_QR' && (
         <div className="relative flex-1 flex flex-col justify-between bg-black">
           {/* Top Bar (Screen 5 Reference) */}
-          <div className="relative z-20 flex items-center justify-between px-4 py-4 pt-6 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
+          <div className="relative z-20 flex items-center justify-between px-4 py-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] bg-gradient-to-b from-black/90 via-black/60 to-transparent">
             <button
               type="button"
               id="btn-scanner-back"
               onClick={onCancel}
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition focus:outline-none"
+              className="min-h-[44px] min-w-[44px] p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition flex items-center justify-center focus:outline-none"
               title="Return to Previous Screen"
               aria-label="Back"
             >
@@ -78,7 +78,7 @@ export default function StudentAttendanceFlow({
               type="button"
               id="btn-scanner-torch"
               onClick={onToggleTorch}
-              className={`p-2.5 rounded-full transition-all focus:outline-none active:scale-95 ${
+              className={`min-h-[44px] min-w-[44px] p-2.5 rounded-full transition-all flex items-center justify-center focus:outline-none active:scale-95 ${
                 isTorchOn
                   ? 'bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/40 ring-2 ring-amber-300'
                   : 'bg-white/10 hover:bg-white/20 text-white'
@@ -93,7 +93,7 @@ export default function StudentAttendanceFlow({
           {/* Center: Dedicated Mobile Viewport & Reticle Frame */}
           <div className="relative flex-1 flex flex-col items-center justify-center px-4">
             {/* Viewfinder box with clean aspect ratio */}
-            <div className="relative w-[82vw] max-w-[310px] aspect-square rounded-3xl overflow-hidden bg-black shadow-2xl flex items-center justify-center border border-white/10">
+            <div className="relative w-[78vw] max-w-[290px] sm:max-w-[310px] max-h-[45vh] aspect-square rounded-3xl overflow-hidden bg-black shadow-2xl flex items-center justify-center border border-white/10">
               {/* Html5Qrcode container */}
               <div id="smartattend-qr-reader" className="w-full h-full object-cover" />
 
@@ -177,15 +177,15 @@ export default function StudentAttendanceFlow({
 
       {/* SCREEN 6 - 10: FACE VERIFICATION & LIVENESS CAPTURE */}
       {step === 'FACE_VERIFY' && (
-        <div className="relative flex-1 flex flex-col justify-between bg-black">
+        <div className="relative flex-1 flex flex-col justify-between bg-black overflow-hidden">
           {/* Top Status & Prompts (Screens 6-10 Reference) */}
-          <div className="relative z-20 px-4 py-4 pt-6 flex flex-col items-center gap-3 bg-gradient-to-b from-black/90 via-black/60 to-transparent">
+          <div className="relative z-20 px-4 py-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] flex flex-col items-center gap-2 bg-gradient-to-b from-black/90 via-black/60 to-transparent shrink-0">
             <div className="w-full flex items-center justify-between">
               <button
                 type="button"
                 id="btn-face-verify-back"
                 onClick={onCancel}
-                className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition focus:outline-none"
+                className="min-h-[44px] min-w-[44px] p-2.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition flex items-center justify-center focus:outline-none"
                 title="Cancel Face Check"
                 aria-label="Back"
               >
@@ -221,8 +221,8 @@ export default function StudentAttendanceFlow({
           </div>
 
           {/* Center: Camera Video Stream & Face Oval Guide */}
-          <div className="relative flex-1 flex flex-col items-center justify-center px-4">
-            <div className="relative w-full max-w-[270px] aspect-[3/4] rounded-full overflow-hidden bg-slate-900 border-4 border-white/10 shadow-2xl flex items-center justify-center">
+          <div className="relative flex-1 flex flex-col items-center justify-center px-4 py-2 overflow-y-auto">
+            <div className="relative w-full max-w-[220px] sm:max-w-[260px] max-h-[38vh] aspect-[3/4] rounded-full overflow-hidden bg-slate-900 border-4 border-white/10 shadow-2xl flex items-center justify-center shrink-0">
               <video
                 ref={videoRef}
                 autoPlay
@@ -253,7 +253,7 @@ export default function StudentAttendanceFlow({
             </div>
 
             {/* Instruction text below circle (Screens 6, 7, 8 Reference) */}
-            <p className="text-xs text-slate-300 font-medium text-center mt-5 max-w-xs">
+            <p className="text-xs text-slate-300 font-medium text-center mt-3 max-w-xs shrink-0">
               {blinkStatus === 'INIT'
                 ? 'Starting face verification. Please look at the camera.'
                 : blinkStatus === 'WAITING_BLINK'
@@ -266,7 +266,7 @@ export default function StudentAttendanceFlow({
             </p>
 
             {/* Step Indicator Dots (Screens 7, 8, 9, 10 Reference) */}
-            <div className="flex items-center gap-1.5 mt-4">
+            <div className="flex items-center gap-1.5 mt-2 shrink-0">
               {[0, 1, 2, 3, 4].map((idx) => (
                 <span
                   key={idx}
@@ -282,7 +282,7 @@ export default function StudentAttendanceFlow({
             </div>
 
             {cameraError && (
-              <div className="mt-4 p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2">
+              <div className="mt-2 p-3 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs max-w-xs text-center space-y-2 shrink-0">
                 <p>{cameraError}</p>
                 <button
                   type="button"
@@ -296,11 +296,11 @@ export default function StudentAttendanceFlow({
           </div>
 
           {/* Bottom Manual Capture Fallback (Accessibility & testing override) */}
-          <div className="p-4 flex items-center justify-between gap-3 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] flex items-center justify-between gap-3 bg-gradient-to-t from-black/90 via-black/70 to-transparent shrink-0">
             <button
               type="button"
               onClick={onRetryCamera}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs flex items-center gap-1.5 active:scale-95 transition"
+              className="min-h-[44px] p-2.5 px-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs flex items-center gap-1.5 active:scale-95 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Retry</span>
@@ -309,7 +309,7 @@ export default function StudentAttendanceFlow({
             <button
               type="button"
               onClick={onManualCapture}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
+              className="flex-1 min-h-[44px] py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
               <span>Manual Capture (Override)</span>
@@ -388,7 +388,7 @@ export default function StudentAttendanceFlow({
 
       {/* SCREEN 12: ATTENDANCE RESULT (SUCCESS & FAILURE) */}
       {step === 'RESULT' && (
-        <div className="flex-1 flex flex-col justify-center items-center px-4 py-8 bg-[#F8FAF9] text-[#111827]">
+        <div className="flex-1 flex flex-col justify-center items-center px-4 py-8 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] bg-[#F8FAF9] text-[#111827] overflow-y-auto">
           {submissionResult?.success ? (
             /* ATTENDANCE SUCCESS (Screen 12 Reference) */
             <div className="w-full max-w-sm bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/90 shadow-xl text-center space-y-5 animate-in zoom-in-95">
@@ -454,7 +454,7 @@ export default function StudentAttendanceFlow({
                 type="button"
                 id="btn-attendance-done"
                 onClick={onBackToHome}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#1A4731] hover:bg-[#143826] active:scale-[0.99] text-white font-bold text-sm shadow-md shadow-emerald-950/20 transition"
+                className="w-full min-h-[44px] py-3.5 px-4 rounded-2xl bg-[#1A4731] hover:bg-[#143826] active:scale-[0.97] text-white font-bold text-sm shadow-md shadow-emerald-950/20 transition cursor-pointer"
               >
                 Back to Home
               </button>
@@ -488,7 +488,7 @@ export default function StudentAttendanceFlow({
                   <button
                     type="button"
                     onClick={onOpenFaceEnroll}
-                    className="w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition"
+                    className="w-full min-h-[44px] py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs active:scale-[0.97] transition cursor-pointer"
                   >
                     Re-Enroll Face Reference
                   </button>
@@ -499,14 +499,14 @@ export default function StudentAttendanceFlow({
                 <button
                   type="button"
                   onClick={onRetryQR}
-                  className="flex-1 py-3 rounded-2xl bg-[#1A4731] text-white font-bold text-xs shadow transition hover:bg-[#143826]"
+                  className="flex-1 min-h-[44px] py-3 rounded-2xl bg-[#1A4731] text-white font-bold text-xs shadow transition hover:bg-[#143826] active:scale-[0.97] cursor-pointer"
                 >
                   Try Again
                 </button>
                 <button
                   type="button"
                   onClick={onRequestException}
-                  className="px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition"
+                  className="px-4 min-h-[44px] py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition active:scale-[0.97] cursor-pointer"
                 >
                   Faculty Review
                 </button>
@@ -515,7 +515,7 @@ export default function StudentAttendanceFlow({
               <button
                 type="button"
                 onClick={onBackToHome}
-                className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+                className="min-h-[44px] text-xs text-slate-500 hover:text-slate-800 font-medium active:scale-[0.97] flex items-center justify-center transition cursor-pointer"
               >
                 Return to Dashboard
               </button>

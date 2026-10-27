@@ -3,6 +3,7 @@ import {
   Users, Search, CheckCircle2, AlertTriangle, Clock, ArrowLeft,
   X, Check, ShieldCheck, UserCheck, Plus, AlertCircle, RefreshCw, Smartphone
 } from 'lucide-react';
+import Modal from '../ui/Modal';
 
 export default function FacultyStudentRosterView({
   roster = [],
@@ -119,16 +120,16 @@ export default function FacultyStudentRosterView({
   return (
     <div className="space-y-3.5 pb-6">
       {/* Header Bar */}
-      <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
         <div className="flex items-center gap-2">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="p-1 rounded-lg hover:bg-slate-100 text-slate-600 transition"
+              className="min-h-[44px] min-w-[44px] p-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 active:scale-[0.97] transition shadow-xs flex items-center justify-center cursor-pointer"
               title="Back"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
           )}
           <div>
@@ -143,9 +144,9 @@ export default function FacultyStudentRosterView({
           <button
             type="button"
             onClick={() => handleOpenManual(null)}
-            className="py-1 px-2.5 rounded-lg bg-[#1A4731] hover:bg-[#143826] text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition"
+            className="min-h-[44px] py-1.5 px-3 rounded-xl bg-[#1A4731] hover:bg-[#143826] active:scale-[0.97] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
             <span>Manual Mark</span>
           </button>
         </div>
@@ -270,7 +271,7 @@ export default function FacultyStudentRosterView({
                         {s.name}
                       </h4>
                       {isManual && (
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        <span className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                           Manual
                         </span>
                       )}
@@ -330,9 +331,13 @@ export default function FacultyStudentRosterView({
       </div>
 
       {/* Review Exception Modal (Screen 9 & 10) */}
-      {reviewStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
+      <Modal
+        isOpen={Boolean(reviewStudent)}
+        onClose={() => setReviewStudent(null)}
+        variant="sheet"
+      >
+        {reviewStudent && (
+          <div className="space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center">
@@ -340,16 +345,9 @@ export default function FacultyStudentRosterView({
                 </div>
                 <div>
                   <h3 className="text-xs font-extrabold text-[#111827]">Attendance Exception Review</h3>
-                  <p className="text-[10px] text-slate-500">Biometric or Device Verification Flag</p>
+                  <p className="text-[11px] text-slate-500">Biometric or Device Verification Flag</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setReviewStudent(null)}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
             {/* Student Info */}
@@ -396,7 +394,7 @@ export default function FacultyStudentRosterView({
                 type="button"
                 onClick={() => handleSubmitReview('REJECT')}
                 disabled={actionLoading}
-                className="py-2.5 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center justify-center gap-1.5"
+                className="min-h-[44px] py-2.5 px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition active:scale-[0.97] flex items-center justify-center gap-1.5"
               >
                 {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                 <span>Reject (Absent)</span>
@@ -406,38 +404,34 @@ export default function FacultyStudentRosterView({
                 type="button"
                 onClick={() => handleSubmitReview('APPROVE')}
                 disabled={actionLoading}
-                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-900/20 transition flex items-center justify-center gap-1.5"
+                className="min-h-[44px] py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-900/20 transition active:scale-[0.97] flex items-center justify-center gap-1.5"
               >
                 {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 <span>Approve (Present)</span>
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Manual Attendance Modal */}
-      {manualModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
-                  <UserCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-extrabold text-[#111827]">Manual Attendance Override</h3>
-                  <p className="text-[10px] text-slate-500">Recorded in Immutable Audit Log</p>
-                </div>
+      <Modal
+        isOpen={manualModalOpen}
+        onClose={() => setManualModalOpen(false)}
+        variant="sheet"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
+                <UserCheck className="w-4 h-4" />
               </div>
-              <button
-                type="button"
-                onClick={() => setManualModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div>
+                <h3 className="text-xs font-extrabold text-[#111827]">Manual Attendance Override</h3>
+                <p className="text-[11px] text-slate-500">Recorded in Immutable Audit Log</p>
+              </div>
             </div>
+          </div>
 
             {/* Student Picker if not pre-selected */}
             <div className="space-y-1">
@@ -545,7 +539,7 @@ export default function FacultyStudentRosterView({
               <button
                 type="button"
                 onClick={() => setManualModalOpen(false)}
-                className="py-2.5 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                className="min-h-[44px] py-2.5 px-3 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition active:scale-[0.97]"
               >
                 Cancel
               </button>
@@ -553,15 +547,14 @@ export default function FacultyStudentRosterView({
                 type="button"
                 onClick={handleSubmitManual}
                 disabled={actionLoading}
-                className="py-2.5 px-3 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition flex items-center justify-center gap-1.5"
+                className="min-h-[44px] py-2.5 px-3 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition active:scale-[0.97] flex items-center justify-center gap-1.5"
               >
                 {actionLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
                 <span>Record Attendance</span>
               </button>
             </div>
           </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

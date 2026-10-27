@@ -96,7 +96,7 @@ export default function DesktopScheduleList({
                         {item.subject_name || 'Operating Systems'}
                       </span>
                       {isSelected && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1A4731] bg-white px-2 py-0.5 rounded-full border border-emerald-300">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#1A4731] bg-white px-2 py-0.5 rounded-full border border-emerald-300">
                           <CheckCircle2 className="w-3 h-3 text-[#1A4731]" />
                           Active Selection
                         </span>
@@ -124,16 +124,16 @@ export default function DesktopScheduleList({
                 {/* Right: Status chip & Start Action */}
                 <div className="flex items-center gap-2.5 sm:self-center shrink-0">
                   {isLive ? (
-                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black flex items-center gap-1.5 uppercase tracking-wider">
+                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black flex items-center gap-1.5 uppercase tracking-wider">
                       <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
                       Live Now
                     </span>
                   ) : isUpcoming ? (
-                    <span className="px-3 py-1 rounded-full bg-slate-200/80 text-slate-700 text-[10px] font-bold uppercase tracking-wider">
+                    <span className="px-3 py-1 rounded-full bg-slate-200/80 text-slate-700 text-[11px] font-bold uppercase tracking-wider">
                       Upcoming
                     </span>
                   ) : (
-                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold uppercase tracking-wider">
+                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
                       Scheduled
                     </span>
                   )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Share, PlusSquare, X, Smartphone } from 'lucide-react';
+import { Share, PlusSquare, X } from 'lucide-react';
 import { isIosSafari } from '../pwa/pwaManager';
 
 export default function IosInstallBanner() {
@@ -10,6 +10,15 @@ export default function IosInstallBanner() {
     if (!isDismissed && isIosSafari()) {
       setShowBanner(true);
     }
+
+    const handleShowRequest = () => {
+      setShowBanner(true);
+    };
+
+    window.addEventListener('show-ios-install-banner', handleShowRequest);
+    return () => {
+      window.removeEventListener('show-ios-install-banner', handleShowRequest);
+    };
   }, []);
 
   const handleDismiss = () => {
@@ -20,38 +29,40 @@ export default function IosInstallBanner() {
   if (!showBanner) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto animate-fade-in">
-      <div className="glass-panel p-4 rounded-2xl border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 bg-slate-900/95 backdrop-blur-xl text-slate-200 text-xs space-y-2.5">
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4">
+      <div className="bg-white p-4 rounded-2xl border border-[#E5E7EB] shadow-2xl text-[#111827] text-xs space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-white text-sm">
+          <div className="flex items-center gap-2.5 font-semibold text-sm text-[#111827]">
             <img src="/smartattend_logo.png" alt="SmartAttend" className="w-5 h-5 object-contain" />
-            <span>Install on iOS</span>
+            <span>Install SmartAttend-AI on iOS</span>
           </div>
           <button
             onClick={handleDismiss}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1 rounded-lg text-[#6B7280] hover:text-[#111827] hover:bg-[#F8FAF9] transition"
             aria-label="Dismiss iOS install banner"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-slate-300 leading-relaxed text-[11px]">
-          Install SmartAttend-AI as an app on your iPhone or iPad for full-screen camera and biometric verification:
+        <p className="text-[#6B7280] leading-relaxed text-xs">
+          Install SmartAttend-AI on your iPhone or iPad for full-screen camera and biometric attendance verification:
         </p>
 
-        <ol className="list-decimal list-inside space-y-1 text-slate-300 text-[11px] font-medium bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
-          <li className="flex items-center gap-1.5">
-            <span>1. Tap the</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[10px] border border-slate-700">
-              <Share className="w-3 h-3 mr-1" /> Share
+        <ol className="space-y-2 text-xs font-medium bg-[#F8FAF9] p-3 rounded-xl border border-[#E5E7EB]">
+          <li className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-[#EBF4EE] text-[#1A4731] flex items-center justify-center font-bold text-[11px] shrink-0">1</span>
+            <span className="text-[#374151]">Tap the</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-white text-[#1A4731] font-semibold text-[11px] border border-[#E5E7EB] shadow-xs">
+              <Share className="w-3.5 h-3.5 mr-1" /> Share
             </span>
-            <span>button in Safari</span>
+            <span className="text-[#374151]">button in Safari</span>
           </li>
-          <li className="flex items-center gap-1.5">
-            <span>2. Scroll down and tap</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 font-mono text-[10px] border border-slate-700">
-              <PlusSquare className="w-3 h-3 mr-1" /> Add to Home Screen
+          <li className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-[#EBF4EE] text-[#1A4731] flex items-center justify-center font-bold text-[11px] shrink-0">2</span>
+            <span className="text-[#374151]">Scroll down and tap</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-white text-[#1A4731] font-semibold text-[11px] border border-[#E5E7EB] shadow-xs">
+              <PlusSquare className="w-3.5 h-3.5 mr-1" /> Add to Home Screen
             </span>
           </li>
         </ol>
@@ -59,7 +70,7 @@ export default function IosInstallBanner() {
         <div className="flex justify-end pt-1">
           <button
             onClick={handleDismiss}
-            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-sm"
+            className="px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-medium text-xs transition shadow-sm"
           >
             Got it
           </button>

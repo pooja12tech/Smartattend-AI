@@ -7,7 +7,7 @@
   "scope": "/",
   "lang": "en",
   "display": "standalone",
-  "display_override": ["standalone", "window-controls-overlay", "minimal-ui", "browser"],
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#F8FAF9",
   "theme_color": "#F8FAF9",
   "categories": ["education", "productivity"],
@@ -35,12 +35,36 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "SmartAttend-AI Desktop Portal"
     },
     {
-      "src": "/smartattend-ai-logo.png",
-      "sizes": "1024x1024",
+      "src": "/screenshots/mobile-390x844.png",
+      "sizes": "390x844",
       "type": "image/png",
-      "purpose": "any"
+      "form_factor": "narrow",
+      "label": "SmartAttend-AI Mobile App"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View attendance dashboard",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

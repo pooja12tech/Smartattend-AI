@@ -4,6 +4,7 @@ import {
   RefreshCw, Check, X
 } from 'lucide-react';
 import { api } from '../../api';
+import { toast } from '../ui/Toast';
 
 export default function AdminManualMarkView({
   overview,
@@ -16,7 +17,6 @@ export default function AdminManualMarkView({
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [manualReason, setManualReason] = useState('Medical leave verified by dean office');
   const [submitting, setSubmitting] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
 
   const sessions = overview?.sessions || [];
   const activeSessions = sessions.filter(s => s.status === 'ACTIVE');
@@ -43,7 +43,7 @@ export default function AdminManualMarkView({
 
   const handleMarkPresent = async () => {
     if (!selectedSessionId) {
-      alert('Please select an active academic session to mark attendance for.');
+      toast.warning('Please select an active academic session to mark attendance for.');
       return;
     }
     if (!selectedStudent) return;
@@ -57,12 +57,11 @@ export default function AdminManualMarkView({
         reason: manualReason
       });
 
-      setToastMessage(`Marked ${selectedStudent.name} (${selectedStudent.roll_no}) as PRESENT`);
+      toast.success(`Marked ${selectedStudent.name} (${selectedStudent.roll_no}) as PRESENT`);
       setSelectedStudent(null);
-      setTimeout(() => setToastMessage(null), 4000);
       if (onSuccess) onSuccess();
     } catch (err) {
-      alert(`Manual attendance failed: ${err.message}`);
+      toast.error(`Manual attendance failed: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -70,27 +69,14 @@ export default function AdminManualMarkView({
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-4 left-4 right-4 z-50 bg-[#1A4731] text-white px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between text-xs font-bold animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>{toastMessage}</span>
-          </div>
-          <button type="button" onClick={() => setToastMessage(null)}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Sticky Top App Bar */}
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-3.5 px-3.5 border-b border-slate-200/60 select-none flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="p-1 -ml-1 text-slate-600 hover:text-slate-900"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center p-1 -ml-1 text-slate-600 hover:text-slate-900 active:scale-[0.97] transition"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -137,8 +123,8 @@ export default function AdminManualMarkView({
         />
         <button
           type="button"
-          onClick={() => alert('Camera QR scanning is available in the student/faculty live view.')}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          onClick={() => toast.info('Camera QR scanning is available in the student and faculty live views.')}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 min-w-[36px] min-h-[36px] flex items-center justify-center"
           title="Scan Student QR Code"
         >
           <QrCode className="w-4 h-4" />
@@ -148,8 +134,10 @@ export default function AdminManualMarkView({
       {/* Student List */}
       <div className="space-y-2">
         {filteredStudents.length === 0 ? (
-          <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-6">
-            <p className="text-xs font-bold text-slate-700">No students matched search</p>
+          <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-6 space-y-2">
+            <UserCheck className="w-8 h-8 text-slate-300 mx-auto" />
+            <p className="text-xs font-bold text-slate-700">No students found</p>
+            <p className="text-[11px] text-slate-400">Type a name or roll number above to search roster</p>
           </div>
         ) : (
           filteredStudents.map((student) => (

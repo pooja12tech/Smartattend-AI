@@ -71,7 +71,7 @@ export default function DesktopHeroClass({
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 block">
               {isSessionActive ? 'Active Live Lecture' : 'Selected Timetable Slot'}
             </span>
             <span className="text-xs font-bold text-slate-700">
@@ -189,7 +189,7 @@ export default function DesktopHeroClass({
               >
                 <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
                 <span>{st.student_name || st.name}</span>
-                <span className="font-mono text-slate-400 font-normal text-[10px]">({st.roll_no})</span>
+                <span className="font-mono text-slate-400 font-normal text-[11px]">({st.roll_no})</span>
               </span>
             ))}
           </div>
@@ -204,7 +204,7 @@ export default function DesktopHeroClass({
               <button
                 type="button"
                 onClick={onOpenProjector}
-                className="flex-1 min-h-[48px] px-6 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+                className="flex-1 min-h-[48px] px-6 py-3 rounded-2xl bg-[#1A4731] hover:bg-[#123323] active:scale-98 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
               >
                 <Maximize2 className="w-4 h-4" />
                 <span>Open Projector Wall (High-Contrast Screen)</span>

@@ -49,7 +49,7 @@ export default function FacultySessionSetupView({
   return (
     <div className="space-y-4">
       {/* Top Header with Back Navigation */}
-      <div className="flex items-center gap-3 pb-2 border-b border-slate-200">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center gap-3 border-b border-slate-200/60 select-none">
         <button
           type="button"
           onClick={() => {
@@ -59,11 +59,11 @@ export default function FacultySessionSetupView({
               onBack();
             }
           }}
-          className="p-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition shadow-sm"
+          className="min-h-[44px] min-w-[44px] p-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 active:scale-[0.97] transition shadow-xs flex items-center justify-center cursor-pointer"
           title="Go Back"
           aria-label="Go Back"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
           <h1 className="text-base font-extrabold text-[#111827] tracking-tight">
@@ -85,7 +85,7 @@ export default function FacultySessionSetupView({
             }`}>
               1
             </div>
-            <span className={`text-[10px] mt-1 font-semibold ${step === 1 ? 'text-[#1A4731] font-bold' : 'text-slate-500'}`}>
+            <span className={`text-[11px] mt-1 font-semibold ${step === 1 ? 'text-[#1A4731] font-bold' : 'text-slate-500'}`}>
               Class
             </span>
           </div>
@@ -105,7 +105,7 @@ export default function FacultySessionSetupView({
             }`}>
               2
             </div>
-            <span className={`text-[10px] mt-1 font-semibold ${step === 2 ? 'text-[#1A4731] font-bold' : 'text-slate-500'}`}>
+            <span className={`text-[11px] mt-1 font-semibold ${step === 2 ? 'text-[#1A4731] font-bold' : 'text-slate-500'}`}>
               Confirm
             </span>
           </div>

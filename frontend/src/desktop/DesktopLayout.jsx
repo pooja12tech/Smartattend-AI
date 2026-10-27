@@ -27,6 +27,9 @@ export default function DesktopLayout({
       if (['home', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
         return cleanTab;
       }
+      if (cleanTab === 'timetable') return 'classes';
+      if (cleanTab === 'roster') return 'students';
+      if (['live', 'setup'].includes(cleanTab)) return 'home';
     }
     return 'home';
   };
@@ -57,17 +60,19 @@ export default function DesktopLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F8FAF9] text-[#111827] flex font-sans selection:bg-[#1A4731] selection:text-white antialiased">
+    <div className="min-h-dvh bg-[#F8FAF9] text-[#111827] flex font-sans selection:bg-[#1A4731] selection:text-white antialiased">
       {/* 1. Left Sidebar Navigation */}
       <DesktopSidebar
         activeTab={activeTab}
         onTabChange={handleTabChange}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        user={user}
+        onLogout={onLogout}
       />
 
       {/* 2. Main Content Column */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top App Bar */}
         <DesktopTopBar
           user={user}
@@ -81,41 +86,43 @@ export default function DesktopLayout({
         />
 
         {/* Content Outlet: Route to Real Desktop Modules */}
-        <main className="flex-1 overflow-y-auto">
-          {activeTab === 'home' && children}
+        <main className="flex-1 w-full">
+          <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6">
+            {activeTab === 'home' && children}
 
-          {activeTab === 'classes' && (
-            <DesktopFacultyClasses
-              user={user}
-              onStartSession={(slot) => {
-                handleTabChange('home');
-                if (onStartSession) onStartSession(slot);
-              }}
-              onGoHome={() => handleTabChange('home')}
-            />
-          )}
+            {activeTab === 'classes' && (
+              <DesktopFacultyClasses
+                user={user}
+                onStartSession={(slot) => {
+                  handleTabChange('home');
+                  if (onStartSession) onStartSession(slot);
+                }}
+                onGoHome={() => handleTabChange('home')}
+              />
+            )}
 
-          {activeTab === 'students' && (
-            <DesktopFacultyStudents
-              user={user}
-              onGoHome={() => handleTabChange('home')}
-            />
-          )}
+            {activeTab === 'students' && (
+              <DesktopFacultyStudents
+                user={user}
+                onGoHome={() => handleTabChange('home')}
+              />
+            )}
 
-          {activeTab === 'reports' && (
-            <DesktopFacultyReports
-              user={user}
-              onGoHome={() => handleTabChange('home')}
-            />
-          )}
+            {activeTab === 'reports' && (
+              <DesktopFacultyReports
+                user={user}
+                onGoHome={() => handleTabChange('home')}
+              />
+            )}
 
-          {activeTab === 'profile' && (
-            <DesktopFacultyProfile
-              user={user}
-              onLogout={onLogout}
-              onGoHome={() => handleTabChange('home')}
-            />
-          )}
+            {activeTab === 'profile' && (
+              <DesktopFacultyProfile
+                user={user}
+                onLogout={onLogout}
+                onGoHome={() => handleTabChange('home')}
+              />
+            )}
+          </div>
         </main>
       </div>
     </div>

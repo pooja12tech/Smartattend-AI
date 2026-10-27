@@ -212,44 +212,44 @@ export default function FacultyLiveSessionView({
       </div>
 
       {/* Attendance Stats Cards */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-1.5 min-[360px]:gap-2">
         <div
           onClick={onViewRoster}
-          className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-emerald-300 transition"
+          className="bg-white rounded-xl p-2 min-[360px]:p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-emerald-300 active:scale-[0.97] transition"
         >
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase block">
             Present
           </span>
-          <span className="text-lg font-black text-emerald-700 mt-0.5 block">
+          <span className="text-base min-[360px]:text-lg font-black text-emerald-700 mt-0.5 block">
             {presentCount}
           </span>
-          <span className="text-[10px] text-slate-400">of {totalEnrolled}</span>
+          <span className="text-[11px] text-slate-400">of {totalEnrolled}</span>
         </div>
 
         <div
           onClick={onViewRoster}
-          className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-amber-300 transition"
+          className="bg-white rounded-xl p-2 min-[360px]:p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-amber-300 active:scale-[0.97] transition"
         >
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase block">
             Review
           </span>
-          <span className={`text-lg font-black mt-0.5 block ${pendingCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+          <span className={`text-base min-[360px]:text-lg font-black mt-0.5 block ${pendingCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
             {pendingCount}
           </span>
-          <span className="text-[10px] text-slate-400">Exceptions</span>
+          <span className="text-[11px] text-slate-400">Exceptions</span>
         </div>
 
         <div
           onClick={onViewRoster}
-          className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-slate-300 transition"
+          className="bg-white rounded-xl p-2 min-[360px]:p-3 border border-slate-200/90 shadow-xs text-center cursor-pointer hover:border-slate-300 active:scale-[0.97] transition"
         >
-          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+          <span className="text-[11px] font-semibold text-slate-500 uppercase block">
             Unmarked
           </span>
-          <span className="text-lg font-black text-slate-700 mt-0.5 block">
+          <span className="text-base min-[360px]:text-lg font-black text-slate-700 mt-0.5 block">
             {unmarkedCount}
           </span>
-          <span className="text-[10px] text-slate-400">Pending</span>
+          <span className="text-[11px] text-slate-400">Pending</span>
         </div>
       </div>
 

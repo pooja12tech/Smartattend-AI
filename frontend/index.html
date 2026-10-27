@@ -5,8 +5,6 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="shortcut icon" type="image/png" href="/smartattend_logo.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#F8FAF9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -14,12 +12,9 @@
     <meta name="apple-mobile-web-app-title" content="SmartAttend" />
     <meta name="description" content="Production-Ready Anti-Proxy & AI-Driven Attendance Management Progressive Web App" />
     
-    <!-- PWA Web App Manifest & Icons -->
+    <!-- PWA Web App Manifest & Apple Touch Icon -->
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
 
     <title>SmartAttend-AI | Anti-Proxy & AI-Driven Attendance System</title>
     <!-- Google Fonts: Inter -->
@@ -31,7 +26,7 @@
     <link rel="prefetch" href="/wasm/vision_wasm_internal.wasm" as="fetch" crossorigin="anonymous">
     <link rel="prefetch" href="/models/face_landmarker.task" as="fetch" crossorigin="anonymous">
   </head>
-  <body class="bg-[#F8FAF9] text-[#111827] antialiased selection:bg-[#1A4731] selection:text-white min-h-screen">
+  <body class="bg-[#F8FAF9] text-[#111827] antialiased selection:bg-[#1A4731] selection:text-white min-h-dvh">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

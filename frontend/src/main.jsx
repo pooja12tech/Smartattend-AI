@@ -22,7 +22,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-[#F8FAF9] text-[#111827] flex flex-col items-center justify-center p-6 text-center">
+        <div className="min-h-dvh bg-[#F8FAF9] text-[#111827] flex flex-col items-center justify-center p-6 text-center">
           <div className="max-w-md w-full p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-xl space-y-4">
             <div className="flex items-center justify-center">
               <img src="/smartattend_logo.png" alt="SmartAttend" className="w-14 h-14 object-contain" />

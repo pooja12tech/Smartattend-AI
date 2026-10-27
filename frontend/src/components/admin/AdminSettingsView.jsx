@@ -5,6 +5,7 @@ import {
   Lock, CheckCircle2, Sliders
 } from 'lucide-react';
 import { api } from '../../api';
+import InstallAppButton from '../InstallAppButton';
 
 export default function AdminSettingsView({
   onBack,
@@ -189,6 +190,9 @@ export default function AdminSettingsView({
           );
         })}
       </div>
+
+      {/* PWA Install Button (Shown on phone if not installed) */}
+      <InstallAppButton variant="profile" />
 
       {/* Detail / Config Modal */}
       {selectedSettingModal && (

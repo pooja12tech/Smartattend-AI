@@ -83,7 +83,7 @@ export default function AdminDashboardView({
           >
             <Bell className="w-4 h-4" />
             {pendingCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[15px] h-3.5 px-0.5 rounded-full bg-amber-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full bg-amber-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
                 {pendingCount}
               </span>
             )}
@@ -304,7 +304,7 @@ export default function AdminDashboardView({
                   style={{ height: `${d.pct}%` }}
                 />
               </div>
-              <span className="text-[9px] font-bold text-slate-500 uppercase">{d.day}</span>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">{d.day}</span>
             </div>
           ))}
         </div>

@@ -3,6 +3,7 @@ import {
   Search, Bell, User, Play, Maximize2, LogOut, CheckCircle2,
   AlertTriangle, ChevronDown, Radio, Sparkles
 } from 'lucide-react';
+import InstallAppButton from '../components/InstallAppButton';
 
 export default function DesktopTopBar({
   user,
@@ -50,7 +51,7 @@ export default function DesktopTopBar({
             aria-label="Search"
             className="w-full bg-slate-50/90 border border-slate-200/80 rounded-2xl pl-9 pr-14 py-2 text-xs text-[#111827] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1A4731]/30 focus:border-[#1A4731] transition"
           />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded shadow-2xs">
+          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded shadow-2xs">
             ⌘K
           </kbd>
         </div>
@@ -69,7 +70,7 @@ export default function DesktopTopBar({
               <button
                 type="button"
                 onClick={onOpenProjector}
-                className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-[#1A4731] hover:bg-[#123323] active:scale-98 text-white text-xs font-bold transition flex items-center gap-2 shadow-sm"
                 title="Open Classroom Projector Wall"
               >
                 <Maximize2 className="w-4 h-4" />
@@ -88,6 +89,9 @@ export default function DesktopTopBar({
           </button>
         )}
 
+        {/* PWA Install App Button */}
+        <InstallAppButton />
+
         {/* Security / Anti-Proxy Alerts Bell */}
         <button
           type="button"
@@ -97,7 +101,7 @@ export default function DesktopTopBar({
         >
           <Bell className="w-4 h-4" />
           {alertsCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-white">
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
               {alertsCount > 9 ? '9+' : alertsCount}
             </span>
           )}
@@ -119,7 +123,7 @@ export default function DesktopTopBar({
               <span className="text-xs font-extrabold text-[#111827] block leading-tight truncate max-w-[120px]">
                 {facultyName}
               </span>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+              <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
                 Faculty
               </span>
             </div>

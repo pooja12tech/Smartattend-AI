@@ -3,6 +3,7 @@ import {
   ArrowLeft, Download, Filter, BarChart3, TrendingUp, Users,
   CheckCircle2, AlertTriangle, Calendar, FileText, Info
 } from 'lucide-react';
+import { toast } from '../ui/Toast';
 
 export default function AdminReportsView({
   overview,
@@ -33,7 +34,7 @@ export default function AdminReportsView({
   const handleExportCSV = () => {
     const defaulters = overview?.high_risk_defaulters || [];
     if (!defaulters.length) {
-      alert('No high-risk attendance records available to export.');
+      toast.warning('No high-risk attendance records available to export.');
       return;
     }
 
@@ -57,8 +58,9 @@ export default function AdminReportsView({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      toast.success('Defaulters CSV report downloaded successfully.');
     } catch (err) {
-      alert(`Export failed: ${err.message || 'Unknown error occurred while generating CSV'}`);
+      toast.error(`Export failed: ${err.message || 'Unknown error occurred while generating CSV'}`);
     } finally {
       setExporting(false);
     }
@@ -66,14 +68,14 @@ export default function AdminReportsView({
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Sticky Top App Bar */}
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-3.5 px-3.5 border-b border-slate-200/60 select-none flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="p-1 -ml-1 text-slate-600 hover:text-slate-900"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center p-1 -ml-1 text-slate-600 hover:text-slate-900 active:scale-[0.97] transition"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -87,7 +89,7 @@ export default function AdminReportsView({
           type="button"
           disabled={exporting || !overview?.high_risk_defaulters?.length}
           onClick={handleExportCSV}
-          className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 shadow-2xs hover:bg-slate-50 transition disabled:opacity-50"
+          className="min-h-[40px] px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-2xs hover:bg-slate-50 active:scale-[0.97] transition disabled:opacity-50"
         >
           <Download className="w-3.5 h-3.5 text-[#1A4731]" />
           <span>Export CSV</span>

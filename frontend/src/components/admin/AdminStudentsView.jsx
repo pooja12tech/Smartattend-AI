@@ -5,6 +5,7 @@ import {
   Building2, Hash, CheckCircle2, AlertTriangle, X
 } from 'lucide-react';
 import { api } from '../../api';
+import { toast } from '../ui/Toast';
 
 export default function AdminStudentsView({
   usersList = [],
@@ -65,14 +66,14 @@ export default function AdminStudentsView({
     setActionLoading(true);
     try {
       await api.adminResetDevice(rollNo, reason);
-      alert(`Hardware lock released for ${rollNo}. Student can bind a new phone.`);
+      toast.success(`Hardware lock released for ${rollNo}. Student can bind a new phone.`);
       if (onRefreshUsers) onRefreshUsers();
       // Update local state if currently selected
       if (selectedStudent?.roll_no === rollNo) {
         setSelectedStudent(prev => ({ ...prev, device_id: null }));
       }
     } catch (err) {
-      alert(`Device reset failed: ${err.message}`);
+      toast.error(`Device reset failed: ${err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -85,13 +86,13 @@ export default function AdminStudentsView({
     setActionLoading(true);
     try {
       await api.adminResetFace(rollNo, reason);
-      alert(`Biometric face template revoked for ${rollNo}. Student must re-enroll.`);
+      toast.success(`Biometric face template revoked for ${rollNo}. Student must re-enroll.`);
       if (onRefreshUsers) onRefreshUsers();
       if (selectedStudent?.roll_no === rollNo) {
         setSelectedStudent(prev => ({ ...prev, face_enrolled: false }));
       }
     } catch (err) {
-      alert(`Face reset failed: ${err.message}`);
+      toast.error(`Face reset failed: ${err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -104,16 +105,17 @@ export default function AdminStudentsView({
 
     return (
       <div className="space-y-4 pb-24">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Sticky Top App Bar */}
+        <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-3.5 px-3.5 border-b border-slate-200/60 select-none flex items-center justify-between">
           <button
             type="button"
             onClick={() => setSelectedStudent(null)}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#1A4731] transition"
+            className="min-h-[44px] min-w-[44px] flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-[#1A4731] active:scale-[0.97] transition"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Students</span>
           </button>
+          <span className="text-xs font-bold text-slate-500">Student Profile</span>
         </div>
 
         {/* Profile Card (Reference Screen 9) */}
@@ -436,15 +438,24 @@ export default function AdminStudentsView({
       {/* Students List */}
       <div className="space-y-2">
         {filteredStudents.length === 0 ? (
-          <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-6">
+          <div className="py-12 bg-white rounded-2xl border border-dashed border-slate-200 text-center space-y-2 p-6">
+            <UserCheck className="w-8 h-8 text-slate-300 mx-auto" />
             <p className="text-xs font-bold text-slate-700">No students found</p>
+            <p className="text-[11px] text-slate-400">Try adjusting your filters or search query</p>
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); setActiveFilter('all'); setSelectedDept('ALL'); }}
+              className="mt-2 px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-bold text-[#1A4731] hover:bg-slate-200"
+            >
+              Clear Search
+            </button>
           </div>
         ) : (
           filteredStudents.map((student) => (
             <div
               key={student.roll_no}
               onClick={() => setSelectedStudent(student)}
-              className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-2xs flex items-center justify-between cursor-pointer hover:border-slate-300 transition"
+              className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-2xs flex items-center justify-between cursor-pointer hover:border-slate-300 active:scale-[0.98] transition-transform"
             >
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-full bg-[#1A4731]/10 text-[#1A4731] font-black text-xs flex items-center justify-center ring-1 ring-[#1A4731]/20">
@@ -454,14 +465,14 @@ export default function AdminStudentsView({
                   <h4 className="text-xs font-bold text-slate-900 leading-tight">
                     {student.name}
                   </h4>
-                  <p className="text-[10px] font-semibold text-slate-400">
+                  <p className="text-[11px] font-semibold text-slate-400">
                     {student.roll_no} &bull; CSE {student.section || '5A'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${
                   student.is_active !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
                 }`}>
                   {student.is_active !== false ? 'Active' : 'Inactive'}

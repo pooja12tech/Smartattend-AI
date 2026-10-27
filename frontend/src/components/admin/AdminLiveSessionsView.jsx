@@ -86,11 +86,11 @@ export default function AdminLiveSessionsView({
     return (
       <div className="space-y-4 pb-20">
         {/* Top Header */}
-        <div className="flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-[#F8FAF9]/95 backdrop-blur-md py-2 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
           <button
             type="button"
             onClick={() => setSelectedSession(null)}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#1A4731] transition"
+            className="flex items-center gap-1.5 min-h-[44px] min-w-[44px] text-xs font-bold text-slate-600 hover:text-[#1A4731] active:scale-[0.97] transition"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Live Sessions</span>
@@ -106,7 +106,7 @@ export default function AdminLiveSessionsView({
         {/* Session Card Info */}
         <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
           <div>
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#1A4731] bg-[#1A4731]/10 px-2 py-0.5 rounded-md">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#1A4731] bg-[#1A4731]/10 px-2 py-0.5 rounded-md">
               {selectedSession.section ? `CSE ${selectedSession.section}` : 'General Section'}
             </span>
             <h2 className="text-base font-extrabold text-[#111827] mt-1">
@@ -116,21 +116,21 @@ export default function AdminLiveSessionsView({
 
           <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 pt-1 border-t border-slate-100">
             <div>
-              <span className="text-slate-400 font-semibold block text-[10px]">Faculty</span>
+              <span className="text-slate-400 font-semibold block text-[11px]">Faculty</span>
               <span className="font-bold text-slate-800">{selectedSession.faculty_name || 'Assigned Faculty'}</span>
             </div>
             <div>
-              <span className="text-slate-400 font-semibold block text-[10px]">Location</span>
+              <span className="text-slate-400 font-semibold block text-[11px]">Location</span>
               <span className="font-bold text-slate-800">{selectedSession.room || 'Room not assigned'}</span>
             </div>
             <div>
-              <span className="text-slate-400 font-semibold block text-[10px]">Started At</span>
+              <span className="text-slate-400 font-semibold block text-[11px]">Started At</span>
               <span className="font-bold text-slate-800">
                 {selectedSession.start_time ? new Date(selectedSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not available'}
               </span>
             </div>
             <div>
-              <span className="text-slate-400 font-semibold block text-[10px]">Status</span>
+              <span className="text-slate-400 font-semibold block text-[11px]">Status</span>
               <span className={`font-bold ${selectedSession.status === 'ACTIVE' ? 'text-emerald-700' : 'text-slate-500'}`}>
                 {selectedSession.status === 'ACTIVE' ? 'Ongoing Session' : 'Ended'}
               </span>
@@ -139,22 +139,22 @@ export default function AdminLiveSessionsView({
         </div>
 
         {/* 4 KPI Counters */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 min-[380px]:grid-cols-4 gap-2">
           <div className="bg-white rounded-xl p-2.5 border border-slate-200/70 text-center shadow-xs">
             <span className="text-lg font-black text-slate-800 block leading-tight">{totalStudents}</span>
-            <span className="text-[10px] font-semibold text-slate-400">Total</span>
+            <span className="text-[11px] font-semibold text-slate-500">Total</span>
           </div>
           <div className="bg-white rounded-xl p-2.5 border border-emerald-200/80 text-center shadow-xs bg-emerald-50/20">
             <span className="text-lg font-black text-emerald-700 block leading-tight">{presentCount}</span>
-            <span className="text-[10px] font-semibold text-emerald-700">Present</span>
+            <span className="text-[11px] font-semibold text-emerald-700">Present</span>
           </div>
           <div className="bg-white rounded-xl p-2.5 border border-amber-200/80 text-center shadow-xs bg-amber-50/20">
             <span className="text-lg font-black text-amber-600 block leading-tight">{pendingCount}</span>
-            <span className="text-[10px] font-semibold text-amber-600">Pending</span>
+            <span className="text-[11px] font-semibold text-amber-600">Pending</span>
           </div>
           <div className="bg-white rounded-xl p-2.5 border border-red-200/80 text-center shadow-xs bg-red-50/20">
             <span className="text-lg font-black text-red-600 block leading-tight">{flaggedCount}</span>
-            <span className="text-[10px] font-semibold text-red-600">Review</span>
+            <span className="text-[11px] font-semibold text-red-600">Review</span>
           </div>
         </div>
 

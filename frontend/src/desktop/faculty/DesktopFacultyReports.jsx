@@ -150,11 +150,11 @@ export default function DesktopFacultyReports({ user, onGoHome }) {
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <span className="font-mono text-sm font-black text-rose-600">{item.currentPct}%</span>
-                  <span className="text-[10px] text-slate-400 block font-medium">
+                  <span className="text-[11px] text-slate-400 block font-medium">
                     Must attend next <strong>{item.needed} classes</strong>
                   </span>
                 </div>
-                <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
                   Deficit Notice
                 </span>
               </div>

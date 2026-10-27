@@ -35,10 +35,14 @@ export default function DesktopAdminLayout({
   const getInitialTab = () => {
     const { role, tab } = parsePath();
     if (role === 'admin' && tab) {
-      const cleanTab = tab.toLowerCase();
-      if (['overview', 'sessions', 'students', 'faculty', 'subjects', 'timetable', 'audit'].includes(cleanTab)) {
-        return cleanTab;
-      }
+      const cleanTab = tab.toLowerCase().replace(/-/g, '_');
+      if (['overview', 'dashboard', 'home'].includes(cleanTab)) return 'overview';
+      if (['sessions', 'live', 'live_sessions', 'manual_mark'].includes(cleanTab)) return 'sessions';
+      if (['students'].includes(cleanTab)) return 'students';
+      if (['faculty', 'teachers'].includes(cleanTab)) return 'faculty';
+      if (['subjects', 'departments'].includes(cleanTab)) return 'subjects';
+      if (['timetable'].includes(cleanTab)) return 'timetable';
+      if (['audit', 'reports', 'settings'].includes(cleanTab)) return 'audit';
     }
     return 'overview';
   };
@@ -69,7 +73,7 @@ export default function DesktopAdminLayout({
   const activeSessionsCount = (overview?.sessions || []).filter(s => s.status === 'ACTIVE').length;
 
   return (
-    <div className="min-h-screen bg-[#F8FAF9] text-[#111827] flex font-sans selection:bg-[#1A4731] selection:text-white antialiased">
+    <div className="min-h-dvh bg-[#F8FAF9] text-[#111827] flex font-sans selection:bg-[#1A4731] selection:text-white antialiased">
       {/* 1. Left Sidebar */}
       <DesktopAdminSidebar
         activeTab={activeTab}
@@ -78,10 +82,12 @@ export default function DesktopAdminLayout({
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         activeSessionsCount={activeSessionsCount}
         pendingReviewsCount={pendingReviews?.length || 0}
+        user={user}
+        onLogout={onLogout}
       />
 
       {/* 2. Main Workspace */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top App Bar */}
         <DesktopAdminTopBar
           user={user}
@@ -94,7 +100,8 @@ export default function DesktopAdminLayout({
         />
 
         {/* Content Views */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 w-full">
+          <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6">
           {activeTab === 'overview' && (
             <DesktopAdminOverview
               overview={overview}
@@ -157,13 +164,14 @@ export default function DesktopAdminLayout({
             </div>
           )}
 
-          {activeTab === 'audit' && (
-            <DesktopAdminAudit
-              auditLogs={auditLogs}
-              loading={loading}
-              onRefresh={onRefreshAll}
-            />
-          )}
+            {activeTab === 'audit' && (
+              <DesktopAdminAudit
+                auditLogs={auditLogs}
+                loading={loading}
+                onRefresh={onRefreshAll}
+              />
+            )}
+          </div>
         </main>
       </div>
     </div>

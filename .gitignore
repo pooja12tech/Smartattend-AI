@@ -61,3 +61,4 @@ yarn-error.log*
 # Antigravity artifacts/scratch
 .gemini/
 .neon
+frontend/screenshots/

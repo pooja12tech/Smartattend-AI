@@ -31,11 +31,11 @@ export default function StudentAttendanceHistoryView({
   return (
     <div className="space-y-4">
       {/* Top Header: < Attendance History (Screen 14 Reference) */}
-      <div className="flex items-center justify-between pt-1">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-2 text-[#111827] font-extrabold text-base focus:outline-none"
+          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-[#111827] active:scale-[0.97] font-extrabold text-base focus:outline-none transition"
         >
           <ArrowLeft className="w-5 h-5 text-slate-700" />
           <span>Attendance History</span>
@@ -47,7 +47,7 @@ export default function StudentAttendanceHistoryView({
         <button
           type="button"
           onClick={() => setStatusFilter('ALL')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             statusFilter === 'ALL'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -59,7 +59,7 @@ export default function StudentAttendanceHistoryView({
         <button
           type="button"
           onClick={() => setStatusFilter('PRESENT')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             statusFilter === 'PRESENT'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -71,7 +71,7 @@ export default function StudentAttendanceHistoryView({
         <button
           type="button"
           onClick={() => setStatusFilter('ABSENT')}
-          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+          className={`flex-1 min-h-[44px] py-2 text-xs font-bold rounded-xl transition-all active:scale-[0.97] ${
             statusFilter === 'ABSENT'
               ? 'bg-[#1A4731] text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900'

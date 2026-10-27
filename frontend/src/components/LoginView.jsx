@@ -4,8 +4,11 @@ import {
   AlertTriangle, RefreshCw, Smartphone, Sparkles, Fingerprint
 } from 'lucide-react';
 import { api, getDeviceId, setCustomDeviceId } from '../api';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import LoginDesktop from './login/LoginDesktop';
 
 export default function LoginView({ onLoginSuccess }) {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   // Splash Screen State (Screen 1 Reference)
   const [showSplash, setShowSplash] = useState(() => {
     try {
@@ -128,7 +131,33 @@ export default function LoginView({ onLoginSuccess }) {
     setDeviceIdState(newId);
   };
 
-  // SCREEN 1: SPLASH SCREEN (Screen 1 Reference)
+  // DESKTOP LAYOUT (>= 1024px Viewport)
+  if (isDesktop) {
+    return (
+      <LoginDesktop
+        roleTab={roleTab}
+        onRoleTabChange={handleRoleTabChange}
+        identifier={identifier}
+        onIdentifierChange={setIdentifier}
+        password={password}
+        onPasswordChange={setPassword}
+        showPassword={showPassword}
+        onToggleShowPassword={() => setShowPassword(!showPassword)}
+        rememberMe={rememberMe}
+        onRememberMeChange={setRememberMe}
+        onSubmit={handleSubmit}
+        loading={loading}
+        error={error}
+        infoMessage={infoMessage}
+        onForgotPassword={() => setInfoMessage('For password assistance, please contact the campus administrator or registrar desk.')}
+        onBiometricLogin={handleBiometricLoginSimulation}
+        deviceId={deviceId}
+        onRegenerateDeviceId={regenerateDeviceId}
+      />
+    );
+  }
+
+  // SCREEN 1: SPLASH SCREEN (Screen 1 Reference - Phone Only)
   if (showSplash) {
     return (
       <div
@@ -159,9 +188,9 @@ export default function LoginView({ onLoginSuccess }) {
     );
   }
 
-  // SCREEN 2: LOGIN SCREEN (Screen 2 Reference)
+  // SCREEN 2: MOBILE LOGIN SCREEN (< 1024px)
   return (
-    <div className="min-h-screen bg-[#F8FAF9] text-[#111827] flex flex-col justify-center items-center px-4 py-8 sm:py-12">
+    <div className="min-h-dvh bg-[#F8FAF9] text-[#111827] flex flex-col justify-center items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-sm sm:max-w-md space-y-6">
         
         {/* Header (Screen 2 Reference) */}
@@ -341,25 +370,29 @@ export default function LoginView({ onLoginSuccess }) {
             <span>Face ID / Biometric Login</span>
           </button>
 
-          {/* Hardware Device Fingerprint Badge (testing mode) */}
+          {/* Hardware Device Fingerprint Badge (testing mode - collapsed disclosure) */}
           {roleTab === 'student' && (
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
-              <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="text-[10px] font-semibold flex items-center gap-1 text-slate-700">
-                  <Smartphone className="w-3 h-3 text-emerald-700" /> Device Binding (Test Mode)
-                </span>
-                <button
-                  type="button"
-                  onClick={regenerateDeviceId}
-                  className="text-[10px] text-emerald-800 hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <RefreshCw className="w-2.5 h-2.5" /> New Device
-                </button>
+            <details className="pt-1 text-left select-none">
+              <summary className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer flex items-center gap-1">
+                <Smartphone className="w-3 h-3 text-slate-400" />
+                <span>Device Binding Diagnostics</span>
+              </summary>
+              <div className="mt-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <div className="flex items-center justify-between text-slate-500">
+                  <span className="text-[10px] font-semibold text-slate-700">Hardware ID</span>
+                  <button
+                    type="button"
+                    onClick={regenerateDeviceId}
+                    className="text-[10px] text-emerald-800 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" /> New Device
+                  </button>
+                </div>
+                <div className="font-mono text-[10px] text-slate-600 truncate bg-white p-1 rounded border border-slate-200">
+                  {deviceId}
+                </div>
               </div>
-              <div className="font-mono text-[10px] text-slate-600 truncate bg-white p-1 rounded border border-slate-200">
-                {deviceId}
-              </div>
-            </div>
+            </details>
           )}
 
           {/* Campus IT Support Notice */}

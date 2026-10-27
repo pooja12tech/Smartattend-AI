@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, CheckCircle2, XCircle, AlertTriangle, ShieldAlert,
-  Search, Eye, Filter, RefreshCw, Check, X, MapPin, Camera
+  Search, Eye, Filter, RefreshCw, Check, X, MapPin, Camera, UserCheck
 } from 'lucide-react';
 import { api } from '../../api';
+import Modal from '../ui/Modal';
+import { toast } from '../ui/Toast';
 
 export default function AdminPendingReviewView({
   onBack,
@@ -35,7 +37,7 @@ export default function AdminPendingReviewView({
 
   const handleAction = async (review, action) => {
     if (!review?.session_id || !review?.roll_no) {
-      alert('Cannot perform review action: missing session ID or student roll number.');
+      toast.warning('Cannot perform review action: missing session ID or student roll number.');
       return;
     }
     const normalizedAction = action.toUpperCase().startsWith('APP') ? 'APPROVE' : 'REJECT';
@@ -51,9 +53,10 @@ export default function AdminPendingReviewView({
       setReviews(prev => prev.filter(r => r.id !== review.id));
       setSelectedReviewModal(null);
       setRemarks('');
+      toast.success(`Record ${normalizedAction === 'APPROVE' ? 'approved' : 'rejected'} successfully.`);
       if (onStudentReviewed) onStudentReviewed();
     } catch (err) {
-      alert(`Review action failed: ${err.message || 'Server error occurred during verification'}`);
+      toast.error(`Review action failed: ${err.message || 'Server error occurred during verification'}`);
     } finally {
       setActionLoading(null);
     }
@@ -82,14 +85,14 @@ export default function AdminPendingReviewView({
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Sticky Top App Bar */}
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-3.5 px-3.5 border-b border-slate-200/60 select-none flex items-center justify-between">
         <div className="flex items-center gap-2">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="p-1 -ml-1 text-slate-600 hover:text-slate-900"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center p-1 -ml-1 text-slate-600 hover:text-slate-900 active:scale-[0.97] transition"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -105,7 +108,8 @@ export default function AdminPendingReviewView({
           type="button"
           onClick={fetchReviews}
           disabled={loading}
-          className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-slate-900 transition"
+          className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-900 active:scale-[0.97] transition shadow-xs"
+          title="Refresh Queue"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
@@ -150,9 +154,19 @@ export default function AdminPendingReviewView({
 
       {/* Reviews List */}
       {loading ? (
-        <div className="py-16 text-center text-xs text-slate-400 font-semibold flex items-center justify-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-[#1A4731]" />
-          Checking pending verification queue...
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs space-y-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-full bg-slate-200" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="w-32 h-3.5 bg-slate-200 rounded" />
+                  <div className="w-24 h-2.5 bg-slate-100 rounded" />
+                </div>
+              </div>
+              <div className="w-full h-8 bg-slate-100 rounded-xl" />
+            </div>
+          ))}
         </div>
       ) : displayedReviews.length === 0 ? (
         <div className="py-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 p-6 space-y-2">
@@ -258,39 +272,32 @@ export default function AdminPendingReviewView({
         </div>
       )}
 
-      {/* Review Details Modal */}
-      {selectedReviewModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-3">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 border border-slate-200 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900">
-                Verification Details
-              </h3>
-              <button
-                type="button"
-                onClick={() => setSelectedReviewModal(null)}
-                className="p-1 rounded-full text-slate-400 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
+      {/* Review Details Bottom Sheet */}
+      <Modal
+        isOpen={Boolean(selectedReviewModal)}
+        onClose={() => setSelectedReviewModal(null)}
+        title="Verification Details"
+        subtitle="Review security exception flagged by anti-proxy engine"
+        variant="sheet"
+      >
+        {selectedReviewModal && (
+          <div className="space-y-4">
             <div className="space-y-2 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl space-y-1.5">
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Student:</span>
+                  <span className="text-slate-500 font-medium">Student:</span>
                   <span className="font-bold text-slate-800">{selectedReviewModal.student_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Roll Number:</span>
+                  <span className="text-slate-500 font-medium">Roll Number:</span>
                   <span className="font-bold text-slate-800">{selectedReviewModal.roll_no}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Session ID:</span>
-                  <span className="font-bold text-slate-800">{selectedReviewModal.session_id}</span>
+                  <span className="text-slate-500 font-medium">Session ID:</span>
+                  <span className="font-bold text-slate-800 font-mono text-[11px]">{selectedReviewModal.session_id}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Security Issue:</span>
+                  <span className="text-slate-500 font-medium">Security Issue:</span>
                   <span className="font-bold text-red-600">{selectedReviewModal.flag_reason || 'Low face match score'}</span>
                 </div>
               </div>
@@ -313,21 +320,21 @@ export default function AdminPendingReviewView({
               <button
                 type="button"
                 onClick={() => handleAction(selectedReviewModal, 'REJECT')}
-                className="flex-1 py-2.5 rounded-xl bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs"
+                className="flex-1 py-2.5 rounded-xl bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs active:scale-[0.98] transition"
               >
                 Reject Record
               </button>
               <button
                 type="button"
                 onClick={() => handleAction(selectedReviewModal, 'APPROVE')}
-                className="flex-1 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#1A4731]/90 text-white font-bold text-xs"
+                className="flex-1 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white font-bold text-xs active:scale-[0.98] transition shadow-xs"
               >
                 Approve Attendance
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

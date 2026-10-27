@@ -18,12 +18,16 @@ import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
 import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
 import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 
-import { USE_NEW_DESKTOP_LAYOUT } from '../App';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import DesktopLayout from '../desktop/DesktopLayout';
 import DesktopFacultyHome from '../desktop/faculty/DesktopFacultyHome';
 import { navigateToPath, parsePath } from '../router';
+import { toast } from './ui/Toast';
+import InstallAppButton from './InstallAppButton';
+import SmartAttendLoader from './ui/SmartAttendLoader';
 
 export default function FacultyPortal({ user, onLogout }) {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [portalTab, setPortalTab] = useState('live'); // 'live' | 'timetable'
   const [subject, setSubject] = useState('CS301 - Operating Systems');
   const [activeSession, setActiveSession] = useState(null);
@@ -71,6 +75,9 @@ export default function FacultyPortal({ user, onLogout }) {
       if (['home', 'classes', 'live', 'students', 'reports', 'profile'].includes(cleanTab)) {
         return cleanTab;
       }
+      if (cleanTab === 'timetable') return 'classes';
+      if (cleanTab === 'roster') return 'students';
+      if (cleanTab === 'setup') return 'home';
     }
     return 'home';
   };
@@ -92,7 +99,7 @@ export default function FacultyPortal({ user, onLogout }) {
   }, []);
 
   const [facultyTodaySchedule, setFacultyTodaySchedule] = useState([]);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [loadingSchedule, setLoadingSchedule] = useState(true);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Stepped Session Setup State (Screens 4 & 5)
@@ -344,7 +351,7 @@ export default function FacultyPortal({ user, onLogout }) {
         panoramicVideoRef.current.play();
       }
     } catch (err) {
-      alert('Camera access failed: ' + (err.message || 'Permission denied'));
+      toast.error('Camera access failed: ' + (err.message || 'Permission denied'));
       setPanoramicCameraActive(false);
     }
   };
@@ -373,11 +380,11 @@ export default function FacultyPortal({ user, onLogout }) {
   // Category 2: Run InsightFace Multi-Face AI on Panoramic Photo
   const handleRunPanoramicAI = async () => {
     if (!panoramicImage) {
-      alert('Please upload or snap a classroom photo first.');
+      toast.warning('Please upload or snap a classroom photo first.');
       return;
     }
     if (!activeSession) {
-      alert('Please start a lecture session first.');
+      toast.warning('Please start a lecture session first.');
       return;
     }
 
@@ -393,7 +400,9 @@ export default function FacultyPortal({ user, onLogout }) {
           spread: 85,
           origin: { y: 0.4 }
         });
-        setManualSuccessMsg(`Panoramic AI: Successfully verified and marked ${res.auto_marked_count} students PRESENT!`);
+        const msg = `Panoramic AI: Successfully verified and marked ${res.auto_marked_count} students PRESENT!`;
+        toast.success(msg);
+        setManualSuccessMsg(msg);
         setTimeout(() => setManualSuccessMsg(null), 5000);
 
         // Immediate refresh of roster and live stats
@@ -403,7 +412,7 @@ export default function FacultyPortal({ user, onLogout }) {
         if (rData && rData.roster) setRoster(rData.roster);
       }
     } catch (err) {
-      alert('Panoramic AI scan failed: ' + err.message);
+      toast.error('Panoramic AI scan failed: ' + err.message);
     } finally {
       setPanoramicLoading(false);
     }
@@ -583,10 +592,9 @@ export default function FacultyPortal({ user, onLogout }) {
   };
 
   // Start lecture session with dynamic teacher GPS anchoring (150m radius)
-  // Start lecture session with dynamic teacher GPS anchoring (150m radius)
   const handleStartSession = async (overrideSubject = null) => {
     if (isSessionActive) {
-      alert(`A lecture session is already active (${activeSession.session_code || activeSession.subject_name}). Please end the current session before starting a new one.`);
+      toast.warning(`A lecture session is already active (${activeSession.session_code || activeSession.subject_name}). Please end the current session before starting a new one.`);
       setPortalTab('live');
       return;
     }
@@ -649,8 +657,9 @@ export default function FacultyPortal({ user, onLogout }) {
         geofence_radius_meters: 150
       });
       setActiveSession(res.session);
+      toast.success(`Lecture session started for ${targetSubject}.`);
     } catch (err) {
-      alert('Error starting session: ' + err.message);
+      toast.error('Error starting session: ' + err.message);
     } finally {
       setStarting(false);
     }
@@ -713,10 +722,11 @@ export default function FacultyPortal({ user, onLogout }) {
       if (isAlreadyEnded) {
         setActiveSession(null);
         setQrData(null);
+        toast.info('Lecture session is closed.');
         setManualSuccessMsg('Lecture session is closed.');
         setTimeout(() => setManualSuccessMsg(null), 4000);
       } else {
-        alert('Error ending session: ' + err.message);
+        toast.error('Error ending session: ' + err.message);
       }
     } finally {
       setEnding(false);
@@ -870,7 +880,7 @@ export default function FacultyPortal({ user, onLogout }) {
   const handleManualOverride = async (rollNo, studentName, status = 'PRESENT', reason = null) => {
     const targetSessionId = activeSession?.session_id || sessionSummary?.session?.session_id;
     if (!targetSessionId) {
-      alert('Please start or select a lecture session first before marking attendance!');
+      toast.warning('Please start or select a lecture session first before marking attendance!');
       return;
     }
 
@@ -921,7 +931,7 @@ export default function FacultyPortal({ user, onLogout }) {
       setManualSuccessMsg(`Student ${studentName} (${rollNo}) marked ${status} (Faculty Override logged in Audit Trail).`);
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
-      alert('Manual override failed: ' + err.message);
+      toast.error('Manual override failed: ' + err.message);
     } finally {
       setActionLoading(false);
     }
@@ -971,7 +981,7 @@ export default function FacultyPortal({ user, onLogout }) {
       setManualSuccessMsg(`Student ${rollNo} exception request ${action}ED.`);
       setTimeout(() => setManualSuccessMsg(null), 4000);
     } catch (err) {
-      alert('Approval action failed: ' + err.message);
+      toast.error('Approval action failed: ' + err.message);
     } finally {
       setActionLoading(false);
     }
@@ -993,13 +1003,18 @@ export default function FacultyPortal({ user, onLogout }) {
     return true;
   });
 
+  if (loadingSchedule && facultyTodaySchedule.length === 0 && !activeSession) {
+    return <SmartAttendLoader variant="fullscreen" />;
+  }
+
   return (
     <>
-      {/* =========================================================================
-          FACULTY MOBILE-FIRST LAYOUT (< 768px Viewport)
-          Adheres to Warm-White & Forest-Green Design System (Phase A)
-      ========================================================================= */}
-      <div className="faculty-mobile-app block md:hidden pb-bottom-nav">
+      {!isDesktop ? (
+        /* =========================================================================
+            FACULTY MOBILE-FIRST LAYOUT (< 1024px Viewport)
+            Adheres to Warm-White & Forest-Green Design System (Phase A)
+        ========================================================================= */
+        <div className="faculty-mobile-app pb-bottom-nav">
         {/* Mobile Sticky Header */}
         <div className="max-w-md mx-auto px-4 pt-3 pb-2.5 flex items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-sm sticky top-0 z-30">
           <div>
@@ -1254,6 +1269,9 @@ export default function FacultyPortal({ user, onLogout }) {
                 </div>
               </div>
 
+              {/* PWA Install Button (Shown on phone if not installed) */}
+              <InstallAppButton variant="profile" />
+
               {/* Account Section & Logout */}
               <div className="pt-2">
                 <button
@@ -1329,15 +1347,12 @@ export default function FacultyPortal({ user, onLogout }) {
           isSessionActive={isSessionActive}
         />
       </div>
-
-      {/* =========================================================================
-          FACULTY DESKTOP EXPERIENCE:
-          When USE_NEW_DESKTOP_LAYOUT is true -> Modern DesktopLayout + DesktopFacultyHome
-          When USE_NEW_DESKTOP_LAYOUT is false -> Preserves 100% of legacy dark console
-      ========================================================================= */}
-      {USE_NEW_DESKTOP_LAYOUT ? (
-        <div className="hidden md:block">
-          <DesktopLayout
+    ) : (
+      /* =========================================================================
+          FACULTY DESKTOP EXPERIENCE (>= 1024px Viewport)
+          Modern DesktopLayout + DesktopFacultyHome
+      ========================================================================= */
+      <DesktopLayout
             user={user}
             todayFormattedDate={todayFormattedDate}
             isSessionActive={isSessionActive}
@@ -1385,1137 +1400,6 @@ export default function FacultyPortal({ user, onLogout }) {
               }}
             />
           </DesktopLayout>
-        </div>
-      ) : (
-        <div className="hidden md:block max-w-7xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-
-      {/* Faculty Portal Navigation Tabs (Phase 4 Timetable Integration) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-800">
-        <button
-          type="button"
-          onClick={() => setPortalTab('live')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
-            portalTab === 'live'
-              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Activity className="w-3.5 h-3.5" />
-          <span>Live Attendance & Console</span>
-          {isSessionActive && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-400 text-slate-950 font-black animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-950"></span>
-              ACTIVE
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setPortalTab('timetable')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
-            portalTab === 'timetable'
-              ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-          }`}
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          <span>My Timetable</span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-brand-500/20 text-brand-300 font-semibold border border-brand-500/30">
-            Weekly Schedule
-          </span>
-        </button>
-      </div>
-
-      {/* TAB 1: Live Lecture & Anti-Proxy Attendance Console */}
-      {portalTab === 'live' && (
-        <div className="space-y-6">
-
-          {/* Top Banner & Session Starter */}
-      <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-              FACULTY CONSOLE
-            </span>
-            {facultyGps.status === 'READY' && facultyGps.lat != null ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                <MapPin className="w-3 h-3 text-emerald-400" />
-                Live GPS: {Number(facultyGps.lat).toFixed(4)}, {Number(facultyGps.lng).toFixed(4)} (±{facultyGps.accuracy || 15}m) • 150m Geofence
-              </span>
-            ) : facultyGps.status === 'INITIALIZING' ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
-                Acquiring Faculty GPS...
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                <MapPin className="w-3 h-3 text-amber-400" />
-                Campus Geofence (150m Active)
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleRecalibrateGps}
-              title="Recalibrate and sync live faculty coordinates with server"
-              className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1 transition"
-            >
-              <RefreshCw className="w-2.5 h-2.5" /> Sync GPS
-            </button>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-white mt-1">Live Lecture & Smart Anti-Proxy Center</h1>
-          <p className="text-xs text-slate-400">
-            Broadcasting dynamic encrypted tokens (20-second rolling window) with real-time fraud detection.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <select
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            disabled={isSessionActive}
-            className="bg-slate-900 border border-slate-700 text-xs text-white rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-brand-500 disabled:opacity-60"
-          >
-            <option value="CS301 - Operating Systems">CS301 - Operating Systems</option>
-            <option value="CS402 - Machine Learning">CS402 - Machine Learning</option>
-            <option value="CS305 - Database Systems">CS305 - Database Systems</option>
-          </select>
-
-          {!isSessionActive ? (
-            <button
-              onClick={handleStartSession}
-              disabled={starting}
-              className="px-5 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-500/25 flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
-            >
-              {starting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
-              Start Lecture Session
-            </button>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="px-3.5 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                ACTIVE: {activeSession?.session_code || activeSession?.session_id?.substring(0, 8) || 'SESSION'}
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-300">
-                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Geofence: 150m (Live Faculty GPS: {facultyGps.lat ? `${facultyGps.lat.toFixed(4)}, ${facultyGps.lng.toFixed(4)}` : 'Syncing...'})</span>
-              </div>
-
-              {/* Ultrasonic Beacon Toggle */}
-              <button
-                type="button"
-                onClick={() => setUltrasonicBeaconActive(!ultrasonicBeaconActive)}
-                title={ultrasonicBeaconActive ? "Ultrasonic inaudible room audio beacon ACTIVE (18.8 kHz)" : "Ultrasonic beacon MUTED"}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  ultrasonicBeaconActive
-                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                    : 'bg-slate-900 border border-slate-800 text-slate-500 hover:text-slate-400'
-                }`}
-              >
-                <Radio className={`w-3.5 h-3.5 ${ultrasonicBeaconActive ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
-                <span className="hidden md:inline">Ultrasonic:</span> {ultrasonicBeaconActive ? 'ON' : 'OFF'}
-              </button>
-
-              {/* Panoramic AI Snapshot Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPanoramicModal(true);
-                  setPanoramicResult(null);
-                }}
-                className="px-3.5 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition active:scale-95"
-                title="Scan entire lecture hall at once with InsightFace Multi-Face AI"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Panoramic AI</span>
-              </button>
-
-              <button
-                onClick={handleEndSession}
-                disabled={ending}
-                className="px-4 py-2 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-md shadow-rose-500/20 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
-              >
-                {ending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-white" />}
-                End Session
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {manualSuccessMsg && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{manualSuccessMsg}</span>
-        </div>
-      )}
-
-      {/* Main Grid: Rotating QR Code Panel + Live Counters */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Column 1: Rotating Dynamic QR Code Projector View */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 flex flex-col items-center justify-center text-center relative overflow-hidden">
-          <div className="absolute top-3 left-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-            <Clock className="w-3.5 h-3.5 text-brand-400" /> Rotating Token
-          </div>
-
-          {isSessionActive && qrData && (
-            <button
-              type="button"
-              onClick={() => setQrProjectorOpen(true)}
-              title="Open Fullscreen Projector View"
-              className="absolute top-2.5 right-3 p-1.5 rounded-lg bg-slate-900/90 border border-slate-700 hover:border-brand-500 text-slate-300 hover:text-white transition flex items-center gap-1.5 text-[11px] font-semibold shadow-sm"
-            >
-              <Maximize2 className="w-3.5 h-3.5 text-brand-400" />
-              <span className="hidden sm:inline">Projector View</span>
-            </button>
-          )}
-
-          {isSessionActive && qrData ? (
-            <div className="space-y-4 pt-4 w-full flex flex-col items-center">
-              {/* QR Code Container */}
-              <div className="p-4 rounded-2xl bg-white shadow-2xl shadow-brand-500/10 border-4 border-slate-800">
-                <QRCodeSVG
-                  value={qrData.qr_token}
-                  size={210}
-                  level="H"
-                  includeMargin={true}
-                />
-              </div>
-
-              {/* 20-Second Visual Progress Bar */}
-              <div className="w-full max-w-xs space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-slate-400">Refreshes in</span>
-                  <span className="text-brand-400 font-mono text-sm">{qrData.expires_in_seconds}s</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-linear rounded-full"
-                    style={{ width: `${(qrData.expires_in_seconds / (qrData.refresh_interval_seconds || 20)) * 100}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-400 truncate max-w-xs">
-                {qrData.qr_token}
-              </div>
-            </div>
-          ) : (
-            <div className="py-16 text-slate-500 space-y-2">
-              <Play className="w-12 h-12 mx-auto text-slate-600 stroke-1" />
-              <p className="text-xs font-medium">Click "Start Lecture Session" to project the rotating dynamic QR code.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Column 2 & 3: Live Counters & Class Roster / Live Classroom Wall */}
-        <div className="lg:col-span-2 space-y-6">
-
-          {/* Counters Row */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="glass-card rounded-2xl p-4 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Present in Class</span>
-              <p className="text-2xl font-black text-emerald-400 mt-1">
-                {liveData?.counters?.present_count ?? presentCount}
-              </p>
-              <span className="text-[10px] text-slate-500">
-                {totalCount > 0 ? `${Math.round(((liveData?.counters?.present_count ?? presentCount) / totalCount) * 100)}% of enrolled` : 'Awaiting session'}
-              </span>
-            </div>
-            <div className="glass-card rounded-2xl p-4 border border-slate-800">
-              <span className="text-xs text-slate-400 font-medium">Pending Approvals</span>
-              <p className="text-2xl font-black text-amber-400 mt-1">
-                {liveData?.counters?.pending_count ?? pendingCount}
-              </p>
-              <span className="text-[10px] text-slate-500">Borrowed devices</span>
-            </div>
-            <div className="glass-card rounded-2xl p-4 border border-slate-800 flex flex-col justify-between">
-              <div>
-                <span className="text-xs text-slate-400 font-medium">Proxy Alerts Caught</span>
-                <p className="text-2xl font-black text-rose-400 mt-1">
-                  {liveData?.counters?.alerts_count || 0}
-                </p>
-                <span className="text-[10px] text-slate-500">Prevented frauds</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleOpenSyndicateInspector}
-                className="mt-2 text-[10px] font-bold text-rose-300 hover:text-white flex items-center gap-1 group transition w-fit"
-                title="View AI detected device-sharing rings and proxy syndicates"
-              >
-                <Network className="w-3 h-3 group-hover:scale-110 transition-transform" />
-                <span>Syndicate Intel &rarr;</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Real-time Attendance Velocity & UGC 75% Threshold Bar */}
-          {activeSession && totalCount > 0 && (
-            <div className="glass-panel rounded-2xl p-4 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-white flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                    Attendance Velocity
-                  </span>
-                  <span className="text-slate-400 font-mono text-[11px]">
-                    {presentCount} of {totalCount} Enrolled ({attendancePct}%)
-                  </span>
-                </div>
-                {attendancePct >= 75 ? (
-                  <span className="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
-                    <CheckCheck className="w-3.5 h-3.5" /> Met 75% Mandatory UGC Quorum
-                  </span>
-                ) : (
-                  <span className="text-amber-400 font-medium text-[11px]">
-                    Need {Math.max(0, Math.ceil(totalCount * 0.75) - presentCount)} more students for 75% UGC Quorum
-                  </span>
-                )}
-              </div>
-
-              {/* Progress Track */}
-              <div className="relative w-full h-3 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
-                {/* 75% Marker */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-amber-400/80 z-10 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
-                  style={{ left: '75%' }}
-                  title="75% UGC Minimum Attendance Rule"
-                />
-                <div
-                  className={`h-full transition-all duration-700 ease-out rounded-full ${
-                    attendancePct >= 75
-                      ? 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400 shadow-lg shadow-emerald-500/30'
-                      : 'bg-gradient-to-r from-emerald-600 to-teal-600'
-                  }`}
-                  style={{ width: `${Math.min(100, attendancePct)}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Real-Time Arrival Toast Celebration */}
-          {latestArrival && (
-            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-teal-500/20 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between shadow-xl shadow-emerald-500/10 animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center font-bold text-emerald-200 text-xs">
-                  {getInitials(latestArrival.name)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white text-xs">{latestArrival.name}</span>
-                    <span className="font-mono text-[11px] text-emerald-400">({latestArrival.roll_no})</span>
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/30 text-emerald-200 font-bold">VERIFIED</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300">
-                    Just checked in with live facial verification • {latestArrival.distance != null ? `${latestArrival.distance}m inside campus` : 'In classroom'}
-                  </p>
-                </div>
-              </div>
-              <span className="font-mono text-[11px] text-slate-400 hidden sm:inline">{latestArrival.time}</span>
-            </div>
-          )}
-
-          {/* Interactive Live Classroom Wall & Manual Override Panel */}
-          <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
-            
-            {/* Header: Controls, View Switcher & Filters */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Tv className="w-4 h-4 text-brand-400" />
-                  Live Classroom Wall
-                  <span className="text-[11px] font-normal text-slate-400">
-                    (Interactive Projector Grid & 1-Click Verification)
-                  </span>
-                </h3>
-              </div>
-
-              {/* View Switcher, Sound & Fullscreen Controls */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Search */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
-                  <input
-                    type="text"
-                    value={searchRoster}
-                    onChange={(e) => setSearchRoster(e.target.value)}
-                    placeholder="Search name / roll..."
-                    className="bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 w-36 sm:w-44"
-                  />
-                </div>
-
-                {/* View Switcher: Wall vs Table */}
-                <div className="inline-flex rounded-lg bg-slate-900 border border-slate-800 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('wall')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition ${
-                      viewMode === 'wall' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-white'
-                    }`}
-                    title="Live Avatar Grid View for Classroom Projection"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" /> Wall
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('table')}
-                    className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition ${
-                      viewMode === 'table' ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-white'
-                    }`}
-                    title="Detailed Audit Table View"
-                  >
-                    <List className="w-3.5 h-3.5" /> Table
-                  </button>
-                </div>
-
-                {/* Sound Chime Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setSoundEnabled(!soundEnabled)}
-                  title={soundEnabled ? 'Arrival chime sound ON' : 'Arrival chime sound MUTED'}
-                  className={`p-1.5 rounded-lg border text-xs transition ${
-                    soundEnabled
-                      ? 'bg-slate-900 border-slate-700 text-emerald-400 hover:text-emerald-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
-                  }`}
-                >
-                  {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                </button>
-
-                {/* Fullscreen / Theater Mode */}
-                <button
-                  type="button"
-                  onClick={toggleFullscreen}
-                  title="Toggle Projector Theater Mode"
-                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:text-white transition"
-                >
-                  {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setWallFilter('ALL')}
-                className={`px-3 py-1 rounded-lg font-medium transition ${
-                  wallFilter === 'ALL'
-                    ? 'bg-slate-800 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                All Enrolled ({totalCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setWallFilter('PRESENT')}
-                className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                  wallFilter === 'PRESENT'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold'
-                    : 'text-slate-400 hover:text-emerald-300'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                Present ({presentCount})
-              </button>
-              {pendingCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setWallFilter('PENDING')}
-                  className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                    wallFilter === 'PENDING'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold'
-                      : 'text-slate-400 hover:text-amber-300'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                  Pending ({pendingCount})
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setWallFilter('UNMARKED')}
-                className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                  wallFilter === 'UNMARKED'
-                    ? 'bg-slate-800 text-slate-200 font-bold'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-slate-600"></span>
-                Unmarked ({unmarkedCount})
-              </button>
-            </div>
-
-            {/* View Mode: Live Wall (Avatar Grid) */}
-            {viewMode === 'wall' ? (
-              <div>
-                {filteredRoster.length === 0 ? (
-                  <div className="py-12 text-center text-slate-500 space-y-2">
-                    <Users className="w-10 h-10 mx-auto text-slate-600 stroke-1" />
-                    <p className="text-xs font-medium">
-                      {isSessionActive
-                        ? 'No students found matching current filter.'
-                        : 'Start a lecture session to load enrolled students onto the Live Wall.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[500px] overflow-y-auto pr-1">
-                    {filteredRoster.map((s) => {
-                      const isPresent = s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT';
-                      const isPending = s.status === 'PENDING_APPROVAL';
-
-                      return (
-                        <div
-                          key={s.roll_no}
-                          className={`relative rounded-xl p-3 border transition-all duration-300 flex flex-col items-center text-center group ${
-                            isPresent
-                              ? 'bg-emerald-950/20 border-emerald-500/40 shadow-lg shadow-emerald-500/5 hover:border-emerald-400'
-                              : isPending
-                              ? 'bg-amber-950/20 border-amber-500/40 animate-pulse'
-                              : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
-                          }`}
-                        >
-                          {/* Top Status Pin */}
-                          <div className="absolute top-2 right-2">
-                            {isPresent ? (
-                              <span
-                                className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow"
-                                title="Verified Present"
-                              >
-                                <Check className="w-3.5 h-3.5 stroke-[3]" />
-                              </span>
-                            ) : isPending ? (
-                              <span
-                                className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"
-                                title="Pending Faculty Review"
-                              />
-                            ) : (
-                              <span
-                                className="w-2 h-2 rounded-full bg-slate-700 group-hover:bg-slate-600"
-                                title="Not Marked"
-                              />
-                            )}
-                          </div>
-
-                          {/* Student Avatar with Deterministic Gradient */}
-                          <div
-                            className={`w-12 h-12 rounded-full bg-gradient-to-tr ${getAvatarGradient(
-                              s.roll_no
-                            )} flex items-center justify-center text-white font-black text-sm shadow-md transition-transform duration-300 group-hover:scale-105 ${
-                              isPresent
-                                ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950'
-                                : isPending
-                                ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950'
-                                : 'opacity-70 group-hover:opacity-100'
-                            }`}
-                          >
-                            {getInitials(s.name)}
-                          </div>
-
-                          {/* Name & Roll No */}
-                          <div className="mt-2.5 w-full">
-                            <h4
-                              className={`text-xs font-bold truncate ${
-                                isPresent ? 'text-white' : 'text-slate-300'
-                              }`}
-                              title={s.name}
-                            >
-                              {s.name}
-                            </h4>
-                            <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                              {s.roll_no}
-                            </p>
-                          </div>
-
-                          {/* Status Pill or Fast 1-Click Action */}
-                          <div className="mt-2 w-full pt-2 border-t border-slate-800/80">
-                            {isPresent ? (
-                              <div className="text-[10px] font-mono text-emerald-400 space-y-0.5">
-                                <span className="font-bold flex items-center justify-center gap-1">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                  {s.status === 'MANUAL_PRESENT' ? 'Teacher Signed' : s.face_status === 'PANORAMIC_AI_MATCH' ? 'Panoramic AI' : 'Verified'}
-                                </span>
-                                {s.ultrasonic_verified && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-0.5">
-                                    <Radio className="w-2 h-2" /> Acoustic
-                                  </span>
-                                )}
-                                {s.marked_at && (
-                                  <span className="text-[9px] text-slate-400 block">
-                                    {new Date(s.marked_at).toLocaleTimeString([], {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      second: '2-digit'
-                                    })}
-                                  </span>
-                                )}
-                              </div>
-                            ) : isPending ? (
-                              <div className="flex gap-1 w-full justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleApproveException(s.roll_no, 'APPROVE')}
-                                  disabled={actionLoading}
-                                  className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition"
-                                  title="Approve student exception"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleApproveException(s.roll_no, 'REJECT')}
-                                  disabled={actionLoading}
-                                  className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] transition"
-                                  title="Reject student exception"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleManualOverride(s.roll_no, s.name)}
-                                disabled={actionLoading}
-                                className="w-full py-1 px-1.5 rounded-lg bg-slate-800 hover:bg-brand-600 text-slate-300 hover:text-white font-medium text-[10px] transition active:scale-95 disabled:opacity-50"
-                                title="One-click manual override if student is sitting in class"
-                              >
-                                Mark Present
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* View Mode: Detailed Table View */
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                      <th className="py-2.5 px-3">Roll No</th>
-                      <th className="py-2.5 px-3">Student Name</th>
-                      <th className="py-2.5 px-3">Dept</th>
-                      <th className="py-2.5 px-3">Time Marked</th>
-                      <th className="py-2.5 px-3">Location / Geofence</th>
-                      <th className="py-2.5 px-3 text-right">Status / Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {filteredRoster.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="py-6 text-center text-slate-500 text-xs">
-                          {activeSession ? 'No students found matching search.' : 'Start a lecture session to load enrolled students.'}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredRoster.map((s) => (
-                        <tr key={s.roll_no} className="hover:bg-slate-900/40">
-                          <td className="py-2.5 px-3 font-mono font-bold text-slate-300">{s.roll_no}</td>
-                          <td className="py-2.5 px-3 text-slate-200 font-medium">{s.name}</td>
-                          <td className="py-2.5 px-3 text-slate-400">{s.department}</td>
-                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-300">
-                            {s.marked_at ? new Date(s.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
-                          </td>
-                          <td className="py-2.5 px-3 text-[11px]">
-                            {s.distance_meters != null ? (
-                              <span className="inline-flex items-center gap-1 font-mono text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                {s.distance_meters}m (Inside Campus)
-                              </span>
-                            ) : s.status === 'MANUAL_PRESENT' ? (
-                              <span className="text-slate-400 italic">Teacher Override</span>
-                            ) : (
-                              <span className="text-slate-500">—</span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            {s.status === 'PRESENT' || s.status === 'MANUAL_PRESENT' ? (
-                              <span className="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[11px] inline-flex items-center gap-1">
-                                <Check className="w-3 h-3" /> {s.status === 'MANUAL_PRESENT' ? 'Manual Present' : 'Present'}
-                              </span>
-                            ) : s.status === 'PENDING_APPROVAL' ? (
-                              <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 font-semibold text-[11px] inline-flex items-center gap-1">
-                                Pending Approval
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleManualOverride(s.roll_no, s.name)}
-                                disabled={actionLoading}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] shadow transition active:scale-95 disabled:opacity-50"
-                              >
-                                Mark Present Manually
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-        </div>
-
-
-      </div>
-
-      {/* Exception Approval Queue & Live Security Red Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* 1. Exception Approval Queue (Selfies of Borrowed Phones) */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-amber-400" />
-              Exception Mode Approval Queue
-            </h3>
-            <span className="text-xs font-mono font-bold text-amber-400">
-              {liveData?.pending_approvals?.length || 0} Pending
-            </span>
-          </div>
-
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-            {liveData?.pending_approvals?.length ? (
-              liveData.pending_approvals.map((req, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/30 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {req.live_selfie_base64 && (
-                      <img
-                        src={req.live_selfie_base64}
-                        alt="Selfie"
-                        className="w-12 h-12 rounded-lg object-cover border border-amber-500/40"
-                      />
-                    )}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-white">{req.student_name}</span>
-                        <span className="font-mono text-[10px] text-amber-300">({req.roll_no})</span>
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono truncate max-w-[180px]">
-                        Device: {req.device_id}
-                      </p>
-                      <p className="text-[10px] text-emerald-400 font-semibold">
-                        GPS: {req.distance_meters}m | Face: {req.face_match_score}%
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleApproveException(req.roll_no, 'APPROVE')}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApproveException(req.roll_no, 'REJECT')}
-                      className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-slate-500 py-6 text-center">No pending exception requests currently.</p>
-            )}
-          </div>
-        </div>
-
-        {/* 2. Real-Time Anti-Proxy Security Alerts (Red Feed) */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-rose-300 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-rose-400" />
-              Live Anti-Proxy Security Alerts (Caught Frauds)
-            </h3>
-            <span className="text-xs font-mono font-bold text-rose-400">
-              {liveData?.security_alerts?.length || 0} Alerts
-            </span>
-          </div>
-
-          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-            {liveData?.security_alerts?.length ? (
-              liveData.security_alerts.map((alert, idx) => (
-                <div key={idx} className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-rose-300 font-mono text-[11px]">{alert.failed_gate}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">Roll: {alert.roll_no}</span>
-                  </div>
-                  <p className="text-slate-300 text-[11px]">{alert.reason}</p>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-slate-500 py-6 text-center">No security alerts or fraud attempts detected in this lecture.</p>
-            )}
-          </div>
-        </div>
-
-      </div>
-        </div>
-      )}
-
-      {/* TAB 2: Official Faculty Timetable (Phase 4 View) */}
-      {portalTab === 'timetable' && (
-        <FacultyTimetable
-          user={user}
-          activeSession={activeSession}
-          onStartAttendance={(slot) => {
-            const fullSubj = `${slot.subject_code} - ${slot.subject_name}`;
-            handleStartSession(fullSubj);
-          }}
-          onSwitchToLive={() => setPortalTab('live')}
-        />
-      )}
-
-      {/* Category 2 Modal 1: Panoramic Classroom Snapshot AI */}
-      {showPanoramicModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-4xl rounded-3xl border border-slate-700 p-6 space-y-5 bg-slate-900/95 max-h-[90vh] overflow-y-auto shadow-2xl">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  <Camera className="w-5 h-5 text-emerald-400" />
-                  Panoramic Classroom AI Face Scanner
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    Category 2 AI
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Scan 40–80 students in a single wide lecture hall photo. Multi-face InsightFace AI detects and batch-verifies enrolled students simultaneously.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPanoramicModal(false);
-                  handleStopPanoramicWebcam();
-                }}
-                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Tab Switcher: Upload Photo vs Live Webcam Viewfinder */}
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setPanoramicTab('upload');
-                  handleStopPanoramicWebcam();
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  panoramicTab === 'upload' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5" /> Upload Lecture Hall Photo
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPanoramicTab('camera');
-                  handleStartPanoramicWebcam();
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  panoramicTab === 'camera' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white bg-slate-800/60'
-                }`}
-              >
-                <Camera className="w-3.5 h-3.5" /> Webcam / Camera Viewfinder
-              </button>
-            </div>
-
-            {/* Tab 1: Upload Wide Photo */}
-            {panoramicTab === 'upload' && !panoramicResult && (
-              <div className="space-y-4">
-                <label className="border-2 border-dashed border-slate-700 hover:border-emerald-500/60 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition bg-slate-900/40 hover:bg-slate-900/80">
-                  <Upload className="w-10 h-10 text-emerald-400 mb-2" />
-                  <span className="text-xs font-bold text-white">Click or drag a wide classroom picture</span>
-                  <span className="text-[11px] text-slate-500 mt-1">Supports high-res JPEG, PNG, WebP up to 15MB</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleUploadPanoramicPhoto}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            )}
-
-            {/* Tab 2: Live Camera Viewfinder */}
-            {panoramicTab === 'camera' && !panoramicResult && (
-              <div className="space-y-3 flex flex-col items-center">
-                <div className="relative rounded-2xl overflow-hidden border border-slate-700 w-full max-w-lg aspect-video bg-black flex items-center justify-center">
-                  <video
-                    ref={panoramicVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCapturePanoramicSnapshot}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"
-                >
-                  <Camera className="w-4 h-4" /> Snap Classroom View
-                </button>
-              </div>
-            )}
-
-            {/* Preview Selected / Captured Image */}
-            {panoramicImage && !panoramicResult && (
-              <div className="space-y-3">
-                <div className="relative rounded-2xl overflow-hidden border border-emerald-500/40 max-h-72 flex items-center justify-center bg-black">
-                  <img src={panoramicImage} alt="Classroom Preview" className="max-h-72 w-auto object-contain" />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPanoramicImage(null)}
-                    disabled={panoramicLoading}
-                    className="px-3.5 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold"
-                  >
-                    Clear Photo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRunPanoramicAI}
-                    disabled={panoramicLoading}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/25 flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {panoramicLoading ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        Scanning 60+ Faces with InsightFace...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Run Multi-Face AI (Auto-Mark Present)
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Panoramic AI Results View */}
-            {panoramicResult && (
-              <div className="space-y-4">
-                {/* Metrics Pill Row */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="glass-card rounded-xl p-3 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Faces Detected</span>
-                    <p className="text-xl font-black text-white mt-0.5">{panoramicResult.total_detected_faces}</p>
-                  </div>
-                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
-                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Enrolled Matched</span>
-                    <p className="text-xl font-black text-emerald-400 mt-0.5">{panoramicResult.matched_count}</p>
-                  </div>
-                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
-                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Auto-Marked Present</span>
-                    <p className="text-xl font-black text-emerald-300 mt-0.5">{panoramicResult.auto_marked_count}</p>
-                  </div>
-                  <div className="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-500/10 text-center">
-                    <span className="text-[10px] text-amber-300 uppercase font-semibold">Visitors / Unenrolled</span>
-                    <p className="text-xl font-black text-amber-400 mt-0.5">{panoramicResult.unmatched_count}</p>
-                  </div>
-                </div>
-
-                {/* Annotated Image with Green & Amber Boxes */}
-                <div className="relative rounded-2xl overflow-hidden border border-slate-700 bg-black flex items-center justify-center max-h-96">
-                  <img
-                    src={panoramicResult.annotated_image_base64}
-                    alt="AI Annotated Classroom"
-                    className="max-h-96 w-auto object-contain"
-                  />
-                </div>
-
-                {/* Matched Students Tag List */}
-                <div className="space-y-1.5">
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    Verified Students (Auto-Updated on Live Classroom Wall):
-                  </span>
-                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1 bg-slate-900/60 rounded-xl border border-slate-800">
-                    {panoramicResult.matched_students.map((st, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-[11px] font-mono flex items-center gap-1"
-                      >
-                        <span className="font-bold">{st.name}</span> ({st.roll_no}) • {st.confidence_score}%
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPanoramicResult(null);
-                      setPanoramicImage(null);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition"
-                  >
-                    Scan Another Photo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPanoramicModal(false)}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg"
-                  >
-                    Done & Return to Live Wall
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
-      {/* Category 2 Modal 2: Fraud Syndicate & Proxy Ring Intelligence */}
-      {showSyndicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-3xl rounded-3xl border border-rose-500/40 p-6 space-y-5 bg-slate-900/95 max-h-[90vh] overflow-y-auto shadow-2xl">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-rose-300 flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-rose-400" />
-                  AI Fraud Syndicate & Proxy Ring Intelligence
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Category 2 ML
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Bipartite graph clustering detects shared physical devices, rapid replay submissions, and repeat gate violations.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSyndicateModal(false)}
-                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {syndicateLoading ? (
-              <div className="py-12 text-center text-slate-400 space-y-2">
-                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-rose-400" />
-                <p className="text-xs">Computing fraud graph clusters and analyzing device fingerprints...</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Metric Summary */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="glass-card rounded-xl p-3 border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Caught Breaches</span>
-                    <p className="text-xl font-black text-rose-400 mt-0.5">{syndicateData?.total_alerts || 0}</p>
-                  </div>
-                  <div className="glass-card rounded-xl p-3 border border-amber-500/30 bg-amber-500/10 text-center">
-                    <span className="text-[10px] text-amber-300 uppercase font-semibold">Syndicate Rings</span>
-                    <p className="text-xl font-black text-amber-400 mt-0.5">{syndicateData?.syndicates_detected || 0}</p>
-                  </div>
-                  <div className="glass-card rounded-xl p-3 border border-emerald-500/30 bg-emerald-500/10 text-center">
-                    <span className="text-[10px] text-emerald-300 uppercase font-semibold">Status</span>
-                    <p className="text-sm font-bold text-emerald-400 mt-1">Active Defense</p>
-                  </div>
-                </div>
-
-                {/* Detected Syndicates List */}
-                <div className="space-y-2.5">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Network className="w-4 h-4 text-rose-400" />
-                    Detected Proxy Syndicates & Collusion Clusters:
-                  </h4>
-
-                  {syndicateData?.syndicates?.length ? (
-                    syndicateData.syndicates.map((syn, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-xs text-rose-300">{syn.syndicate_id}</span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            syn.severity === 'CRITICAL' ? 'bg-rose-600 text-white' : 'bg-amber-600 text-white'
-                          }`}>
-                            {syn.severity} RISK
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-200 font-medium">{syn.description}</p>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                          <span className="text-slate-500">Involved Roll Nos:</span>
-                          <span className="font-mono font-bold text-emerald-300">{syn.involved_students?.join(', ')}</span>
-                        </div>
-                        <p className="text-[10px] text-amber-300 italic pt-1 border-t border-rose-500/20">
-                          Recommendation: {syn.recommendation}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center text-slate-500 text-xs">
-                      No multi-user device-sharing or coordinated proxy rings detected in this lecture session.
-                    </div>
-                  )}
-                </div>
-
-                {/* Recent Alerts Feed */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-300">Recent Anti-Proxy Forensics (Raw Gates):</h4>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {syndicateData?.alerts?.length ? (
-                      syndicateData.alerts.map((al, idx) => (
-                        <div key={idx} className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs flex items-center justify-between">
-                          <div>
-                            <span className="font-mono font-bold text-rose-400 text-[11px]">{al.failed_gate}</span>
-                            <span className="text-slate-400 text-[10px] ml-2">Roll: {al.roll_no || 'Unknown'}</span>
-                            <p className="text-slate-300 text-[10px] mt-0.5">{al.reason}</p>
-                          </div>
-                          <span className="text-[9px] font-mono text-slate-500">{al.created_at ? new Date(al.created_at).toLocaleTimeString() : ''}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-500 py-3 text-center">No alerts logged yet.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setShowSyndicateModal(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition"
-                  >
-                    Close Inspector
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
-        </div>
       )}
 
       {/* Dedicated High-Contrast Fullscreen Projector Modal for Lecture Halls */}

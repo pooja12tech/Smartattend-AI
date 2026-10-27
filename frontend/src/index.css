@@ -6,19 +6,57 @@
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
+
+  :focus-visible {
+    outline: 2px solid #1A4731;
+    outline-offset: 2px;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* PWA Mobile & Safe Area Inset Support */
 html {
   overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100%;
 }
 
 body {
-  overflow-x: hidden;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+  min-height: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media all and (display-mode: standalone) {
+  html {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Scrollbar utilities to hide scrollbars on all browsers */
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 /* Prevent auto-zooming on focus in iOS Safari without disabling user zoom */
@@ -41,10 +79,6 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.35);
 }
 
 .glow-rose {
@@ -72,14 +106,14 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: #F1F5F9;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #94A3B8;
 }
 
 /* Student Mobile UI Design System Tokens */
@@ -281,3 +315,100 @@ body {
 .touch-card-interactive:active {
   transform: scale(0.975);
 }
+
+/* ========================================================
+   SmartAttend Next-Gen Unified Loader Animations
+   ======================================================== */
+@keyframes smartattend-radar-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.75);
+    opacity: 0;
+  }
+}
+
+@keyframes smartattend-orbit-cw {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes smartattend-orbit-ccw {
+  0% {
+    transform: rotate(360deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes smartattend-laser-scan {
+  0%, 100% {
+    top: 8%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  95% {
+    top: 90%;
+    opacity: 0.1;
+  }
+}
+
+@keyframes smartattend-glow-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.65;
+  }
+}
+
+@keyframes smartattend-shimmer-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.animate-smart-radar {
+  animation: smartattend-radar-pulse 1.7s cubic-bezier(0.1, 0.85, 0.25, 1) infinite;
+}
+
+.animate-smart-orbit-cw {
+  animation: smartattend-orbit-cw 2.6s linear infinite;
+}
+
+.animate-smart-orbit-ccw {
+  animation: smartattend-orbit-ccw 3.6s linear infinite;
+}
+
+.animate-smart-laser {
+  animation: smartattend-laser-scan 1.8s ease-in-out infinite;
+}
+
+.animate-smart-glow {
+  animation: smartattend-glow-breathe 2.4s ease-in-out infinite;
+}
+
+.animate-smart-shimmer {
+  animation: smartattend-shimmer-progress 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+

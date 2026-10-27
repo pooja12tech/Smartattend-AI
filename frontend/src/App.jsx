@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
 import LoginView from './components/LoginView';
 import StudentPortal from './components/StudentPortal';
 import FacultyPortal from './components/FacultyPortal';
@@ -7,14 +6,14 @@ import AdminPortal from './components/AdminPortal';
 import OfflineBanner from './components/OfflineBanner';
 import PwaUpdateToast from './components/PwaUpdateToast';
 import IosInstallBanner from './components/IosInstallBanner';
+import { ToastContainer } from './components/ui/Toast';
 import { api, getDeviceId } from './api';
 
 import { getCleanPath, replacePath, parsePath } from './router';
-
-// Feature flag for new desktop experience (1-line toggle to revert)
-export const USE_NEW_DESKTOP_LAYOUT = true;
+import { useMediaQuery } from './hooks/useMediaQuery';
 
 export default function App() {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('smartattend_current_user');
     return saved ? JSON.parse(saved) : null;
@@ -78,44 +77,27 @@ export default function App() {
     }
   }, [currentUser]);
 
-  const isStudent = currentUser?.role === 'student';
-  const isFaculty = currentUser?.role === 'faculty';
-  const isAdmin = currentUser?.role === 'admin';
-  const isDarkPortal = !USE_NEW_DESKTOP_LAYOUT && (isAdmin || isFaculty);
-
   // Dynamically sync Android status bar theme-color
   useEffect(() => {
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      const isMobileWidth = typeof window !== 'undefined' && window.innerWidth < 768;
-      if (isAdmin) {
-        metaThemeColor.setAttribute('content', isMobileWidth ? '#F8FAF9' : '#020617');
-      } else if (isFaculty) {
-        metaThemeColor.setAttribute('content', (isMobileWidth || USE_NEW_DESKTOP_LAYOUT) ? '#F8FAF9' : '#020617');
-      } else {
-        metaThemeColor.setAttribute('content', '#F8FAF9');
-      }
+      metaThemeColor.setAttribute('content', '#F8FAF9');
     }
-  }, [isAdmin, isFaculty]);
+  }, [isDesktop]);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${isDarkPortal ? 'bg-[#F8FAF9] md:bg-slate-950 text-[#111827] md:text-slate-100' : 'bg-[#F8FAF9] text-[#111827]'}`}>
-      {/* Top Navbar for Legacy Desktop Faculty/Admin */}
-      {isDarkPortal && (
-        <div className="hidden md:block">
-          <Navbar
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            backendOnline={backendOnline}
-          />
-        </div>
-      )}
+    <div className="min-h-dvh flex flex-col font-sans bg-[#F8FAF9] text-[#111827]">
+      {/* In-app Toast Notifications */}
+      <ToastContainer />
 
       {/* Network Offline Status Banner */}
       <OfflineBanner />
 
       {/* iOS Safari Add to Home Screen Instructions */}
       <IosInstallBanner />
+
+      {/* PWA Update Ready Toast */}
+      <PwaUpdateToast />
 
       {/* Main Portal View */}
       <main className="flex-1">
@@ -134,13 +116,6 @@ export default function App() {
           <LoginView onLoginSuccess={handleLoginSuccess} />
         )}
       </main>
-
-      {/* Persistent Global Footer (for Desktop Admin & Desktop Faculty) */}
-      {isDarkPortal && (
-        <footer className="hidden md:block py-4 border-t border-slate-900 text-center text-xs text-slate-500">
-          SmartAttend-AI &copy; 2026 &bull; Production Anti-Proxy, Dynamic QR, Biometric & ML Defaulter Radar
-        </footer>
-      )}
     </div>
   );
 }

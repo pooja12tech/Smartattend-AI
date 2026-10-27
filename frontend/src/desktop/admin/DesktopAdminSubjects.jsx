@@ -79,10 +79,10 @@ export default function DesktopAdminSubjects({
           />
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="sticky top-0 bg-white/95 backdrop-blur-xs z-10 border-b border-slate-100">
+              <tr className="text-slate-400 uppercase text-[11px] tracking-wider font-bold">
                 <th className="py-3 px-3">Subject Code</th>
                 <th className="py-3 px-3">Course Title</th>
                 <th className="py-3 px-3">Department</th>
@@ -91,27 +91,47 @@ export default function DesktopAdminSubjects({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredSubjects.map((sub, idx) => (
-                <tr key={sub.code || sub.subject_code || idx} className="hover:bg-slate-50/80 transition">
-                  <td className="py-3 px-3 font-mono font-bold text-[#1A4731]">
-                    <span className="bg-[#EBF4EE] px-2 py-0.5 rounded-lg border border-emerald-200">
-                      {sub.code || sub.subject_code}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 font-extrabold text-slate-800">
-                    {sub.name || sub.subject_name}
-                  </td>
-                  <td className="py-3 px-3 text-slate-500">
-                    {sub.department || 'Computer Science & Engineering'}
-                  </td>
-                  <td className="py-3 px-3 font-bold text-slate-700">
-                    {sub.credits || 4} Credits
-                  </td>
-                  <td className="py-3 px-3 text-right text-slate-600 font-medium">
-                    {sub.faculty_name || sub.faculty_id || 'Prof. Faculty'}
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="py-3 px-3"><div className="h-6 bg-slate-100 rounded-lg w-16" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-200 rounded w-44" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-36" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-16" /></td>
+                    <td className="py-3 px-3 text-right"><div className="h-4 bg-slate-100 rounded w-24 ml-auto" /></td>
+                  </tr>
+                ))
+              ) : filteredSubjects.length > 0 ? (
+                filteredSubjects.map((sub, idx) => (
+                  <tr key={sub.code || sub.subject_code || idx} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-3 font-mono font-bold text-[#1A4731] whitespace-nowrap">
+                      <span className="bg-[#EBF4EE] px-2 py-0.5 rounded-lg border border-emerald-200">
+                        {sub.code || sub.subject_code}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-extrabold text-slate-800 truncate max-w-[240px]">
+                      {sub.name || sub.subject_name}
+                    </td>
+                    <td className="py-3 px-3 text-slate-500 truncate max-w-[200px]">
+                      {sub.department || 'Computer Science & Engineering'}
+                    </td>
+                    <td className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
+                      {sub.credits || 4} Credits
+                    </td>
+                    <td className="py-3 px-3 text-right text-slate-600 font-medium whitespace-nowrap">
+                      {sub.faculty_name || sub.faculty_id || 'Prof. Faculty'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="py-12 text-center text-slate-400 space-y-1">
+                    <BookOpen className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="font-bold text-sm text-slate-600">No courses match your search</p>
+                    <p className="text-xs">Try searching by course code or department</p>
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

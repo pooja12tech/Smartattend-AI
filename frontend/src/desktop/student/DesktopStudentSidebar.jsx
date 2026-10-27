@@ -41,7 +41,7 @@ export default function DesktopStudentSidebar({
 
   return (
     <aside
-      className="w-64 bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 select-none min-h-screen"
+      className="sticky top-0 h-screen self-start overflow-y-auto w-64 bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 select-none"
       aria-label="Student Navigation Sidebar"
     >
       {/* Top Brand & Profile */}
@@ -54,15 +54,10 @@ export default function DesktopStudentSidebar({
             className="w-11 h-11 object-contain shrink-0"
           />
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-extrabold text-[#111827] tracking-tight">
-                SmartAttend
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF4EE] text-[#1A4731] border border-[#1A4731]/15 uppercase tracking-wide">
-                Student
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium">Campus Attendance Portal</p>
+            <span className="text-base font-extrabold text-[#111827] tracking-tight block leading-tight">
+              SmartAttend
+            </span>
+            <p className="text-[12px] text-slate-500 font-medium mt-0.5">Student Portal</p>
           </div>
         </div>
 
@@ -83,7 +78,7 @@ export default function DesktopStudentSidebar({
 
         {/* Navigation Links */}
         <nav className="space-y-1.5" aria-label="Student Menu">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 block">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 block">
             Navigation
           </span>
 

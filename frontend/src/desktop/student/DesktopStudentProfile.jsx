@@ -104,7 +104,7 @@ export default function DesktopStudentProfile({
                 <p className="text-xs text-slate-400">Institutional registration details</p>
               </div>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
               Verified
             </span>
           </div>
@@ -146,7 +146,7 @@ export default function DesktopStudentProfile({
                 <p className="text-xs text-slate-400">University matriculation record</p>
               </div>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200">
               Active
             </span>
           </div>

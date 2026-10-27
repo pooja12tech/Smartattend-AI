@@ -3,6 +3,7 @@ import {
   ArrowLeft, User, ShieldCheck, ChevronRight, FileText, Calendar,
   Camera, Settings, Bell, Edit3, Fingerprint, Lock, LogOut, AlertTriangle
 } from 'lucide-react';
+import InstallAppButton from '../InstallAppButton';
 
 export default function StudentProfileView({
   dashboard,
@@ -152,6 +153,9 @@ export default function StudentProfileView({
           );
         })}
       </div>
+
+      {/* PWA Install Button (Shown on phone if not installed) */}
+      <InstallAppButton variant="profile" />
 
       {/* Account Section & Logout Button (Phase 2 Requirement) */}
       <div className="pt-1">

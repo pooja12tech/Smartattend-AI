@@ -20,10 +20,15 @@ import AdminTimetableMobileView from './admin/AdminTimetableMobileView';
 import AdminReportsView from './admin/AdminReportsView';
 import AdminSettingsView from './admin/AdminSettingsView';
 
-import { USE_NEW_DESKTOP_LAYOUT } from '../App';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import DesktopAdminLayout from '../desktop/admin/DesktopAdminLayout';
+import Modal from './ui/Modal';
+import { toast } from './ui/Toast';
+import SmartAttendLoader from './ui/SmartAttendLoader';
+import { navigateToPath, replacePath, parsePath } from '../router';
 
 export default function AdminPortal({ user, onLogout }) {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
   const todayFormattedDate = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
     day: 'numeric',
@@ -47,6 +52,7 @@ export default function AdminPortal({ user, onLogout }) {
   const [resettingRoll, setResettingRoll] = useState(null);
   const [resettingFaceRoll, setResettingFaceRoll] = useState(null);
   const [deletingUserRoll, setDeletingUserRoll] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
 
   // Subjects State
   const [subjectsList, setSubjectsList] = useState([]);
@@ -86,9 +92,28 @@ export default function AdminPortal({ user, onLogout }) {
   const adminCanvasRef = useRef(null);
   const adminStreamRef = useRef(null);
 
-  // Mobile App Navigation State (Reference Screens 1-14)
-  const [mobileTab, setMobileTab] = useState('home'); // 'home' | 'users' | 'academics' | 'attendance' | 'more'
-  const [mobileScreen, setMobileScreen] = useState('dashboard'); // 'dashboard' | 'live_sessions' | 'pending_reviews' | 'manual_mark' | 'students' | 'faculty' | 'departments' | 'timetable' | 'reports' | 'settings'
+  // Mobile App Navigation State (Clean Path Synced)
+  const getInitialAdminMobileState = () => {
+    const { role, tab } = parsePath();
+    if (role === 'admin' && tab) {
+      const clean = tab.toLowerCase().replace(/-/g, '_');
+      if (['dashboard', 'overview', 'home'].includes(clean)) return { tab: 'home', screen: 'dashboard' };
+      if (['live', 'live_sessions', 'sessions'].includes(clean)) return { tab: 'attendance', screen: 'live_sessions' };
+      if (['pending_reviews', 'reviews'].includes(clean)) return { tab: 'attendance', screen: 'pending_reviews' };
+      if (['manual_mark'].includes(clean)) return { tab: 'attendance', screen: 'manual_mark' };
+      if (['students'].includes(clean)) return { tab: 'users', screen: 'students' };
+      if (['faculty', 'teachers'].includes(clean)) return { tab: 'users', screen: 'faculty' };
+      if (['departments', 'subjects'].includes(clean)) return { tab: 'academics', screen: 'departments' };
+      if (['timetable'].includes(clean)) return { tab: 'academics', screen: 'timetable' };
+      if (['reports'].includes(clean)) return { tab: 'more', screen: 'reports' };
+      if (['settings', 'audit'].includes(clean)) return { tab: 'more', screen: 'settings' };
+    }
+    return { tab: 'home', screen: 'dashboard' };
+  };
+
+  const initialMobileState = getInitialAdminMobileState();
+  const [mobileTab, setMobileTab] = useState(initialMobileState.tab);
+  const [mobileScreen, setMobileScreen] = useState(initialMobileState.screen);
   const [mobileSelectedStudentRoll, setMobileSelectedStudentRoll] = useState(null);
   const [pendingReviewsList, setPendingReviewsList] = useState([]);
 
@@ -136,6 +161,17 @@ export default function AdminPortal({ user, onLogout }) {
     showLogoutConfirmRef.current = showLogoutConfirm;
   }, [showLogoutConfirm]);
 
+  // Synchronize mobile screen and tab with browser popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      const state = getInitialAdminMobileState();
+      setMobileTab(state.tab);
+      setMobileScreen(state.screen);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [exitToast, setExitToast] = useState(false);
   const lastBackPressRef = useRef(0);
   const exitTimeoutRef = useRef(null);
@@ -156,41 +192,36 @@ export default function AdminPortal({ user, onLogout }) {
       tabId === 'academics' ? 'departments' :
       tabId === 'attendance' ? 'live_sessions' : 'settings'
     );
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', tab: tabId, screen: targetScreen }, '');
-    } catch {}
+    const targetPath = targetScreen === 'dashboard' ? 'overview'
+      : targetScreen === 'live_sessions' ? 'live'
+      : targetScreen === 'manual_mark' ? 'manual-mark'
+      : targetScreen === 'pending_reviews' ? 'reviews'
+      : targetScreen;
+    navigateToPath(`/admin/${targetPath}`);
     setMobileTab(tabId);
     setMobileScreen(targetScreen);
   };
 
   const handleOpenLiveSessions = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'live_sessions', tab: 'attendance' }, '');
-    } catch {}
+    navigateToPath('/admin/live');
     setMobileTab('attendance');
     setMobileScreen('live_sessions');
   };
 
   const handleOpenPendingReviews = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'pending_reviews', tab: 'attendance' }, '');
-    } catch {}
+    navigateToPath('/admin/reviews');
     setMobileTab('attendance');
     setMobileScreen('pending_reviews');
   };
 
   const handleOpenManualMark = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'manual_mark', tab: 'attendance' }, '');
-    } catch {}
+    navigateToPath('/admin/manual-mark');
     setMobileTab('attendance');
     setMobileScreen('manual_mark');
   };
 
   const handleOpenStudents = (studentRoll = null) => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'students', tab: 'users' }, '');
-    } catch {}
+    navigateToPath('/admin/students');
     setMobileTab('users');
     setMobileSelectedStudentRoll(studentRoll);
     if (studentRoll) {
@@ -201,41 +232,31 @@ export default function AdminPortal({ user, onLogout }) {
   };
 
   const handleOpenFaculty = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'faculty', tab: 'users' }, '');
-    } catch {}
+    navigateToPath('/admin/faculty');
     setMobileTab('users');
     setMobileScreen('faculty');
   };
 
   const handleOpenDepartments = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'departments', tab: 'academics' }, '');
-    } catch {}
+    navigateToPath('/admin/departments');
     setMobileTab('academics');
     setMobileScreen('departments');
   };
 
   const handleOpenTimetable = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'timetable', tab: 'academics' }, '');
-    } catch {}
+    navigateToPath('/admin/timetable');
     setMobileTab('academics');
     setMobileScreen('timetable');
   };
 
   const handleOpenReports = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'reports', tab: 'more' }, '');
-    } catch {}
+    navigateToPath('/admin/reports');
     setMobileTab('more');
     setMobileScreen('reports');
   };
 
   const handleOpenSettings = () => {
-    try {
-      window.history.pushState({ smartattend: true, role: 'admin', screen: 'settings', tab: 'more' }, '');
-    } catch {}
+    navigateToPath('/admin/settings');
     setMobileTab('more');
     setMobileScreen('settings');
   };
@@ -412,13 +433,15 @@ export default function AdminPortal({ user, onLogout }) {
     setResettingRoll(rollNo);
     try {
       await api.adminResetDevice(rollNo, reason);
-      setActionSuccess(`Hardware device lock reset for student ${rollNo}. Event logged in Audit Trail.`);
+      const msg = `Hardware device lock reset for student ${rollNo}. Event logged in Audit Trail.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
       fetchUsers();
       fetchOverview();
       fetchAuditLogs();
     } catch (err) {
-      alert('Failed to reset device lock: ' + err.message);
+      toast.error('Failed to reset device lock: ' + err.message);
     } finally {
       setResettingRoll(null);
     }
@@ -432,13 +455,15 @@ export default function AdminPortal({ user, onLogout }) {
     setResettingFaceRoll(rollNo);
     try {
       await api.adminResetFace(rollNo, reason);
-      setActionSuccess(`Biometric template reset for student ${rollNo}. Student must re-enroll face template.`);
+      const msg = `Biometric template reset for student ${rollNo}. Student must re-enroll face template.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
       fetchUsers();
       fetchOverview();
       fetchAuditLogs();
     } catch (err) {
-      alert('Failed to reset face template: ' + err.message);
+      toast.error('Failed to reset face template: ' + err.message);
     } finally {
       setResettingFaceRoll(null);
     }
@@ -457,13 +482,15 @@ export default function AdminPortal({ user, onLogout }) {
       } else if (review.roll_no) {
         await api.adminResetDevice(review.roll_no, 'Hardware device unbind approved by Administrator');
       }
-      setActionSuccess(`Review approved for ${review.student_name || review.roll_no}`);
+      const msg = `Review approved for ${review.student_name || review.roll_no}`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 3000);
       fetchPendingReviews();
       fetchOverview();
       fetchUsers();
     } catch (err) {
-      alert(`Approval failed: ${err.message || 'Server error'}`);
+      toast.error(`Approval failed: ${err.message || 'Server error'}`);
     }
   };
 
@@ -477,12 +504,14 @@ export default function AdminPortal({ user, onLogout }) {
           remarks: 'Rejected by System Administrator from Overview'
         });
       }
-      setActionSuccess(`Review rejected for ${review.student_name || review.roll_no}`);
+      const msg = `Review rejected for ${review.student_name || review.roll_no}`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 3000);
       fetchPendingReviews();
       fetchOverview();
     } catch (err) {
-      alert(`Rejection failed: ${err.message || 'Server error'}`);
+      toast.error(`Rejection failed: ${err.message || 'Server error'}`);
     }
   };
 
@@ -635,21 +664,26 @@ export default function AdminPortal({ user, onLogout }) {
   };
 
   // Delete User Account
-  const handleDeleteUser = async (rollOrId, name, role) => {
-    if (!window.confirm(`Are you sure you want to permanently delete ${role} account "${name}" (${rollOrId})?`)) {
-      return;
-    }
+  const handleDeleteUser = (rollOrId, name, role) => {
+    setUserToDelete({ rollOrId, name, role });
+  };
 
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    const { rollOrId, name, role } = userToDelete;
     setDeletingUserRoll(rollOrId);
     try {
       await api.adminDeleteUser(rollOrId);
-      setActionSuccess(`${role.toUpperCase()} account "${name}" (${rollOrId}) deleted successfully.`);
+      const msg = `${role.toUpperCase()} account "${name}" (${rollOrId}) deleted successfully.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
+      setUserToDelete(null);
       fetchUsers();
       fetchOverview();
       fetchAuditLogs();
     } catch (err) {
-      alert('Failed to delete user: ' + err.message);
+      toast.error('Failed to delete user: ' + err.message);
     } finally {
       setDeletingUserRoll(null);
     }
@@ -671,14 +705,16 @@ export default function AdminPortal({ user, onLogout }) {
         min_attendance_pct: 75.0
       });
       setShowAddSubjectModal(false);
-      setActionSuccess(`Subject ${subCode.toUpperCase()} successfully created and added to curriculum.`);
+      const msg = `Subject ${subCode.toUpperCase()} successfully created and added to curriculum.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
       fetchSubjects();
       fetchAuditLogs();
       setSubCode('');
       setSubName('');
     } catch (err) {
-      alert('Failed to create subject: ' + err.message);
+      toast.error('Failed to create subject: ' + err.message);
     } finally {
       setCreatingSubject(false);
     }
@@ -722,7 +758,9 @@ export default function AdminPortal({ user, onLogout }) {
 
       setShowAddModal(false);
       setNewStudentPhoto(null);
-      setActionSuccess(`New ${newRole.toUpperCase()} account created for ${newName} (${newRoll}).`);
+      const msg = `New ${newRole.toUpperCase()} account created for ${newName} (${newRoll}).`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
 
       // Re-fetch database lists immediately so newly added user appears right away!
@@ -735,7 +773,7 @@ export default function AdminPortal({ user, onLogout }) {
       setNewName('');
       setNewEmail('');
     } catch (err) {
-      alert('Error creating user: ' + err.message);
+      toast.error('Error creating user: ' + err.message);
     } finally {
       setCreatingUser(false);
     }
@@ -744,7 +782,7 @@ export default function AdminPortal({ user, onLogout }) {
   // 1-Click CSV Export for Defaulters
   const handleExportDefaultersCSV = () => {
     if (!overview?.high_risk_defaulters?.length) {
-      alert('No defaulters to export.');
+      toast.warning('No defaulters to export.');
       return;
     }
 
@@ -764,12 +802,7 @@ export default function AdminPortal({ user, onLogout }) {
   };
 
   if (loading && !overview) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500 gap-4">
-        <img src="/smartattend_logo.png" alt="SmartAttend" className="w-20 h-20 sm:w-24 sm:h-24 object-contain animate-ambient-float" />
-        <p className="text-sm font-semibold text-slate-700 tracking-wide">Loading SmartAttend Administration Console...</p>
-      </div>
-    );
+    return <SmartAttendLoader variant="fullscreen" />;
   }
 
   const counts = overview?.counts || {};
@@ -800,8 +833,8 @@ export default function AdminPortal({ user, onLogout }) {
 
   return (
     <>
-      {/* MOBILE APPLICATION (< 768px): Polished Forest Green & Warm White 14-Screen UI */}
-      <div className="block md:hidden min-h-screen bg-[#F8FAF9] text-[#111827] px-3.5 pt-3 pb-24">
+      {!isDesktop ? (
+        <div className="min-h-dvh bg-[#F8FAF9] text-[#111827] px-3.5 pt-3 pb-24">
         {mobileScreen === 'dashboard' && (
           <AdminDashboardView
             user={user}
@@ -973,11 +1006,8 @@ export default function AdminPortal({ user, onLogout }) {
           activeSessionsCount={(overview?.sessions || []).filter(s => s.status === 'ACTIVE').length}
         />
       </div>
-
-      {/* DESKTOP EXPERIENCE (>= 768px): Modern State-of-the-Art DesktopAdminLayout */}
-      {USE_NEW_DESKTOP_LAYOUT ? (
-        <div className="hidden md:block">
-          <DesktopAdminLayout
+    ) : (
+      <DesktopAdminLayout
             user={user}
             todayFormattedDate={todayFormattedDate}
             backendOnline={Boolean(overview)}
@@ -1004,1131 +1034,471 @@ export default function AdminPortal({ user, onLogout }) {
               fetchPendingReviews();
             }}
             onLogout={onLogout}
-          />
-        </div>
-      ) : (
-        <div className="hidden md:block max-w-6xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-sm font-bold shadow-lg shadow-emerald-500/10">
-              AD
-            </span>
-            <span>Administrator Control Center</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Institutional oversight, class & department distributions, teacher roster, and student biometric locks.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => openAddModalForRole('student')}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
-          >
-            <UserPlus className="w-3.5 h-3.5" /> + Add Student
-          </button>
-
-          <button
-            onClick={() => openAddModalForRole('faculty')}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 transition active:scale-95"
-          >
-            <UserPlus className="w-3.5 h-3.5" /> + Add Teacher
-          </button>
-
-          <button
-            onClick={() => { fetchOverview(); fetchUsers(); fetchAuditLogs(); }}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-            title="Refresh All"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {actionSuccess && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{actionSuccess}</span>
-        </div>
-      )}
-
-      {!overview && !loading && (
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-            <div>
-              <p className="font-bold">Backend Server Offline or Unreachable</p>
-              <p className="text-slate-400 text-[11px] mt-0.5">
-                Could not connect to FastAPI backend on <code className="text-amber-300 font-mono">http://127.0.0.1:8000</code>. Please start the backend server in your terminal.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => { fetchOverview(); fetchUsers(); fetchSubjects(); }}
-            className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold transition flex items-center gap-1.5 shrink-0"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Reconnect
-          </button>
-        </div>
-      )}
-
-      {/* Portal Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'overview' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <TrendingUp className="w-4 h-4" />
-          <span>Overview & Breakdown</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('teachers'); fetchUsers(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'teachers' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span>Teachers Directory ({facultyList.length})</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('students'); fetchUsers(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'students' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Students & Biometrics ({studentsList.length})</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('subjects'); fetchSubjects(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'subjects' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>Curriculum & Subjects ({subjectsList.length})</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('timetable'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'timetable' ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>Timetable & Schedules</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('audit'); fetchAuditLogs(); }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${activeTab === 'audit' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
-        >
-          <History className="w-4 h-4" />
-          <span>Audit Trail Logs</span>
-        </button>
-      </div>
-
-      {/* TAB 1: OVERVIEW & BREAKDOWN */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Institution Overview KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="glass-card rounded-2xl p-5 border border-slate-800">
-              <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Total Students</span>
-                <Users className="w-4 h-4 text-emerald-400" />
-              </div>
-              <p className="text-3xl font-black text-white mt-2">{studentsList.length || counts.students || 0}</p>
-              <p className="text-[10px] text-slate-400 mt-1">Enrolled across departments</p>
-            </div>
-
-            <div className="glass-card rounded-2xl p-5 border border-slate-800">
-              <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Active Teachers</span>
-                <GraduationCap className="w-4 h-4 text-emerald-400" />
-              </div>
-              <p className="text-3xl font-black text-white mt-2">{facultyList.length || counts.faculty || 0}</p>
-              <p className="text-[10px] text-slate-400 mt-1">Teaching faculty members</p>
-            </div>
-
-            <div className="glass-card rounded-2xl p-5 border border-slate-800">
-              <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>System Average Attendance</span>
-                <Award className="w-4 h-4 text-amber-400" />
-              </div>
-              <p className="text-3xl font-black text-white mt-2">{(overview?.system_average_attendance_pct ?? 80.0)}%</p>
-              <p className="text-[10px] text-emerald-400 mt-1">Safe campus threshold: 75%</p>
-            </div>
-
-            <div className="glass-card rounded-2xl p-5 border border-slate-800">
-              <div className="flex items-center justify-between text-slate-400 text-xs">
-                <span>Active Subjects</span>
-                <BookOpen className="w-4 h-4 text-emerald-400" />
-              </div>
-              <p className="text-3xl font-black text-white mt-2">{subjectsList.length || 3}</p>
-              <p className="text-[10px] text-slate-400 mt-1">Semester curriculum courses</p>
-            </div>
-          </div>
-
-          {/* Department-wise & Class-wise Breakdown Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Department-wise Distribution */}
-            <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Department-Wise Distribution</h3>
-              </div>
-              <p className="text-xs text-slate-400">Total students and faculty mapped per academic department.</p>
-
-              <div className="space-y-3">
-                {Object.keys(deptBreakdown).length > 0 ? (
-                  Object.entries(deptBreakdown).map(([dept, data]) => (
-                    <div key={dept} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
-                      <div>
-                        <h4 className="text-xs font-bold text-white">{dept}</h4>
-                        <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
-                          <span className="flex items-center gap-1 text-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {data.students} Students
-                          </span>
-                          <span className="flex items-center gap-1 text-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {data.faculty} Faculty
-                          </span>
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 font-mono text-xs font-bold">
-                        {data.students + data.faculty} total
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-500">No department data available.</p>
-                )}
-              </div>
-            </div>
-
-            {/* Class / Semester-wise Distribution */}
-            <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-brand-400" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Class / Semester-Wise Distribution</h3>
-              </div>
-              <p className="text-xs text-slate-400">Student enrollment spread across academic semesters.</p>
-
-              <div className="grid grid-cols-2 gap-3">
-                {Object.keys(classBreakdown).length > 0 ? (
-                  Object.entries(classBreakdown).map(([sem, count]) => (
-                    <div key={sem} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center space-y-1">
-                      <span className="text-[11px] uppercase font-bold text-slate-400">{sem}</span>
-                      <p className="text-2xl font-black text-brand-300">{count}</p>
-                      <span className="text-[10px] text-slate-500">Enrolled Students</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-slate-500 col-span-2">No class distribution data available.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Defaulters Section */}
-          <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-rose-400" />
-                  AI Predictive Defaulters & High Risk Students
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">Students forecasted by the ML model to fall below the 75% attendance threshold.</p>
-              </div>
-
-              {defaulters.length > 0 && (
-                <button
-                  onClick={handleExportDefaultersCSV}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
-                >
-                  <Download className="w-3.5 h-3.5 text-emerald-400" /> Export CSV
-                </button>
-              )}
-            </div>
-
-            {defaulters.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                      <th className="py-2.5 px-3">Roll No</th>
-                      <th className="py-2.5 px-3">Student Name</th>
-                      <th className="py-2.5 px-3">Department</th>
-                      <th className="py-2.5 px-3">Current Att.</th>
-                      <th className="py-2.5 px-3">ML Defaulter Risk</th>
-                      <th className="py-2.5 px-3">Risk Level</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
-                    {defaulters.map((d) => (
-                      <tr key={d.roll_no} className="hover:bg-slate-900/40">
-                        <td className="py-3 px-3 font-bold text-slate-200">{d.roll_no}</td>
-                        <td className="py-3 px-3 font-sans font-semibold text-white">{d.name}</td>
-                        <td className="py-3 px-3 font-sans text-slate-400">{d.department}</td>
-                        <td className="py-3 px-3 font-bold text-slate-300">{d.attendance_pct}%</td>
-                        <td className="py-3 px-3 text-rose-400 font-bold">{d.risk_pct}%</td>
-                        <td className="py-3 px-3 font-sans">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            d.risk_level === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          }`}>
-                            {d.risk_level}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 py-3">No students currently flagged as high-risk defaulters.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: TEACHERS DIRECTORY */}
-      {activeTab === 'teachers' && (
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <GraduationCap className="w-4 h-4 text-emerald-400" />
-                Teaching Faculty Roster & Management
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Manage registered professors, faculty identifiers, and academic departments.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search teacher by name or ID..."
-                  className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
-                />
-              </div>
-
-              <button
-                onClick={() => openAddModalForRole('faculty')}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Teacher
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-2.5 px-3">Faculty ID</th>
-                  <th className="py-2.5 px-3">Teacher Name</th>
-                  <th className="py-2.5 px-3">Email Address</th>
-                  <th className="py-2.5 px-3">Department</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredFaculty.length > 0 ? (
-                  filteredFaculty.map((fac) => (
-                    <tr key={fac.id || fac.roll_no} className="hover:bg-slate-900/40">
-                      <td className="py-3 px-3 font-mono font-bold text-emerald-300">{fac.roll_no}</td>
-                      <td className="py-3 px-3 font-semibold text-white">{fac.name}</td>
-                      <td className="py-3 px-3 text-slate-300">{fac.email}</td>
-                      <td className="py-3 px-3 text-slate-400">{fac.department}</td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(fac.roll_no, fac.name, 'faculty')}
-                          disabled={deletingUserRoll === fac.roll_no}
-                          className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition flex items-center gap-1 ml-auto disabled:opacity-40"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="5" className="py-6 text-center text-slate-500">
-                      No faculty members found. Click "+ Add Teacher" to add.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: STUDENTS DIRECTORY & BIOMETRICS */}
-      {activeTab === 'students' && (
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-emerald-400" />
-                Student Roster, Hardware Locks & Biometric Status
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Class-wise and department-wise roster. Reset hardware device binding or face templates with audit logging.
-              </p>
-            </div>
-
-            <button
-              onClick={() => openAddModalForRole('student')}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 self-start sm:self-auto transition"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Student
-            </button>
-          </div>
-
-          {/* Filters Bar: Search + Department Filter + Semester Filter */}
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search student by name, roll no, email..."
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
-              />
-            </div>
-
-            {/* Department Filter */}
-            <select
-              value={selectedDeptFilter}
-              onChange={(e) => setSelectedDeptFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
-            >
-              <option value="ALL">All Departments</option>
-              {allDepartments.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-
-            {/* Semester / Class Filter */}
-            <select
-              value={selectedSemFilter}
-              onChange={(e) => setSelectedSemFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
-            >
-              <option value="ALL">All Semesters (Classes)</option>
-              {allSemesters.map(sem => (
-                <option key={sem} value={sem}>Semester {sem}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-2.5 px-3">Roll No</th>
-                  <th className="py-2.5 px-3">Student Name</th>
-                  <th className="py-2.5 px-3">Class (Sem)</th>
-                  <th className="py-2.5 px-3">Department</th>
-                  <th className="py-2.5 px-3">Att. %</th>
-                  <th className="py-2.5 px-3">Bound Hardware Device <span className="text-[10px] text-amber-400 font-normal">(Paused)</span></th>
-                  <th className="py-2.5 px-3">Face Auth</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filteredStudents.length > 0 ? (
-                  filteredStudents.map((stu) => (
-                    <tr key={stu.id || stu.roll_no} className="hover:bg-slate-900/40">
-                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{stu.roll_no}</td>
-                      <td className="py-3 px-3 font-semibold text-white">{stu.name}</td>
-                      <td className="py-3 px-3 font-mono text-slate-300">Sem {stu.semester || 6}</td>
-                      <td className="py-3 px-3 text-slate-400 max-w-[150px] truncate">{stu.department}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-200">{stu.current_attendance_pct}%</td>
-                      <td className="py-3 px-3 font-mono">
-                        {stu.bound_device_id === 'UNBOUND' ? (
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-bold">UNBOUND</span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold truncate max-w-[120px] inline-block">{stu.bound_device_id}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2">
-                          {stu.has_registered_face ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">ENROLLED</span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">NOT ENROLLED</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => openFaceCaptureModal(stu)}
-                            className="px-2 py-0.5 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition active:scale-95"
-                            title="Capture verified student photo using camera"
-                          >
-                            <Camera className="w-3 h-3 text-emerald-400" />
-                            <span>{stu.has_registered_face ? 'Retake' : 'Capture'}</span>
-                          </button>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleResetDevice(stu.roll_no)}
-                          disabled={resettingRoll === stu.roll_no || stu.bound_device_id === 'UNBOUND'}
-                          className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
-                          title="Reset bound device"
-                        >
-                          {resettingRoll === stu.roll_no ? 'Resetting...' : 'Reset Device'}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleResetFace(stu.roll_no)}
-                          disabled={resettingFaceRoll === stu.roll_no || !stu.has_registered_face}
-                          className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition active:scale-95 disabled:opacity-30"
-                          title="Reset face template"
-                        >
-                          {resettingFaceRoll === stu.roll_no ? 'Resetting...' : 'Reset Face'}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(stu.roll_no, stu.name, 'student')}
-                          disabled={deletingUserRoll === stu.roll_no}
-                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 border border-slate-700 text-[10px] font-bold transition"
-                          title="Delete student"
-                        >
-                          <Trash2 className="w-3 h-3 inline" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="8" className="py-6 text-center text-slate-500">
-                      No students found matching filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: CURRICULUM & SUBJECTS */}
-      {activeTab === 'subjects' && (
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-emerald-400" />
-                Academic Curriculum & Course Modules
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Register semester courses, assign teaching faculty, and set minimum attendance thresholds.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowAddSubjectModal(true)}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Subject
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-2.5 px-3">Subject Code</th>
-                  <th className="py-2.5 px-3">Course Name</th>
-                  <th className="py-2.5 px-3">Department</th>
-                  <th className="py-2.5 px-3">Semester</th>
-                  <th className="py-2.5 px-3">Credits</th>
-                  <th className="py-2.5 px-3">Assigned Faculty</th>
-                  <th className="py-2.5 px-3">Lectures Held</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
-                {subjectsList.map((subj) => (
-                  <tr key={subj.code} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-3 font-bold text-emerald-400">{subj.code}</td>
-                    <td className="py-3 px-3 font-sans font-semibold text-white">{subj.name}</td>
-                    <td className="py-3 px-3 font-sans text-slate-400">{subj.department}</td>
-                    <td className="py-3 px-3 text-slate-300">Sem {subj.semester || 6}</td>
-                    <td className="py-3 px-3 text-slate-300">{subj.credits}</td>
-                    <td className="py-3 px-3 font-sans text-emerald-300">{subj.faculty_name || subj.faculty_id}</td>
-                    <td className="py-3 px-3 text-slate-400">{subj.total_conducted || 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: AUDIT TRAIL LOGS */}
-      {activeTab === 'audit' && (
-        <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <History className="w-4 h-4 text-emerald-400" />
-                Immutable System Audit Trail (ACID Audit Log)
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Cryptographically tracked administrative events, device lock resets, and account provisions.
-              </p>
-            </div>
-
-            <button
-              onClick={fetchAuditLogs}
-              disabled={loadingAudit}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingAudit ? 'animate-spin' : ''}`} />
-              <span>Refresh Trail</span>
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                  <th className="py-2.5 px-3">Timestamp</th>
-                  <th className="py-2.5 px-3">Actor</th>
-                  <th className="py-2.5 px-3">Action</th>
-                  <th className="py-2.5 px-3">Target</th>
-                  <th className="py-2.5 px-3">Reason / Context</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {auditLogs.length > 0 ? (
-                  auditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-900/40">
-                      <td className="py-2.5 px-3 text-slate-400 font-sans text-[10px]">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-300">{log.actor_name || log.actor_id} ({log.actor_role})</td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-200">{log.target_type}: {log.target_id}</td>
-                      <td className="py-2.5 px-3 font-sans text-slate-400">{log.reason || 'N/A'}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="5" className="py-6 text-center text-slate-500">
-                      No audit events recorded yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: TIMETABLE & SCHEDULES (PHASE 3) */}
-      {activeTab === 'timetable' && (
-        <AdminTimetableManagement
-          user={user}
-          facultyList={facultyList}
-          subjectsList={subjectsList}
-          allDepartments={allDepartments}
-          onTimetableUpdated={() => {
-            fetchOverview();
-            fetchAuditLogs();
-          }}
         />
-      )}
-        </div>
       )}
 
       {/* Modal: Add User (Student or Teacher) */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-panel w-full max-w-md rounded-2xl p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95">
-            <button
-              onClick={() => setShowAddModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title={`Add New ${newRole === 'student' ? 'Student' : newRole === 'faculty' ? 'Teacher / Faculty' : 'Administrator'}`}
+        subtitle="Provision a verified account directly into the institutional database."
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs text-left">
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Account Role</label>
+            <select
+              value={newRole}
+              onChange={(e) => {
+                const role = e.target.value;
+                setNewRole(role);
+                if (role === 'student') setNewPassword('studentpassword');
+                else if (role === 'faculty') setNewPassword('facultypassword');
+                else setNewPassword('adminpassword');
+              }}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
             >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-lg font-bold text-white mb-1">
-              Add New {newRole === 'student' ? 'Student' : newRole === 'faculty' ? 'Teacher / Faculty' : 'Administrator'}
-            </h3>
-            <p className="text-xs text-slate-400 mb-4">
-              Provision a verified account directly into the institutional database.
-            </p>
-
-            <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Account Role</label>
-                <select
-                  value={newRole}
-                  onChange={(e) => {
-                    const role = e.target.value;
-                    setNewRole(role);
-                    if (role === 'student') setNewPassword('studentpassword');
-                    else if (role === 'faculty') setNewPassword('facultypassword');
-                    else setNewPassword('adminpassword');
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                >
-                  <option value="student">👨‍🎓 Student</option>
-                  <option value="faculty">👨‍🏫 Teacher / Faculty</option>
-                  <option value="admin">👨‍💼 Administrator</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">
-                  {newRole === 'student' ? 'Student Roll Number / Username' : newRole === 'faculty' ? 'Faculty ID / Username' : 'Admin ID'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newRoll}
-                  onChange={(e) => setNewRoll(e.target.value)}
-                  placeholder={newRole === 'student' ? 'e.g. STU05' : 'e.g. FAC02'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder={newRole === 'student' ? 'e.g. Siddharth Joshi' : 'e.g. Prof. Priya Nair'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder={newRole === 'student' ? 'e.g. siddharth@smartattend.edu' : 'e.g. priya@smartattend.edu'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Password</label>
-                <input
-                  type="text"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Academic Department</label>
-                <select
-                  value={newDept}
-                  onChange={(e) => setNewDept(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                >
-                  <option value="Computer Science & Engineering">Computer Science & Engineering</option>
-                  <option value="Information Technology">Information Technology</option>
-                  <option value="Electronics & Communication">Electronics & Communication</option>
-                  <option value="Mechanical Engineering">Mechanical Engineering</option>
-                  <option value="Administration">Administration</option>
-                </select>
-              </div>
-
-              {newRole === 'student' && (
-                <>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-slate-300 font-medium text-[11px] flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Verified Admission Photo (Optional at creation)</span>
-                      </label>
-                      {newStudentPhoto && (
-                        <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Photo Attached
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {newStudentPhoto ? (
-                        <div className="relative shrink-0">
-                          <img src={newStudentPhoto} alt="New Student" className="w-14 h-14 rounded-xl object-cover border border-emerald-500/40" />
-                          <button
-                            type="button"
-                            onClick={() => setNewStudentPhoto(null)}
-                            className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5"
-                            title="Remove photo"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 rounded-xl bg-slate-950 border border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 shrink-0">
-                          <Camera className="w-5 h-5" />
-                          <span className="text-[8px] mt-0.5">No Photo</span>
-                        </div>
-                      )}
-                      <div className="space-y-1 flex-1">
-                        <label className="px-3 py-1.5 rounded-lg bg-emerald-600/25 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1.5 w-fit cursor-pointer transition">
-                          <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Upload Photo / Capture</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="user"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const reader = new FileReader();
-                              reader.onload = () => setNewStudentPhoto(reader.result);
-                              reader.readAsDataURL(file);
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-                        <p className="text-[10px] text-slate-400 leading-tight">Can also be captured with office webcam after creation via table.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-300 font-medium mb-1">Semester (Class)</label>
-                      <select
-                        value={newSemester}
-                        onChange={(e) => setNewSemester(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                      >
-                        {allSemesters.map(sem => (
-                          <option key={sem} value={sem}>Semester {sem}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-300 font-medium mb-1">Initial Att. %</label>
-                      <input
-                        type="number"
-                        min="20"
-                        max="100"
-                        value={newInitAtt}
-                        onChange={(e) => setNewInitAtt(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={creatingUser}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
-                >
-                  {creatingUser ? 'Provisioning Account...' : `Create ${newRole.toUpperCase()}`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+              <option value="student">👨‍🎓 Student</option>
+              <option value="faculty">👨‍🏫 Teacher / Faculty</option>
+              <option value="admin">👨‍💼 Administrator</option>
+            </select>
           </div>
-        </div>
-      )}
 
-      {/* Modal: Create Subject */}
-      {showAddSubjectModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-panel w-full max-w-md rounded-2xl p-6 border border-slate-700 shadow-2xl relative animate-in fade-in zoom-in-95">
-            <button
-              onClick={() => setShowAddSubjectModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">
+              {newRole === 'student' ? 'Student Roll Number / Username' : newRole === 'faculty' ? 'Faculty ID / Username' : 'Admin ID'}
+            </label>
+            <input
+              type="text"
+              required
+              value={newRoll}
+              onChange={(e) => setNewRoll(e.target.value)}
+              placeholder={newRole === 'student' ? 'e.g. STU05' : 'e.g. FAC02'}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Full Name</label>
+            <input
+              type="text"
+              required
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={newRole === 'student' ? 'e.g. Siddharth Joshi' : 'e.g. Prof. Priya Nair'}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Email Address</label>
+            <input
+              type="email"
+              required
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder={newRole === 'student' ? 'e.g. siddharth@smartattend.edu' : 'e.g. priya@smartattend.edu'}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Password</label>
+            <input
+              type="text"
+              required
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Academic Department</label>
+            <select
+              value={newDept}
+              onChange={(e) => setNewDept(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
             >
-              <X className="w-5 h-5" />
-            </button>
+              <option value="Computer Science & Engineering">Computer Science & Engineering</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Electronics & Communication">Electronics & Communication</option>
+              <option value="Mechanical Engineering">Mechanical Engineering</option>
+              <option value="Administration">Administration</option>
+            </select>
+          </div>
 
-            <h3 className="text-lg font-bold text-white mb-1">Add Academic Subject</h3>
-            <p className="text-xs text-slate-400 mb-4">Register a new curriculum course with credits and faculty assignment.</p>
+          {newRole === 'student' && (
+            <>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Verified Admission Photo (Optional)</span>
+                  </label>
+                  {newStudentPhoto && (
+                    <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Photo Attached
+                    </span>
+                  )}
+                </div>
 
-            <form onSubmit={handleCreateSubject} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Subject Code</label>
-                <input
-                  type="text"
-                  required
-                  value={subCode}
-                  onChange={(e) => setSubCode(e.target.value)}
-                  placeholder="e.g. CS305"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white uppercase font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Course Title</label>
-                <input
-                  type="text"
-                  required
-                  value={subName}
-                  onChange={(e) => setSubName(e.target.value)}
-                  placeholder="e.g. Information Security & Cryptography"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                />
+                <div className="flex items-center gap-3">
+                  {newStudentPhoto ? (
+                    <div className="relative shrink-0">
+                      <img src={newStudentPhoto} alt="New Student" className="w-14 h-14 rounded-xl object-cover border border-emerald-500/40" />
+                      <button
+                        type="button"
+                        onClick={() => setNewStudentPhoto(null)}
+                        className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 cursor-pointer"
+                        title="Remove photo"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 rounded-xl bg-white border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 shrink-0">
+                      <Camera className="w-5 h-5 text-slate-400" />
+                      <span className="text-[11px] mt-0.5 font-medium">No Photo</span>
+                    </div>
+                  )}
+                  <div className="space-y-1 flex-1">
+                    <label className="px-3 py-1.5 rounded-xl bg-[#EBF4EE] hover:bg-emerald-100/80 text-[#1A4731] border border-[#1A4731]/15 text-xs font-bold flex items-center gap-1.5 w-fit cursor-pointer transition">
+                      <Camera className="w-3.5 h-3.5 text-[#1A4731]" />
+                      <span>Upload Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="user"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setNewStudentPhoto(reader.result);
+                          reader.readAsDataURL(file);
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-[11px] text-slate-500 leading-tight">Can also be captured with office webcam via the Student Directory.</p>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">Credits</label>
+                  <label className="block text-slate-700 font-semibold mb-1">Semester (Class)</label>
+                  <select
+                    value={newSemester}
+                    onChange={(e) => setNewSemester(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+                  >
+                    {allSemesters.map(sem => (
+                      <option key={sem} value={sem}>Semester {sem}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Initial Att. %</label>
                   <input
                     type="number"
-                    min="1"
-                    max="6"
-                    value={subCredits}
-                    onChange={(e) => setSubCredits(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Assigned Faculty ID</label>
-                  <input
-                    type="text"
-                    value={subFaculty}
-                    onChange={(e) => setSubFaculty(e.target.value)}
-                    placeholder="e.g. faculty"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                    min="20"
+                    max="100"
+                    value={newInitAtt}
+                    onChange={(e) => setNewInitAtt(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
                   />
                 </div>
               </div>
+            </>
+          )}
 
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={creatingSubject}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
-                >
-                  {creatingSubject ? 'Adding...' : 'Add Subject to Curriculum'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddSubjectModal(false)}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+          <div className="pt-2 flex gap-2">
+            <button
+              type="submit"
+              disabled={creatingUser}
+              className="flex-1 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs transition cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              {creatingUser ? 'Provisioning Account...' : `Create ${newRole.toUpperCase()}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
+
+      {/* Modal: Create Subject */}
+      <Modal
+        isOpen={showAddSubjectModal}
+        onClose={() => setShowAddSubjectModal(false)}
+        title="Add Academic Subject"
+        subtitle="Register a new curriculum course with credits and faculty assignment."
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleCreateSubject} className="space-y-3.5 text-xs text-left">
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Subject Code</label>
+            <input
+              type="text"
+              required
+              value={subCode}
+              onChange={(e) => setSubCode(e.target.value)}
+              placeholder="e.g. CS305"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 uppercase font-mono text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Course Title</label>
+            <input
+              type="text"
+              required
+              value={subName}
+              onChange={(e) => setSubName(e.target.value)}
+              placeholder="e.g. Information Security & Cryptography"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Credits</label>
+              <input
+                type="number"
+                min="1"
+                max="6"
+                value={subCredits}
+                onChange={(e) => setSubCredits(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-mono text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Assigned Faculty ID</label>
+              <input
+                type="text"
+                value={subFaculty}
+                onChange={(e) => setSubFaculty(e.target.value)}
+                placeholder="e.g. FAC01"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-xs focus:ring-2 focus:ring-[#10B981] focus:outline-none transition"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex gap-2">
+            <button
+              type="submit"
+              disabled={creatingSubject}
+              className="flex-1 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs transition cursor-pointer shadow-xs disabled:opacity-50"
+            >
+              {creatingSubject ? 'Adding...' : 'Add Subject to Curriculum'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddSubjectModal(false)}
+              className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Modal: Admin Camera Capture & Face Verification */}
-      {showFaceCaptureModal && targetStudentForFace && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="glass-panel w-full max-w-lg rounded-2xl p-6 border border-slate-700 shadow-2xl relative space-y-4">
-            <button
-              onClick={closeFaceCaptureModal}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
-                  <Camera className="w-4 h-4" />
+      <Modal
+        isOpen={Boolean(showFaceCaptureModal && targetStudentForFace)}
+        onClose={closeFaceCaptureModal}
+        title="Enroll Verified Student Photo"
+        subtitle={targetStudentForFace ? `Capture official admission photo for ${targetStudentForFace.name} (${targetStudentForFace.roll_no})` : ''}
+        maxWidth="max-w-lg"
+      >
+        <div className="space-y-4 text-left">
+          {/* Camera View or Captured Preview */}
+          <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 flex items-center justify-center min-h-[300px]">
+            {capturedFacePhoto ? (
+              <div className="p-4 flex flex-col items-center gap-3">
+                <div className="relative">
+                  <img
+                    src={capturedFacePhoto}
+                    alt="Captured Student Face"
+                    className="w-52 h-52 rounded-2xl object-cover border-2 border-emerald-500 shadow-xl"
+                  />
+                  <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white shadow-lg">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Enroll Verified Student Photo</h3>
-                  <p className="text-xs text-slate-400">
-                    Capture official admission photo for <strong className="text-white">{targetStudentForFace.name}</strong> ({targetStudentForFace.roll_no})
-                  </p>
-                </div>
+                <span className="text-xs text-emerald-700 font-bold">Photo Ready for AI Biometric Enrollment</span>
               </div>
-            </div>
+            ) : (
+              <div className="relative w-full h-[300px] bg-black flex items-center justify-center">
+                <video
+                  ref={attachStreamToVideo}
+                  autoPlay
+                  playsInline
+                  muted
+                  onLoadedMetadata={(e) => {
+                    e.currentTarget.play().catch(err => console.warn('Play error:', err));
+                  }}
+                  className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${adminCameraActive ? 'opacity-100' : 'opacity-0'}`}
+                />
 
-            {/* Camera View or Captured Preview */}
-            <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center min-h-[300px]">
-              {capturedFacePhoto ? (
-                <div className="p-4 flex flex-col items-center gap-3">
-                  <div className="relative">
-                    <img
-                      src={capturedFacePhoto}
-                      alt="Captured Student Face"
-                      className="w-52 h-52 rounded-2xl object-cover border-2 border-emerald-500 shadow-xl"
-                    />
-                    <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-slate-950 shadow-lg">
-                      <CheckCircle2 className="w-4 h-4" />
+                {/* Oval Face Guide */}
+                {adminCameraActive && (
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className="w-48 h-60 rounded-full border-2 border-dashed border-emerald-400/80 shadow-2xl flex items-center justify-center">
+                      <span className="text-[11px] text-emerald-200/90 font-semibold bg-black/60 px-2.5 py-0.5 rounded-full mt-40">
+                        Align Face Here
+                      </span>
                     </div>
                   </div>
-                  <span className="text-xs text-emerald-400 font-semibold">Photo Ready for AI Biometric Enrollment</span>
-                </div>
-              ) : (
-                <div className="relative w-full h-[300px] bg-black flex items-center justify-center">
-                  <video
-                    ref={attachStreamToVideo}
-                    autoPlay
-                    playsInline
-                    muted
-                    onLoadedMetadata={(e) => {
-                      e.currentTarget.play().catch(err => console.warn('Play error:', err));
-                    }}
-                    className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${adminCameraActive ? 'opacity-100' : 'opacity-0'}`}
-                  />
-
-                  {/* Oval Face Guide */}
-                  {adminCameraActive && (
-                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className="w-48 h-60 rounded-full border-2 border-dashed border-emerald-400/80 shadow-2xl flex items-center justify-center">
-                        <span className="text-[10px] text-emerald-200/90 font-semibold bg-black/60 px-2.5 py-0.5 rounded-full mt-40">
-                          Align Face Here
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Inactive state fallback */}
-                  {!adminCameraActive && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-950">
-                      <Camera className="w-12 h-12 text-slate-600 mx-auto" />
-                      <p className="text-xs text-slate-400">Camera preview inactive</p>
-                      <button
-                        type="button"
-                        onClick={startAdminCamera}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition"
-                      >
-                        Start Camera
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Error Message */}
-            {cameraError && (
-              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>{cameraError}</span>
-              </div>
-            )}
-
-            {/* Controls */}
-            <div className="space-y-2 pt-1">
-              <div className="flex gap-2">
-                {adminCameraActive ? (
-                  <button
-                    type="button"
-                    onClick={captureAdminPhoto}
-                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-95"
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>Capture Frame</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={startAdminCamera}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>{capturedFacePhoto ? 'Retake Photo' : 'Open Camera'}</span>
-                  </button>
                 )}
 
-                <label className="py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition">
-                  <Download className="w-3.5 h-3.5 rotate-180 text-slate-400" />
-                  <span>Upload File</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAdminFileUpload}
-                    className="hidden"
-                  />
-                </label>
+                {/* Inactive state fallback */}
+                {!adminCameraActive && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-950">
+                    <Camera className="w-12 h-12 text-slate-500 mx-auto" />
+                    <p className="text-xs text-slate-400">Camera preview inactive</p>
+                    <button
+                      type="button"
+                      onClick={startAdminCamera}
+                      className="px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs transition cursor-pointer"
+                    >
+                      Start Camera
+                    </button>
+                  </div>
+                )}
               </div>
+            )}
+          </div>
 
-              {capturedFacePhoto && (
+          {/* Error Message */}
+          {cameraError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{cameraError}</span>
+            </div>
+          )}
+
+          {/* Controls */}
+          <div className="space-y-2 pt-1">
+            <div className="flex gap-2">
+              {adminCameraActive ? (
                 <button
                   type="button"
-                  onClick={handleSaveEnrolledFace}
-                  disabled={enrollingFaceLoading}
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-95 disabled:opacity-50"
+                  onClick={captureAdminPhoto}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition active:scale-95 cursor-pointer"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>{enrollingFaceLoading ? 'Extracting & Encrypting Template...' : 'Save & Verify Official Biometrics'}</span>
+                  <Camera className="w-4 h-4" />
+                  <span>Capture Frame</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startAdminCamera}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{capturedFacePhoto ? 'Retake Photo' : 'Open Camera'}</span>
                 </button>
               )}
+
+              <label className="py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition">
+                <Download className="w-3.5 h-3.5 rotate-180 text-slate-500" />
+                <span>Upload File</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAdminFileUpload}
+                  className="hidden"
+                />
+              </label>
             </div>
 
-            <canvas ref={adminCanvasRef} className="hidden" />
+            {capturedFacePhoto && (
+              <button
+                type="button"
+                onClick={handleSaveEnrolledFace}
+                disabled={enrollingFaceLoading}
+                className="w-full py-3 rounded-xl bg-[#1A4731] hover:bg-[#123323] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>{enrollingFaceLoading ? 'Extracting & Encrypting Template...' : 'Save & Verify Official Biometrics'}</span>
+              </button>
+            )}
+          </div>
+
+          <canvas ref={adminCanvasRef} className="hidden" />
+        </div>
+      </Modal>
+
+      {/* Delete User Confirmation Bottom Sheet */}
+      <Modal
+        isOpen={Boolean(userToDelete)}
+        onClose={() => setUserToDelete(null)}
+        title="Delete User Account"
+        subtitle="This action permanently removes the user and is recorded in the audit trail."
+        variant="sheet"
+        maxWidth="max-w-sm"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Are you sure you want to permanently delete {userToDelete?.role} account{' '}
+            <strong className="text-slate-900">{userToDelete?.name}</strong> ({userToDelete?.rollOrId})?
+          </p>
+          <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setUserToDelete(null)}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmDeleteUser}
+              disabled={Boolean(deletingUserRoll)}
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {deletingUserRoll ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              <span>Confirm Delete</span>
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Logout Confirmation Modal */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white text-[#111827] w-full max-w-sm rounded-3xl p-6 border border-slate-200 shadow-2xl space-y-4">
-            <div className="flex items-center gap-2">
-              <LogOut className="w-5 h-5 text-rose-600" />
-              <h3 className="text-base font-extrabold text-[#111827]">
-                Log Out of Admin Console?
-              </h3>
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Are you sure you want to end your active administrative session?
-            </p>
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(false)}
-                className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLogoutConfirm(false);
-                  onLogout?.();
-                }}
-                className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition shadow-md shadow-rose-600/30"
-              >
-                Log Out
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        title="Log Out of Admin Console?"
+        subtitle="Are you sure you want to end your active administrative session?"
+        maxWidth="max-w-sm"
+      >
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setShowLogoutConfirm(false)}
+            className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowLogoutConfirm(false);
+              onLogout?.();
+            }}
+            className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition shadow-xs cursor-pointer"
+          >
+            Log Out
+          </button>
         </div>
-      )}
+      </Modal>
     </>
   );
 }

@@ -12,11 +12,11 @@ export default function StudentSubjectAttendanceView({
   return (
     <div className="space-y-5">
       {/* Top Header: < Subject Wise Attendance (Screen 15 Reference) */}
-      <div className="flex items-center justify-between pt-1">
+      <div className="sticky top-0 z-20 bg-[#F8FAF9]/95 backdrop-blur-md py-2.5 -mx-4 px-4 flex items-center justify-between border-b border-slate-200/60 select-none">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-2 text-[#111827] font-extrabold text-base focus:outline-none"
+          className="flex items-center gap-2 min-h-[44px] min-w-[44px] text-[#111827] active:scale-[0.97] font-extrabold text-base focus:outline-none transition"
         >
           <ArrowLeft className="w-5 h-5 text-slate-700" />
           <span>Subject Wise Attendance</span>
@@ -85,12 +85,20 @@ export default function StudentSubjectAttendanceView({
                   isSafe ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'
                 }`}>
                   <span>{isSafe ? `✅ Safe Skips: ${bCalc.safe_skips}` : `⚠️ Attend Next: ${bCalc.classes_needed}`}</span>
-                  <span className="text-[10px] text-slate-500">{bCalc.message}</span>
+                  <span className="text-[11px] text-slate-500">{bCalc.message}</span>
                 </div>
               )}
             </div>
           );
         })}
+
+        {subjects.length === 0 && (
+          <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/90 text-slate-500 space-y-2">
+            <BookOpen className="w-8 h-8 mx-auto text-slate-300" />
+            <p className="text-xs font-bold text-slate-700">No enrolled subjects found</p>
+            <p className="text-[11px] text-slate-400">Your registered subjects and attendance stats will appear here.</p>
+          </div>
+        )}
       </div>
     </div>
   );

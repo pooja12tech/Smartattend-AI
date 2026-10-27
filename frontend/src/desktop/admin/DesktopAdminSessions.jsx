@@ -97,7 +97,7 @@ export default function DesktopAdminSessions({
                       {sess.subject_name || 'Operating Systems'}
                     </h4>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase tracking-wider flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                     Live
                   </span>
@@ -143,7 +143,7 @@ export default function DesktopAdminSessions({
                 </div>
                 <div className="text-right">
                   <span className="font-bold text-slate-700">{sess.present_count || 0} Attended</span>
-                  <span className="text-[10px] text-slate-400 block">Status: ENDED</span>
+                  <span className="text-[11px] text-slate-400 block">Status: ENDED</span>
                 </div>
               </div>
             ))}

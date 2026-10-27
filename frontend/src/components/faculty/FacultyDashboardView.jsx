@@ -77,7 +77,7 @@ export default function FacultyDashboardView({
           >
             <AlertTriangle className="w-4 h-4" />
             {alertsCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white font-bold text-[9px] flex items-center justify-center ring-2 ring-white">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-4 px-1 rounded-full bg-rose-500 text-white font-bold text-[11px] flex items-center justify-center ring-2 ring-white">
                 {alertsCount}
               </span>
             )}
@@ -125,21 +125,21 @@ export default function FacultyDashboardView({
           </p>
 
           {/* Metric Pills Row (Screen 3 Reference) */}
-          <div className="grid grid-cols-4 gap-2 mt-4 pt-3 border-t border-emerald-700/50 text-center">
+          <div className="grid grid-cols-2 min-[380px]:grid-cols-4 gap-2 mt-4 pt-3 border-t border-emerald-700/50 text-center">
             <div className="bg-emerald-950/60 rounded-xl py-2 px-1 border border-emerald-700/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300 block">Enrolled</span>
+              <span className="text-[11px] uppercase font-bold text-emerald-300 block">Enrolled</span>
               <span className="text-sm sm:text-base font-extrabold text-white">{totalEnrolled}</span>
             </div>
             <div className="bg-emerald-950/60 rounded-xl py-2 px-1 border border-emerald-700/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300 block">Present</span>
+              <span className="text-[11px] uppercase font-bold text-emerald-300 block">Present</span>
               <span className="text-sm sm:text-base font-extrabold text-white">{presentCount}</span>
             </div>
             <div className="bg-emerald-950/60 rounded-xl py-2 px-1 border border-emerald-700/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300 block">Pending</span>
+              <span className="text-[11px] uppercase font-bold text-emerald-300 block">Pending</span>
               <span className="text-sm sm:text-base font-extrabold text-white">{pendingCount}</span>
             </div>
             <div className="bg-emerald-950/60 rounded-xl py-2 px-1 border border-emerald-700/30">
-              <span className="text-[10px] uppercase font-bold text-emerald-300 block">Review</span>
+              <span className="text-[11px] uppercase font-bold text-emerald-300 block">Review</span>
               <span className="text-sm sm:text-base font-extrabold text-white">{alertsCount}</span>
             </div>
           </div>
@@ -262,9 +262,16 @@ export default function FacultyDashboardView({
         </div>
 
         {loadingClasses ? (
-          <div className="bg-white rounded-2xl p-6 text-center border border-slate-200/90 text-slate-500 space-y-2">
-            <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#1A4731]" />
-            <p className="text-xs font-semibold text-slate-600">Loading today's lecture timetable...</p>
+          <div className="space-y-2.5">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200/90 animate-pulse space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <div className="h-4 w-32 bg-slate-200 rounded" />
+                  <div className="h-4 w-16 bg-slate-200 rounded-full" />
+                </div>
+                <div className="h-3 w-48 bg-slate-100 rounded" />
+              </div>
+            ))}
           </div>
         ) : todayClasses && todayClasses.length > 0 ? (
           <div className="space-y-2.5">
@@ -276,7 +283,7 @@ export default function FacultyDashboardView({
                 <div
                   key={cls.id || idx}
                   onClick={() => onOpenSessionSetup(cls)}
-                  className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer ${
+                  className={`bg-white rounded-2xl p-4 border transition-all cursor-pointer active:scale-[0.97] ${
                     isOngoing
                       ? 'border-emerald-300 ring-1 ring-emerald-300 shadow-sm hover:bg-emerald-50/20'
                       : 'border-slate-200/90 hover:border-slate-300'

@@ -157,24 +157,24 @@ export default function StudentHomeView({
 
       {/* Quick Metrics Pills: Active Streak & Defaulter Radar */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 touch-card-interactive">
+        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 active:scale-[0.97] transition">
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200 shadow-xs">
             <Flame className="w-5 h-5 text-amber-500 animate-flame-flicker" />
           </div>
           <div className="min-w-0">
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Streak</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 tracking-wider block">Streak</span>
             <span className="text-sm font-extrabold text-[#111827] truncate block">
               {activeStreak > 0 ? `+${activeStreak} Lectures` : `${activeStreak} Lectures`}
             </span>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 touch-card-interactive">
+        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex items-center gap-3 active:scale-[0.97] transition">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200 shadow-xs">
             <ShieldCheck className="w-5 h-5 text-emerald-600" />
           </div>
           <div className="min-w-0">
-            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Exam Eligibility</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 tracking-wider block">Exam Eligibility</span>
             <span className="text-sm font-extrabold text-[#111827] truncate block">
               {currentPct >= 75 ? 'Eligible (75%+)' : 'Warning (<75%)'}
             </span>
@@ -324,7 +324,7 @@ export default function StudentHomeView({
                     </p>
                   </div>
                 </div>
-                <span className="shrink-0 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="shrink-0 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Present
                 </span>
               </div>

@@ -67,7 +67,7 @@ export default function FacultySessionSummaryView({
 
       {/* Session Metadata Card */}
       <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-xs space-y-2.5 text-xs">
-        <h4 className="font-bold text-slate-700 uppercase text-[10px] tracking-wider">
+        <h4 className="font-bold text-slate-700 uppercase text-[11px] tracking-wider">
           Class Session Details
         </h4>
 
@@ -101,45 +101,45 @@ export default function FacultySessionSummaryView({
       {/* 4-Metric Grid */}
       <div className="grid grid-cols-2 gap-2.5">
         <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-xs">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
             Enrolled Students
           </span>
           <span className="text-xl font-black text-[#111827] mt-1 block">
             {totalEnrolled}
           </span>
-          <span className="text-[10px] text-slate-400">Class strength</span>
+          <span className="text-[11px] text-slate-400">Class strength</span>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 border border-emerald-200 shadow-xs bg-emerald-50/30">
-          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+          <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
             Present
           </span>
           <span className="text-xl font-black text-emerald-700 mt-1 block">
             {presentCount}
           </span>
-          <span className="text-[10px] text-emerald-600 font-semibold">Verified in class</span>
+          <span className="text-[11px] text-emerald-600 font-semibold">Verified in class</span>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 border border-rose-200 shadow-xs bg-rose-50/30">
-          <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">
+          <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
             Absent
           </span>
           <span className="text-xl font-black text-rose-700 mt-1 block">
             {absentCount}
           </span>
-          <span className="text-[10px] text-rose-600 font-semibold">
+          <span className="text-[11px] text-rose-600 font-semibold">
             {absenteesCreated > 0 ? `${absenteesCreated} auto-finalized` : 'Recorded absent'}
           </span>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-xs">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
             Under Review
           </span>
           <span className="text-xl font-black text-slate-700 mt-1 block">
             {pendingCount}
           </span>
-          <span className="text-[10px] text-slate-400">Flagged exceptions</span>
+          <span className="text-[11px] text-slate-400">Flagged exceptions</span>
         </div>
       </div>
 
@@ -149,7 +149,7 @@ export default function FacultySessionSummaryView({
           <button
             type="button"
             onClick={onViewRoster}
-            className="w-full py-3 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition"
+            className="w-full min-h-[44px] py-3 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition active:scale-[0.97] cursor-pointer"
           >
             <Users className="w-4 h-4 text-[#1A4731]" />
             <span>Review Finalized Class Roster</span>
@@ -160,7 +160,7 @@ export default function FacultySessionSummaryView({
         <button
           type="button"
           onClick={onBackToHome}
-          className="w-full py-3.5 px-4 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition flex items-center justify-center gap-2"
+          className="w-full min-h-[44px] py-3.5 px-4 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition active:scale-[0.97] flex items-center justify-center gap-2 cursor-pointer"
         >
           <span>Back to Faculty Dashboard</span>
           <ArrowRight className="w-4 h-4" />

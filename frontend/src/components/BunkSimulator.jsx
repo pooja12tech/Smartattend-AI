@@ -313,34 +313,34 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
   };
 
   return (
-    <div className="glass-panel rounded-3xl p-5 sm:p-7 border border-slate-700/80 shadow-2xl relative overflow-hidden transition-all duration-300">
+    <div className="bg-white rounded-3xl p-5 sm:p-7 border border-[#E5E7EB] shadow-xs relative overflow-hidden transition-all duration-300">
       {/* Background Ambient Glow */}
       <div className={`absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none opacity-20 -mr-20 -mt-20 transition-all duration-500 ${
-        localSim.status === 'SAFE' ? 'bg-emerald-500' : 'bg-rose-500'
+        localSim.status === 'SAFE' ? 'bg-emerald-200' : 'bg-rose-200'
       }`} />
-      <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-10 -ml-20 -mb-20 bg-emerald-500" />
+      <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-10 -ml-20 -mb-20 bg-emerald-200" />
 
       {/* Header Bar */}
       <div className="relative z-10 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-colors ${
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xs transition-colors ${
               localSim.status === 'SAFE'
-                ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-emerald-500/25'
-                : 'bg-gradient-to-tr from-rose-600 to-amber-600 text-white shadow-rose-500/25 animate-pulse'
+                ? 'bg-[#1A4731] text-white shadow-emerald-900/10'
+                : 'bg-rose-600 text-white shadow-rose-900/10'
             }`}>
               <Calculator className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+                <h2 className="text-lg sm:text-xl font-bold text-[#111827] tracking-tight flex items-center gap-2">
                   The "Bunk Calculator" &amp; Predictive Safety Simulator
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-sm">
-                  <Flame className="w-3 h-3 text-amber-400 fill-amber-400 animate-bounce" /> Student Favorite 🔥
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1 shadow-xs">
+                  <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> Student Favorite 🔥
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-[#6B7280] mt-0.5">
                 Stress-free interactive attendance planner: simulate hackathons, visualize safety cushions, and map recovery roadmaps.
               </p>
             </div>
@@ -350,63 +350,63 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="flex items-center gap-2">
             <button
               onClick={() => applyPreset('RESET')}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 flex items-center gap-1.5 transition active:scale-95"
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 flex items-center gap-1.5 transition active:scale-95 shadow-xs"
               title="Reset Simulator to current real baseline"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+              <RotateCcw className="w-3.5 h-3.5 text-[#6B7280]" />
               <span>Reset</span>
             </button>
-            <div className="px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-1.5 text-xs font-mono text-emerald-300">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="px-3 py-1.5 rounded-xl bg-[#EBF4EE] border border-emerald-200 flex items-center gap-1.5 text-xs font-mono text-[#1A4731] font-semibold">
+              <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
               <span>ACID 75% Engine</span>
             </div>
           </div>
         </div>
 
-        {/* Dynamic Highlight Card (As requested: "In CS301 (Machine Learning), your attendance is 78.5%. You can safely miss 2 more classes...") */}
+        {/* Dynamic Highlight Card */}
         <div className={`p-4 sm:p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden ${
           localSim.status === 'SAFE'
-            ? 'bg-gradient-to-r from-emerald-950/40 via-teal-950/20 to-slate-900 border-emerald-500/40 glow-emerald'
-            : 'bg-gradient-to-r from-rose-950/50 via-amber-950/20 to-slate-900 border-rose-500/40 glow-rose'
+            ? 'bg-emerald-50/70 border-emerald-200 shadow-xs'
+            : 'bg-rose-50/70 border-rose-200 shadow-xs'
         }`}>
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
                   localSim.status === 'SAFE'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                    : 'bg-rose-100 text-rose-800 border-rose-200'
                 }`}>
-                  {localSim.status === 'SAFE' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />}
+                  {localSim.status === 'SAFE' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
                   {localSim.status === 'SAFE' ? 'SAFE STANDING (NO DETENTION RISK)' : 'CRITICAL DEFICIT (DETENTION WARNING)'}
                 </span>
-                <span className="text-xs text-slate-400 font-mono">
+                <span className="text-xs text-[#6B7280] font-mono">
                   Target Threshold: {targetThreshold.toFixed(1)}% UGC Limit
                 </span>
               </div>
 
               {/* The Signature Dynamic Phrase */}
-              <p className="text-sm sm:text-base font-bold text-white leading-relaxed">
-                In <span className="text-emerald-300 underline decoration-emerald-400/50 font-extrabold">{activeSubjectData.title}</span>,
-                your current attendance is <span className="text-white font-mono font-black">{activeSubjectData.pct}%</span>.
+              <p className="text-sm sm:text-base font-medium text-[#111827] leading-relaxed">
+                In <span className="text-[#1A4731] underline decoration-emerald-500/50 font-bold">{activeSubjectData.title}</span>,
+                your current attendance is <span className="text-[#111827] font-mono font-bold">{activeSubjectData.pct}%</span>.
                 {' '}
                 {localSim.baselineSafeSkips > 0 ? (
                   <span>
-                    You can safely miss <span className="text-emerald-400 font-black text-lg underline decoration-emerald-500">{localSim.baselineSafeSkips} more class{localSim.baselineSafeSkips !== 1 ? 'es' : ''}</span> without dropping below the {targetThreshold}% UGC limit.
+                    You can safely miss <span className="text-[#1A4731] font-black text-lg underline decoration-emerald-500">{localSim.baselineSafeSkips} more class{localSim.baselineSafeSkips !== 1 ? 'es' : ''}</span> without dropping below the {targetThreshold}% UGC limit.
                   </span>
                 ) : (
                   <span>
-                    You are in the danger zone! You must attend the next <span className="text-rose-400 font-black text-lg underline decoration-rose-500">{localSim.baselineClassesNeeded} consecutive lecture{localSim.baselineClassesNeeded !== 1 ? 's' : ''}</span> to climb back to safety.
+                    You are in the danger zone! You must attend the next <span className="text-rose-700 font-black text-lg underline decoration-rose-500">{localSim.baselineClassesNeeded} consecutive lecture{localSim.baselineClassesNeeded !== 1 ? 's' : ''}</span> to climb back to safety.
                   </span>
                 )}
               </p>
 
               {/* What-If Impact Feedback */}
               {(effectiveBunks > 0 || effectiveAttends > 0) && (
-                <p className="text-xs text-slate-300 font-medium flex items-center gap-2 pt-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <p className="text-xs text-[#4B5563] font-medium flex items-center gap-2 pt-1">
+                  <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>
                   <span>
-                    <strong>What-If Simulation Active:</strong> {effectiveBunks > 0 ? `Missing ${effectiveBunks} planned class${effectiveBunks !== 1 ? 'es' : ''}` : ''}{effectiveBunks > 0 && effectiveAttends > 0 ? ' & ' : ''}{effectiveAttends > 0 ? `attending ${effectiveAttends} classes` : ''} shifts your attendance to <strong className={localSim.projPct >= targetThreshold ? 'text-emerald-400' : 'text-rose-400'}>{localSim.projPct}%</strong> ({localSim.delta >= 0 ? `+${localSim.delta}%` : `${localSim.delta}%`}).
+                    <strong>What-If Simulation Active:</strong> {effectiveBunks > 0 ? `Missing ${effectiveBunks} planned class${effectiveBunks !== 1 ? 'es' : ''}` : ''}{effectiveBunks > 0 && effectiveAttends > 0 ? ' & ' : ''}{effectiveAttends > 0 ? `attending ${effectiveAttends} classes` : ''} shifts your attendance to <strong className={localSim.projPct >= targetThreshold ? 'text-[#1A4731]' : 'text-rose-600'}>{localSim.projPct}%</strong> ({localSim.delta >= 0 ? `+${localSim.delta}%` : `${localSim.delta}%`}).
                     {' '}
                     {localSim.status === 'SAFE' ? `You will still have ${localSim.safeSkips} safe buffer bunk${localSim.safeSkips !== 1 ? 's' : ''} remaining.` : `You will need ${localSim.classesNeeded} consecutive attends to recover.`}
                   </span>
@@ -415,19 +415,19 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             </div>
 
             {/* Quick Stats Pill */}
-            <div className="shrink-0 flex items-center gap-3 bg-slate-950/70 p-3 rounded-2xl border border-slate-800">
-              <div className="text-center px-3 border-r border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Original</span>
-                <span className="text-xl font-mono font-black text-white">{activeSubjectData.pct}%</span>
+            <div className="shrink-0 flex items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="text-center px-3 border-r border-slate-200">
+                <span className="text-[11px] text-[#6B7280] uppercase font-bold block">Original</span>
+                <span className="text-xl font-mono font-black text-[#111827]">{activeSubjectData.pct}%</span>
               </div>
               <div className="text-center px-2">
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Projected</span>
-                <span className={`text-2xl font-mono font-black ${localSim.projPct >= targetThreshold ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <span className="text-[11px] text-[#6B7280] uppercase font-bold block">Projected</span>
+                <span className={`text-2xl font-mono font-black ${localSim.projPct >= targetThreshold ? 'text-[#1A4731]' : 'text-rose-600'}`}>
                   {localSim.projPct}%
                 </span>
               </div>
               <div className="text-center pl-2">
-                <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${localSim.delta >= 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${localSim.delta >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                   {localSim.delta >= 0 ? `+${localSim.delta}%` : `${localSim.delta}%`}
                 </span>
               </div>
@@ -438,19 +438,19 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
         {/* Subject & Regulatory Threshold Selector Controls */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Subject Dropdown */}
-          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-white flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4 text-emerald-400" /> Choose Subject for Simulation
+              <span className="font-bold text-[#111827] flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-[#10B981]" /> Choose Subject for Simulation
               </span>
-              <span className="text-[11px] text-slate-400 font-mono">
+              <span className="text-[11px] text-[#6B7280] font-mono">
                 {activeSubjectData.attended} / {activeSubjectData.total} Lectures
               </span>
             </div>
             <select
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer"
+              className="w-full bg-[#F8FAF9] border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] font-medium focus:ring-2 focus:ring-[#1A4731] focus:outline-none cursor-pointer"
             >
               <option value="OVERALL">📊 All Subjects Combined (Overall Semester Aggregate - {overallPct}%)</option>
               {subjectsList.map((sub, idx) => (
@@ -462,20 +462,20 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           </div>
 
           {/* Threshold Target Selector */}
-          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+          <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-white flex items-center gap-1.5">
-                <Target className="w-4 h-4 text-emerald-400" /> Target Threshold Limit
+              <span className="font-bold text-[#111827] flex items-center gap-1.5">
+                <Target className="w-4 h-4 text-[#10B981]" /> Target Threshold Limit
               </span>
-              <span className="font-mono text-xs font-bold text-emerald-300">{targetThreshold.toFixed(1)}%</span>
+              <span className="font-mono text-xs font-bold text-[#1A4731]">{targetThreshold.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTargetThreshold(75.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 75.0
-                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                    ? 'bg-[#1A4731] text-white border-[#1A4731] shadow-xs'
+                    : 'bg-white text-[#6B7280] border-slate-200 hover:text-[#111827] hover:bg-slate-50'
                 }`}
               >
                 75% UGC Limit
@@ -484,8 +484,8 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 onClick={() => setTargetThreshold(80.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 80.0
-                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                    ? 'bg-[#1A4731] text-white border-[#1A4731] shadow-xs'
+                    : 'bg-white text-[#6B7280] border-slate-200 hover:text-[#111827] hover:bg-slate-50'
                 }`}
               >
                 80% Honors
@@ -494,8 +494,8 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 onClick={() => setTargetThreshold(85.0)}
                 className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition border ${
                   targetThreshold === 85.0
-                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                    ? 'bg-[#1A4731] text-white border-[#1A4731] shadow-xs'
+                    : 'bg-white text-[#6B7280] border-slate-200 hover:text-[#111827] hover:bg-slate-50'
                 }`}
               >
                 85% Scholarship
@@ -505,19 +505,19 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
         </div>
 
         {/* Feature Mode Tabs */}
-        <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800 overflow-x-auto">
+        <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab('CALENDAR')}
-            className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'CALENDAR'
-                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-[#1A4731] text-white shadow-xs'
+                : 'text-[#6B7280] hover:text-[#111827] hover:bg-white'
             }`}
           >
             <Calendar className="w-4 h-4" />
             <span>"What-If" Calendar</span>
             {calendarBunks > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500 text-white font-mono">
+              <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-rose-500 text-white font-mono">
                 {calendarBunks} bunks
               </span>
             )}
@@ -525,16 +525,16 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
 
           <button
             onClick={() => setActiveTab('SLIDERS')}
-            className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'SLIDERS'
-                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-[#1A4731] text-white shadow-xs'
+                : 'text-[#6B7280] hover:text-[#111827] hover:bg-white'
             }`}
           >
             <Sliders className="w-4 h-4" />
             <span>Interactive Sliders</span>
             {(plannedBunks > 0 || plannedAttends > 0) && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white font-mono">
+              <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-emerald-600 text-white font-mono">
                 {plannedBunks}b / {plannedAttends}a
               </span>
             )}
@@ -542,10 +542,10 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
 
           <button
             onClick={() => setActiveTab('ROADMAP')}
-            className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+            className={`flex-1 min-w-[150px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'ROADMAP'
-                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-[#1A4731] text-white shadow-xs'
+                : 'text-[#6B7280] hover:text-[#111827] hover:bg-white'
             }`}
           >
             <Compass className="w-4 h-4" />
@@ -554,10 +554,10 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
 
           <button
             onClick={() => setActiveTab('SUBJECTS')}
-            className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+            className={`flex-1 min-w-[140px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
               activeTab === 'SUBJECTS'
-                ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg shadow-emerald-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                ? 'bg-[#1A4731] text-white shadow-xs'
+                : 'text-[#6B7280] hover:text-[#111827] hover:bg-white'
             }`}
           >
             <Layers className="w-4 h-4" />
@@ -568,9 +568,9 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
         {/* TAB 1: "WHAT-IF" CALENDAR TIMETABLE SIMULATOR */}
         {activeTab === 'CALENDAR' && (
           <div className="space-y-4 animate-in fade-in duration-300">
-            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs">
-              <div className="flex items-center gap-2 text-slate-300">
-                <Calendar className="w-4 h-4 text-emerald-400" />
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-[#EBF4EE] border border-emerald-200 text-xs">
+              <div className="flex items-center gap-2 text-[#123323]">
+                <Calendar className="w-4 h-4 text-[#10B981]" />
                 <span>
                   <strong>Upcoming 14-Day Schedule:</strong> Click any day to simulate taking leave (e.g. for a Friday hackathon or fest).
                 </span>
@@ -578,13 +578,13 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => applyPreset('HACKATHON')}
-                  className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition text-[11px] font-bold"
+                  className="px-2.5 py-1 rounded-lg bg-[#1A4731] text-white hover:bg-[#123323] transition text-[11px] font-bold shadow-xs"
                 >
                   🚀 Test Friday Hackathon Preset
                 </button>
                 <button
                   onClick={() => setCalendarSchedule(prev => prev.map(d => ({ ...d, action: 'ATTEND', reason: 'Regular Lecture' })))}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition text-[11px]"
+                  className="px-2.5 py-1 rounded-lg bg-white text-[#6B7280] hover:bg-slate-50 border border-slate-200 transition text-[11px] font-medium shadow-xs"
                 >
                   Clear Leaves
                 </button>
@@ -601,37 +601,37 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                     onClick={() => toggleCalendarDay(item.id)}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden select-none active:scale-[0.98] ${
                       isLeave
-                        ? 'bg-rose-950/40 border-rose-500/50 hover:border-rose-400 shadow-md shadow-rose-950/30'
-                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                        ? 'bg-rose-50/80 border-rose-300 hover:border-rose-400 shadow-xs'
+                        : 'bg-white border-slate-200 hover:border-emerald-300 shadow-xs'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-white">{item.dateStr}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      <span className="text-xs font-bold text-[#111827]">{item.dateStr}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
                         isLeave
-                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          ? 'bg-rose-100 text-rose-800 border-rose-200'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                       }`}>
                         {isLeave ? '🌴 Taking Leave' : '✅ Attending'}
                       </span>
                     </div>
 
                     <div className="space-y-1">
-                      <p className="text-[11px] text-slate-300 truncate font-medium">{item.subject}</p>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <p className="text-[11px] text-[#4B5563] truncate font-medium">{item.subject}</p>
+                      <div className="flex items-center justify-between text-[11px] text-[#6B7280]">
                         <span>{item.classes} Lecture{item.classes !== 1 ? 's' : ''}</span>
-                        <span className="font-mono text-emerald-300">{item.day}</span>
+                        <span className="font-mono text-[#1A4731] font-semibold">{item.day}</span>
                       </div>
                     </div>
 
                     {/* Leave Reason Picker */}
                     {isLeave && (
-                      <div className="mt-2.5 pt-2 border-t border-rose-500/20" onClick={(e) => e.stopPropagation()}>
-                        <label className="text-[10px] text-rose-300 uppercase font-bold block mb-1">Reason Tag:</label>
+                      <div className="mt-2.5 pt-2 border-t border-rose-200" onClick={(e) => e.stopPropagation()}>
+                        <label className="text-[11px] text-rose-800 uppercase font-bold block mb-1">Reason Tag:</label>
                         <select
                           value={item.reason}
                           onChange={(e) => setCalendarReason(item.id, e.target.value)}
-                          className="w-full bg-slate-950 border border-rose-500/40 rounded-lg text-[10px] text-rose-200 px-2 py-1 focus:outline-none"
+                          className="w-full bg-white border border-rose-300 rounded-lg text-[11px] text-rose-900 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-rose-500"
                         >
                           <option value="Hackathon Leave 🏆">Hackathon Leave 🏆</option>
                           <option value="Personal Leave 🏖️">Personal Leave 🏖️</option>
@@ -647,24 +647,24 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             </div>
 
             {/* Calendar Simulation Summary Box */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="space-y-1 text-center sm:text-left">
-                <p className="text-xs font-bold text-white flex items-center justify-center sm:justify-start gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
+                <p className="text-xs font-bold text-[#111827] flex items-center justify-center sm:justify-start gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
                   <span>Calendar Simulation Outcome</span>
                 </p>
-                <p className="text-xs text-slate-300">
-                  Total Planned Leaves across calendar: <strong className="text-rose-400">{calendarBunks} lecture{calendarBunks !== 1 ? 's' : ''} missed</strong>.
+                <p className="text-xs text-[#6B7280]">
+                  Total Planned Leaves across calendar: <strong className="text-rose-600">{calendarBunks} lecture{calendarBunks !== 1 ? 's' : ''} missed</strong>.
                   {' '}
-                  New aggregate projected attendance: <strong className={localSim.projPct >= targetThreshold ? 'text-emerald-400' : 'text-rose-400'}>{localSim.projPct}%</strong>.
+                  New aggregate projected attendance: <strong className={localSim.projPct >= targetThreshold ? 'text-[#1A4731]' : 'text-rose-600'}>{localSim.projPct}%</strong>.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
                   localSim.status === 'SAFE'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                    : 'bg-rose-100 text-rose-800 border-rose-200'
                 }`}>
                   {localSim.status === 'SAFE' ? `Safe: +${localSim.safeSkips} Buffer Skips Left` : `Warning: Need ${localSim.classesNeeded} Attends`}
                 </span>
@@ -678,37 +678,37 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="space-y-5 animate-in fade-in duration-300">
             {/* Quick Presets Bar */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+              <label className="text-xs font-bold text-[#111827] uppercase tracking-wider block">
                 Popular Student What-If Presets:
               </label>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => applyPreset('HACKATHON')}
-                  className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
                 >
                   🚀 Friday Hackathon (-2 Lectures)
                 </button>
                 <button
                   onClick={() => applyPreset('SICK_LEAVE')}
-                  className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
                 >
                   🤒 Medical Leave (-3 Lectures)
                 </button>
                 <button
                   onClick={() => applyPreset('EXTENDED_FEST')}
-                  className="px-3 py-2 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
                 >
                   🌴 Long Weekend Fest (-4 Lectures)
                 </button>
                 <button
                   onClick={() => applyPreset('RECOVERY_SPRINT')}
-                  className="px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
                 >
                   ⚡ Recovery Sprint (+5 Attends)
                 </button>
                 <button
                   onClick={() => applyPreset('TARGET_SAFE')}
-                  className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
+                  className="px-3 py-2 rounded-xl bg-white hover:bg-slate-50 text-[#111827] border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
                 >
                   🎯 Exact Safe Target
                 </button>
@@ -718,16 +718,16 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
             {/* Sliders Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Slider 1: Missed Lectures (Bunks) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-rose-50/40 border border-rose-200 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-rose-500"></span>
                       Simulate Missed Lectures (Bunk / Leave)
                     </span>
-                    <p className="text-[11px] text-slate-400">Classes you plan to take off</p>
+                    <p className="text-[11px] text-[#6B7280]">Classes you plan to take off</p>
                   </div>
-                  <span className="text-2xl font-mono font-black text-rose-400">
+                  <span className="text-2xl font-mono font-black text-rose-700">
                     {plannedBunks}
                   </span>
                 </div>
@@ -740,9 +740,9 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                     step="1"
                     value={plannedBunks}
                     onChange={(e) => setPlannedBunks(parseInt(e.target.value) || 0)}
-                    className="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-rose-600"
                   />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <div className="flex justify-between text-[11px] text-[#6B7280] font-mono">
                     <span>0 (None)</span>
                     <span>5</span>
                     <span>10</span>
@@ -753,13 +753,13 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={() => setPlannedBunks(Math.max(0, plannedBunks - 1))}
-                    className="flex-1 py-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-800"
+                    className="flex-1 py-1.5 bg-white hover:bg-slate-50 text-[#111827] rounded-lg text-xs font-bold border border-slate-200 shadow-xs"
                   >
                     -1 Class
                   </button>
                   <button
                     onClick={() => setPlannedBunks(Math.min(15, plannedBunks + 1))}
-                    className="flex-1 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-lg text-xs font-bold border border-rose-500/30"
+                    className="flex-1 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold border border-rose-300"
                   >
                     +1 Bunk
                   </button>
@@ -767,16 +767,16 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               </div>
 
               {/* Slider 2: Attended Lectures (Recovery Sprint) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50/40 border border-emerald-200 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>
                       Simulate Attended Lectures
                     </span>
-                    <p className="text-[11px] text-slate-400">Future classes you commit to attending</p>
+                    <p className="text-[11px] text-[#6B7280]">Future classes you commit to attending</p>
                   </div>
-                  <span className="text-2xl font-mono font-black text-emerald-400">
+                  <span className="text-2xl font-mono font-black text-[#1A4731]">
                     +{plannedAttends}
                   </span>
                 </div>
@@ -789,9 +789,9 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                     step="1"
                     value={plannedAttends}
                     onChange={(e) => setPlannedAttends(parseInt(e.target.value) || 0)}
-                    className="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
                   />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <div className="flex justify-between text-[11px] text-[#6B7280] font-mono">
                     <span>0</span>
                     <span>5</span>
                     <span>10</span>
@@ -802,13 +802,13 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={() => setPlannedAttends(Math.max(0, plannedAttends - 1))}
-                    className="flex-1 py-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-800"
+                    className="flex-1 py-1.5 bg-white hover:bg-slate-50 text-[#111827] rounded-lg text-xs font-bold border border-slate-200 shadow-xs"
                   >
                     -1 Class
                   </button>
                   <button
                     onClick={() => setPlannedAttends(Math.min(15, plannedAttends + 1))}
-                    className="flex-1 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold border border-emerald-500/30"
+                    className="flex-1 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg text-xs font-bold border border-emerald-300"
                   >
                     +1 Attend
                   </button>
@@ -823,35 +823,35 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
           <div className="space-y-4 animate-in fade-in duration-300">
             {localSim.status === 'DEFICIT' ? (
               /* RECOVERY ROADMAP WHEN IN DANGER ZONE */
-              <div className="p-5 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-4">
+              <div className="p-5 rounded-2xl bg-rose-50/50 border border-rose-200 shadow-xs space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                    <h3 className="text-sm font-bold text-rose-950 flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
                       <span>Academic Detention Recovery Roadmap</span>
                     </h3>
-                    <p className="text-xs text-rose-200/90 mt-1">
+                    <p className="text-xs text-rose-900 mt-1">
                       Target recovery goal: Climb back above the <strong>{targetThreshold}% UGC threshold</strong>.
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-500 text-white font-mono shadow">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-rose-600 text-white font-mono shadow-xs">
                     Need {localSim.classesNeeded} Lectures
                   </span>
                 </div>
 
                 {/* The Signature Requirement Statement */}
-                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-rose-500/30 text-xs text-slate-200">
-                  <p className="font-bold text-rose-300 text-sm">
+                <div className="p-3.5 rounded-xl bg-white border border-rose-200 text-xs text-[#111827] shadow-xs">
+                  <p className="font-bold text-rose-900 text-sm">
                     🎯 Mandatory Recovery Requirement:
                   </p>
-                  <p className="mt-0.5 leading-relaxed">
-                    You must attend the next <strong className="text-white text-base underline decoration-rose-400">{localSim.classesNeeded} consecutive lectures</strong> to climb back to <strong className="text-emerald-400">{targetThreshold}%+</strong> attendance and unlock your exam hall ticket.
+                  <p className="mt-0.5 leading-relaxed text-[#4B5563]">
+                    You must attend the next <strong className="text-rose-950 text-base underline decoration-rose-400">{localSim.classesNeeded} consecutive lectures</strong> to climb back to <strong className="text-[#1A4731]">{targetThreshold}%+</strong> attendance and unlock your exam hall ticket.
                   </p>
                 </div>
 
                 {/* Step-by-Step Progress Ladder */}
                 <div className="space-y-2">
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <p className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">
                     Sequential Lecture Milestones:
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
@@ -860,20 +860,20 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                         key={idx}
                         className={`p-3 rounded-xl border flex items-center justify-between text-xs transition ${
                           step.reached
-                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200 shadow-md shadow-emerald-950/30'
-                            : 'bg-slate-900 border-slate-800 text-slate-300'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
+                            : 'bg-white border-slate-200 text-[#111827]'
                         }`}
                       >
                         <div>
                           <p className="font-bold flex items-center gap-1.5">
-                            {step.reached ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />}
+                            {step.reached ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <ChevronRight className="w-3.5 h-3.5 text-[#10B981]" />}
                             <span>Lecture +{step.attendedAdd}</span>
                           </p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">
+                          <p className="text-[11px] text-[#6B7280] mt-0.5">
                             {step.reached ? '🎉 UGC Minimum Cleared!' : 'Recovering deficit'}
                           </p>
                         </div>
-                        <span className={`text-sm font-mono font-black ${step.reached ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        <span className={`text-sm font-mono font-black ${step.reached ? 'text-emerald-700' : 'text-amber-700'}`}>
                           {step.pct}%
                         </span>
                       </div>
@@ -883,34 +883,34 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
               </div>
             ) : (
               /* CUSHION RUNWAY WHEN IN SAFE ZONE */
-              <div className="p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-4">
+              <div className="p-5 rounded-2xl bg-emerald-50/40 border border-emerald-200 shadow-xs space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <h3 className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                       <span>Safe Cushion Degradation Ladder</span>
                     </h3>
-                    <p className="text-xs text-emerald-200/90 mt-1">
+                    <p className="text-xs text-emerald-900 mt-1">
                       Visual degradation ladder showing how future bunks affect your standing before hitting the {targetThreshold}% limit:
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-500 text-slate-950 font-mono shadow">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#1A4731] text-white font-mono shadow-xs">
                     +{localSim.safeSkips} Safe Skips
                   </span>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-emerald-500/30 text-xs text-slate-200">
-                  <p className="font-bold text-emerald-300 text-sm">
+                <div className="p-3.5 rounded-xl bg-white border border-emerald-200 text-xs text-[#111827] shadow-xs">
+                  <p className="font-bold text-[#1A4731] text-sm">
                     🛡️ Safe Buffer Confirmation:
                   </p>
-                  <p className="mt-0.5 leading-relaxed">
-                    You can safely skip up to <strong className="text-white text-base underline decoration-emerald-400">{localSim.safeSkips} lecture{localSim.safeSkips !== 1 ? 's' : ''}</strong> without dropping below the university regulatory threshold.
+                  <p className="mt-0.5 leading-relaxed text-[#4B5563]">
+                    You can safely skip up to <strong className="text-[#111827] text-base underline decoration-emerald-500">{localSim.safeSkips} lecture{localSim.safeSkips !== 1 ? 's' : ''}</strong> without dropping below the university regulatory threshold.
                   </p>
                 </div>
 
                 {/* Degradation Matrix */}
                 <div className="space-y-2">
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <p className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">
                     Degradation with Subsequent Skips:
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
@@ -920,14 +920,14 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                         className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
                           step.stillSafe
                             ? step.bufferLeft === 0
-                              ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
-                              : 'bg-slate-900 border-slate-800 text-slate-300'
-                            : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+                              ? 'bg-amber-50 border-amber-300 text-amber-950'
+                              : 'bg-white border-slate-200 text-[#111827]'
+                            : 'bg-rose-50 border-rose-300 text-rose-950'
                         }`}
                       >
                         <div>
                           <p className="font-bold">Skip {step.skipCount} Class{step.skipCount !== 1 ? 'es' : ''}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">
+                          <p className="text-[11px] text-[#6B7280] mt-0.5">
                             {step.stillSafe
                               ? step.bufferLeft === 0
                                 ? '⚠️ Final Safe Class'
@@ -936,7 +936,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                           </p>
                         </div>
                         <span className={`text-sm font-mono font-black ${
-                          step.stillSafe ? (step.bufferLeft === 0 ? 'text-amber-400' : 'text-emerald-400') : 'text-rose-400'
+                          step.stillSafe ? (step.bufferLeft === 0 ? 'text-amber-700' : 'text-emerald-700') : 'text-rose-700'
                         }`}>
                           {step.pct}%
                         </span>
@@ -952,7 +952,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
         {/* TAB 4: SUBJECT CURRICULUM MATRIX */}
         {activeTab === 'SUBJECTS' && (
           <div className="space-y-3 animate-in fade-in duration-300">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[#6B7280]">
               Curriculum breakdown with independent thresholds. Click <strong>"Simulate"</strong> on any subject to load it directly into the simulator:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -972,33 +972,33 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                     key={idx}
                     className={`p-4 rounded-2xl border transition-all ${
                       selectedSubject === (sub.subject_code || sub.subject)
-                        ? 'bg-emerald-950/30 border-emerald-500 ring-1 ring-emerald-500'
-                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                        ? 'bg-emerald-50/50 border-[#1A4731] ring-1 ring-[#1A4731] shadow-xs'
+                        : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="text-xs font-bold text-white">{sub.subject}</h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
+                        <h4 className="text-xs font-bold text-[#111827]">{sub.subject}</h4>
+                        <p className="text-[11px] text-[#6B7280] mt-0.5">
                           {sub.attended} Attended / {sub.total} Conducted
                         </p>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-xs font-mono font-black ${
-                        isSubSafe ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                        isSubSafe ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                       }`}>
                         {subPct}%
                       </span>
                     </div>
 
-                    <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden my-2.5">
+                    <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden my-2.5">
                       <div
-                        className={`h-full rounded-full ${isSubSafe ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                        className={`h-full rounded-full ${isSubSafe ? 'bg-[#10B981]' : 'bg-rose-500'}`}
                         style={{ width: `${Math.min(100, subPct)}%` }}
                       />
                     </div>
 
                     <div className="flex items-center justify-between pt-1">
-                      <span className={`text-[11px] font-semibold ${isSubSafe ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      <span className={`text-[11px] font-semibold ${isSubSafe ? 'text-[#1A4731]' : 'text-rose-700'}`}>
                         {isSubSafe ? `✅ ${subSafeSkips} Safe Skips` : `⚠️ Must Attend ${subNeeded}`}
                       </span>
 
@@ -1007,7 +1007,7 @@ export default function BunkSimulator({ studentRollNo, dashboardData, onRefreshD
                           setSelectedSubject(sub.subject_code || sub.subject);
                           setActiveTab('SLIDERS');
                         }}
-                        className="px-2.5 py-1 bg-slate-950 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-lg text-[11px] font-bold border border-slate-800 transition"
+                        className="px-2.5 py-1 bg-[#1A4731] hover:bg-[#123323] text-white rounded-lg text-[11px] font-bold transition shadow-xs"
                       >
                         Simulate Subject &rarr;
                       </button>

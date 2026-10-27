@@ -71,10 +71,10 @@ export default function DesktopAdminAudit({
           />
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="sticky top-0 bg-white/95 backdrop-blur-xs z-10 border-b border-slate-100">
+              <tr className="text-slate-400 uppercase text-[11px] tracking-wider font-bold">
                 <th className="py-3 px-3">Timestamp</th>
                 <th className="py-3 px-3">Action Event</th>
                 <th className="py-3 px-3">Operator</th>
@@ -84,45 +84,66 @@ export default function DesktopAdminAudit({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredLogs.map((log, idx) => {
-                const isHigh = log.level === 'HIGH' || log.level === 'SECURITY_ALERT';
-                const isMedium = log.level === 'MEDIUM';
-
-                return (
-                  <tr key={log.id || idx} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3 px-3 font-mono text-slate-400">
-                      {log.timestamp}
-                    </td>
-                    <td className="py-3 px-3 font-mono font-bold text-[#1A4731]">
-                      {log.action}
-                    </td>
-                    <td className="py-3 px-3 font-bold text-slate-800">
-                      {log.operator}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">
-                      {log.target}
-                    </td>
-                    <td className="py-3 px-3 text-slate-500 max-w-xs truncate">
-                      {log.details}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      {isHigh ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-300 text-[10px] font-bold">
-                          HIGH
-                        </span>
-                      ) : isMedium ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold">
-                          MEDIUM
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-bold">
-                          NORMAL
-                        </span>
-                      )}
-                    </td>
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-16" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-200 rounded w-36" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-28" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-24" /></td>
+                    <td className="py-3 px-3"><div className="h-4 bg-slate-100 rounded w-44" /></td>
+                    <td className="py-3 px-3 text-right"><div className="h-5 bg-slate-100 rounded-full w-16 ml-auto" /></td>
                   </tr>
-                );
-              })}
+                ))
+              ) : filteredLogs.length > 0 ? (
+                filteredLogs.map((log, idx) => {
+                  const isHigh = log.level === 'HIGH' || log.level === 'SECURITY_ALERT';
+                  const isMedium = log.level === 'MEDIUM';
+
+                  return (
+                    <tr key={log.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-3 font-mono text-slate-400 whitespace-nowrap">
+                        {log.timestamp}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-[#1A4731] whitespace-nowrap">
+                        {log.action}
+                      </td>
+                      <td className="py-3 px-3 font-bold text-slate-800 truncate max-w-[160px]">
+                        {log.operator}
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 truncate max-w-[160px]">
+                        {log.target}
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 max-w-xs truncate">
+                        {log.details}
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        {isHigh ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-300 text-[11px] font-bold">
+                            HIGH
+                          </span>
+                        ) : isMedium ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-bold">
+                            MEDIUM
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-bold">
+                            NORMAL
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan="6" className="py-12 text-center text-slate-400 space-y-1">
+                    <History className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="font-bold text-sm text-slate-600">No audit events match your query</p>
+                    <p className="text-xs">Try adjusting your search criteria</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

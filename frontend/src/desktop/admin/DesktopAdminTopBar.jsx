@@ -3,6 +3,7 @@ import {
   Search, Bell, UserPlus, RefreshCw, Radio, ChevronDown,
   LogOut, Shield, CheckCircle2, User, Building2
 } from 'lucide-react';
+import InstallAppButton from '../../components/InstallAppButton';
 
 export default function DesktopAdminTopBar({
   user,
@@ -11,7 +12,8 @@ export default function DesktopAdminTopBar({
   onOpenAddStudent,
   onOpenAddFaculty,
   onRefreshAll,
-  onLogout
+  onLogout,
+  unreadAlertsCount = 0
 }) {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const adminName = user?.name || 'Administrator';
@@ -30,7 +32,7 @@ export default function DesktopAdminTopBar({
           </span>
         </div>
         <p className="text-[11px] text-slate-500 font-medium truncate">
-          {todayFormattedDate} &bull; University Master Administration
+          {todayFormattedDate} &bull; University Administration
         </p>
       </div>
 
@@ -44,7 +46,7 @@ export default function DesktopAdminTopBar({
             aria-label="Search"
             className="w-full bg-slate-50/90 border border-slate-200/80 rounded-2xl pl-9 pr-14 py-2 text-xs text-[#111827] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1A4731]/30 focus:border-[#1A4731] transition"
           />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded shadow-2xs">
+          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono bg-white border border-slate-200 text-slate-400 px-1.5 py-0.5 rounded shadow-2xs">
             ⌘K
           </kbd>
         </div>
@@ -96,6 +98,24 @@ export default function DesktopAdminTopBar({
           </button>
         )}
 
+        {/* PWA Install App Button */}
+        <InstallAppButton />
+
+        {/* Notifications Bell */}
+        <button
+          type="button"
+          className="relative p-2.5 rounded-2xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+          title="Notifications & System Alerts"
+          aria-label="Notifications & System Alerts"
+        >
+          <Bell className="w-4 h-4" />
+          {unreadAlertsCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[11px] font-extrabold flex items-center justify-center ring-2 ring-white">
+              {unreadAlertsCount > 9 ? '9+' : unreadAlertsCount}
+            </span>
+          )}
+        </button>
+
         {/* Profile Avatar / Dropdown */}
         <div className="relative">
           <button
@@ -111,7 +131,7 @@ export default function DesktopAdminTopBar({
               <span className="text-xs font-extrabold text-[#111827] block leading-tight truncate max-w-[120px]">
                 {adminName}
               </span>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+              <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider block">
                 Administrator
               </span>
             </div>
@@ -124,7 +144,7 @@ export default function DesktopAdminTopBar({
               <div className="px-4 py-2 border-b border-slate-100">
                 <p className="text-xs font-extrabold text-[#111827]">{adminName}</p>
                 <p className="text-[11px] text-slate-400 font-mono">ID: {adminId}</p>
-                <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">Master Campus Admin</p>
+                <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">Master Campus Admin</p>
               </div>
 
               <div className="border-t border-slate-100 pt-1">

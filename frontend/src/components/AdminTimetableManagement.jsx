@@ -5,6 +5,9 @@ import {
   RefreshCw, Layers, BookOpen, AlertCircle, ArrowRight
 } from 'lucide-react';
 import { api } from '../api';
+import Modal from './ui/Modal';
+import { toast } from './ui/Toast';
+import SmartAttendLoader from './ui/SmartAttendLoader';
 
 const DAYS_OF_WEEK = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const DAY_LABELS = {
@@ -78,6 +81,7 @@ export default function AdminTimetableManagement({
 
   // Batch Publish State
   const [batchActionLoading, setBatchActionLoading] = useState(false);
+  const [batchConfirm, setBatchConfirm] = useState(null); // { publish: boolean }
 
   // Load Timetable Entries from Backend API
   const fetchTimetable = async () => {
@@ -332,11 +336,13 @@ export default function AdminTimetableManagement({
     const nextStatus = !entry.is_published;
     try {
       await api.setTimetablePublishStatus(entry.id, nextStatus);
-      setActionSuccess(`Slot ${entry.subject_code} (${entry.day_of_week}) ${nextStatus ? 'published live' : 'saved as draft'}.`);
+      const msg = `Slot ${entry.subject_code} (${entry.day_of_week}) ${nextStatus ? 'published live' : 'saved as draft'}.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
       await fetchTimetable();
     } catch (err) {
-      alert('Failed to change publication status: ' + err.message);
+      toast.error('Failed to change publication status: ' + err.message);
     }
   };
 
@@ -352,27 +358,27 @@ export default function AdminTimetableManagement({
     setDeleting(true);
     try {
       await api.deleteTimetableEntry(entryToDelete.id);
-      setActionSuccess(`Timetable slot ${entryToDelete.subject_code} (${entryToDelete.day_of_week} ${entryToDelete.start_time}) permanently deleted.`);
+      const msg = `Timetable slot ${entryToDelete.subject_code} (${entryToDelete.day_of_week} ${entryToDelete.start_time}) permanently deleted.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 4000);
       setShowDeleteModal(false);
       setEntryToDelete(null);
       await fetchTimetable();
       if (onTimetableUpdated) onTimetableUpdated();
     } catch (err) {
-      alert('Failed to delete timetable entry: ' + err.message);
+      toast.error('Failed to delete timetable entry: ' + err.message);
     } finally {
       setDeleting(false);
     }
   };
 
   // Batch Publish or Unpublish for selected Department & Semester
-  const handleBatchPublish = async (publish) => {
-    const confirmMsg = publish
-      ? `Are you sure you want to PUBLISH all drafts for ${deptFilter === 'ALL' ? 'all departments' : deptFilter} (Semester: ${semFilter}, Section: ${secFilter})? Published slots will immediately appear on faculty & student schedules.`
-      : `Are you sure you want to UNPUBLISH all slots for ${deptFilter === 'ALL' ? 'all departments' : deptFilter} (Semester: ${semFilter}, Section: ${secFilter}) to draft mode?`;
+  const handleBatchPublish = (publish) => {
+    setBatchConfirm({ publish });
+  };
 
-    if (!window.confirm(confirmMsg)) return;
-
+  const executeBatchPublish = async (publish) => {
     setBatchActionLoading(true);
     try {
       const res = await api.batchPublishTimetable({
@@ -381,11 +387,14 @@ export default function AdminTimetableManagement({
         section: secFilter !== 'ALL' ? secFilter : null,
         is_published: publish
       });
-      setActionSuccess(res.message || `Successfully updated publication status for ${res.updated_count} slots.`);
+      const msg = res.message || `Successfully updated publication status for ${res.updated_count} slots.`;
+      toast.success(msg);
+      setActionSuccess(msg);
       setTimeout(() => setActionSuccess(null), 5000);
+      setBatchConfirm(null);
       await fetchTimetable();
     } catch (err) {
-      alert('Batch publish failed: ' + err.message);
+      toast.error('Batch publish failed: ' + err.message);
     } finally {
       setBatchActionLoading(false);
     }
@@ -398,21 +407,21 @@ export default function AdminTimetableManagement({
   return (
     <div className="space-y-6 animate-in fade-in">
       {/* Top Controls & Status Bar */}
-      <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
+      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/40 text-brand-400 flex items-center justify-center font-bold text-sm">
+              <span className="w-8 h-8 rounded-lg bg-[#EBF4EE] border border-emerald-200 text-[#1A4731] flex items-center justify-center font-bold text-sm">
                 <Calendar className="w-4 h-4" />
               </span>
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <h2 className="text-lg font-bold text-[#111827] flex items-center gap-2">
                   <span>Official College Timetable Management</span>
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     {entries.length} slots
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Institutional schedule master. Real-time multi-resource conflict checking for Faculty, Rooms, and Class Cohorts.
                 </p>
               </div>
@@ -422,11 +431,11 @@ export default function AdminTimetableManagement({
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
             {/* View Mode Toggle */}
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
               <button
                 type="button"
                 onClick={() => setViewMode('weekly')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${viewMode === 'weekly' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${viewMode === 'weekly' ? 'bg-[#1A4731] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 <Layers className="w-3.5 h-3.5" />
                 <span>Weekly Grid</span>
@@ -434,7 +443,7 @@ export default function AdminTimetableManagement({
               <button
                 type="button"
                 onClick={() => setViewMode('daily')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${viewMode === 'daily' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${viewMode === 'daily' ? 'bg-[#1A4731] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>Daily View</span>
@@ -445,16 +454,16 @@ export default function AdminTimetableManagement({
             <button
               onClick={fetchTimetable}
               disabled={loading}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition disabled:opacity-50"
+              className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition disabled:opacity-50 cursor-pointer shadow-2xs"
               title="Refresh Timetable"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#1A4731]' : ''}`} />
             </button>
 
             {/* Add Entry Button */}
             <button
               onClick={() => openCreateModal()}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 flex items-center gap-1.5 transition active:scale-95"
+              className="px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>+ Create Slot</span>
@@ -463,15 +472,15 @@ export default function AdminTimetableManagement({
         </div>
 
         {/* Publication Stats & Batch Action Bar */}
-        <div className="pt-3 border-t border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>{publishedCount} Published</span>
             </span>
-            <span className="text-slate-600">|</span>
-            <span className="flex items-center gap-1.5 text-amber-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span className="text-slate-300">|</span>
+            <span className="flex items-center gap-1.5 text-amber-700 font-bold">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
               <span>{draftCount} Drafts</span>
             </span>
             <span className="text-slate-500 text-[11px] hidden sm:inline">
@@ -484,36 +493,36 @@ export default function AdminTimetableManagement({
               type="button"
               onClick={() => handleBatchPublish(true)}
               disabled={batchActionLoading || draftCount === 0}
-              className="px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold text-[11px] flex items-center gap-1 transition disabled:opacity-40"
+              className="px-3 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold text-[11px] flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
               title="Publish all draft slots in current filter cohort"
             >
-              <Globe className="w-3 h-3 text-emerald-400" />
+              <Globe className="w-3 h-3 text-emerald-600" />
               <span>Publish Cohort ({draftCount} Drafts)</span>
             </button>
             <button
               type="button"
               onClick={() => handleBatchPublish(false)}
               disabled={batchActionLoading || publishedCount === 0}
-              className="px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-semibold text-[11px] flex items-center gap-1 transition disabled:opacity-40"
+              className="px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-semibold text-[11px] flex items-center gap-1 transition disabled:opacity-40 cursor-pointer"
               title="Revert all published slots to draft in current filter cohort"
             >
-              <EyeOff className="w-3 h-3 text-amber-400" />
+              <EyeOff className="w-3 h-3 text-amber-600" />
               <span>Unpublish Cohort</span>
             </button>
           </div>
         </div>
 
         {/* Filter Bar */}
-        <div className="pt-3 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
+        <div className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
           {/* Department */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Department
             </label>
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Departments</option>
               {allDepartments.map(dept => (
@@ -524,13 +533,13 @@ export default function AdminTimetableManagement({
 
           {/* Semester */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Semester
             </label>
             <select
               value={semFilter}
               onChange={(e) => setSemFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Semesters</option>
               {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
@@ -541,13 +550,13 @@ export default function AdminTimetableManagement({
 
           {/* Section */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Section
             </label>
             <select
               value={secFilter}
               onChange={(e) => setSecFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Sections</option>
               {SECTIONS.map(sec => (
@@ -558,13 +567,13 @@ export default function AdminTimetableManagement({
 
           {/* Faculty */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Faculty
             </label>
             <select
               value={facultyFilter}
               onChange={(e) => setFacultyFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Teachers</option>
               {facultyList.map(fac => (
@@ -577,13 +586,13 @@ export default function AdminTimetableManagement({
 
           {/* Room */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Room
             </label>
             <select
               value={roomFilter}
               onChange={(e) => setRoomFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Rooms</option>
               {allAvailableRooms.map(rm => (
@@ -594,13 +603,13 @@ export default function AdminTimetableManagement({
 
           {/* Day */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Day
             </label>
             <select
               value={dayFilter}
               onChange={(e) => setDayFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Days</option>
               {DAYS_OF_WEEK.map(d => (
@@ -611,13 +620,13 @@ export default function AdminTimetableManagement({
 
           {/* Status */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
               Status
             </label>
             <select
               value={pubFilter}
               onChange={(e) => setPubFilter(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-brand-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
             >
               <option value="ALL">All Statuses</option>
               <option value="published">Published Only</option>
@@ -634,12 +643,12 @@ export default function AdminTimetableManagement({
             placeholder="Search timetable slots by subject code, subject title, teacher name, or room..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-[#111827] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731] transition"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -675,21 +684,23 @@ export default function AdminTimetableManagement({
 
       {/* Loading State */}
       {loading && (
-        <div className="flex flex-col items-center justify-center min-h-[300px] text-slate-400 gap-3">
-          <RefreshCw className="w-7 h-7 animate-spin text-brand-500" />
-          <p className="text-xs font-medium">Synchronizing institutional timetable slots...</p>
-        </div>
+        <SmartAttendLoader
+          variant="card"
+          portalName="Admin Suite"
+          subtitle="Synchronizing institutional master timetable slots..."
+          size="sm"
+        />
       )}
 
       {/* Empty State */}
       {!loading && filteredEntries.length === 0 && (
-        <div className="glass-card rounded-2xl p-10 border border-slate-800 text-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 mx-auto flex items-center justify-center text-slate-500">
+        <div className="bg-white rounded-2xl p-10 border border-slate-200 shadow-xs text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 mx-auto flex items-center justify-center text-slate-400">
             <Calendar className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-base font-bold text-white">No Timetable Slots Found</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
+            <h3 className="text-base font-bold text-[#111827]">No Timetable Slots Found</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
               No lecture schedules match the current filters or search query. You can reset filters or create a new official timetable slot.
             </p>
           </div>
@@ -705,13 +716,13 @@ export default function AdminTimetableManagement({
                 setPubFilter('ALL');
                 setSearchQuery('');
               }}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
             >
               Reset Filters
             </button>
             <button
               onClick={() => openCreateModal()}
-              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20"
+              className="px-4 py-2 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>+ Create First Slot</span>
@@ -728,23 +739,23 @@ export default function AdminTimetableManagement({
             return (
               <div
                 key={day}
-                className="glass-card rounded-2xl border border-slate-800 flex flex-col min-h-[400px] overflow-hidden"
+                className="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col min-h-[400px] overflow-hidden"
               >
                 {/* Day Header */}
-                <div className="p-3.5 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+                <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-brand-500 shadow-sm" />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#1A4731] shadow-2xs" />
+                    <span className="text-xs font-black text-[#111827] uppercase tracking-wider">
                       {DAY_LABELS[day]}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/80">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200">
                       {dayEntries.length} slots
                     </span>
                     <button
                       onClick={() => openCreateModal(day)}
-                      className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                      className="p-1 rounded-md text-slate-500 hover:text-[#1A4731] hover:bg-emerald-50 transition cursor-pointer"
                       title={`Add slot on ${DAY_LABELS[day]}`}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -755,11 +766,11 @@ export default function AdminTimetableManagement({
                 {/* Day Slot Cards List */}
                 <div className="p-2.5 space-y-2.5 flex-1 overflow-y-auto max-h-[650px]">
                   {dayEntries.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center p-6 text-center text-slate-500 text-xs">
+                    <div className="h-full flex flex-col items-center justify-center p-6 text-center text-slate-400 text-xs">
                       <p>No lectures scheduled</p>
                       <button
                         onClick={() => openCreateModal(day)}
-                        className="mt-2 text-brand-400 hover:text-brand-300 text-[11px] font-semibold"
+                        className="mt-2 text-[#1A4731] hover:underline text-[11px] font-semibold cursor-pointer"
                       >
                         + Add slot
                       </button>
@@ -786,7 +797,7 @@ export default function AdminTimetableManagement({
       {!loading && filteredEntries.length > 0 && viewMode === 'daily' && (
         <div className="space-y-4">
           {/* Day Navigation Bar */}
-          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-slate-800 overflow-x-auto">
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-100 border border-slate-200 overflow-x-auto">
             {DAYS_OF_WEEK.map(d => {
               const count = (entriesByDay[d] || []).length;
               const isSelected = selectedDay === d;
@@ -794,10 +805,10 @@ export default function AdminTimetableManagement({
                 <button
                   key={d}
                   onClick={() => setSelectedDay(d)}
-                  className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shrink-0 ${isSelected ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}
+                  className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shrink-0 cursor-pointer ${isSelected ? 'bg-[#1A4731] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}`}
                 >
                   <span>{DAY_LABELS[d]}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
                     {count}
                   </span>
                 </button>
@@ -806,17 +817,17 @@ export default function AdminTimetableManagement({
           </div>
 
           {/* Daily Schedule List */}
-          <div className="glass-card rounded-2xl p-5 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-brand-400" />
-                <h3 className="text-sm font-bold text-white">
+                <Clock className="w-4 h-4 text-[#1A4731]" />
+                <h3 className="text-sm font-bold text-[#111827]">
                   Schedule for {DAY_LABELS[selectedDay]} ({(entriesByDay[selectedDay] || []).length} lectures)
                 </h3>
               </div>
               <button
                 onClick={() => openCreateModal(selectedDay)}
-                className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1"
+                className="px-3 py-1.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ Add {DAY_LABELS[selectedDay]} Lecture</span>
@@ -824,11 +835,11 @@ export default function AdminTimetableManagement({
             </div>
 
             {(entriesByDay[selectedDay] || []).length === 0 ? (
-              <div className="py-12 text-center text-slate-500 space-y-2">
+              <div className="py-12 text-center text-slate-400 space-y-2">
                 <p className="text-sm font-medium">No lectures scheduled for {DAY_LABELS[selectedDay]}</p>
                 <button
                   onClick={() => openCreateModal(selectedDay)}
-                  className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
+                  className="text-xs text-[#1A4731] hover:underline font-semibold cursor-pointer"
                 >
                   Click here to schedule a lecture for this day
                 </button>
@@ -851,409 +862,431 @@ export default function AdminTimetableManagement({
       )}
 
       {/* CREATE / EDIT TIMETABLE MODAL */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="glass-card rounded-2xl border border-slate-800 w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800 mb-5">
-              <span className="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/40 text-brand-400 flex items-center justify-center font-bold text-sm">
-                <Calendar className="w-4 h-4" />
-              </span>
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  {modalMode === 'create' ? 'Create Official Timetable Slot' : 'Edit Timetable Slot'}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Real-time validation against conflicting faculty schedules, room occupancy, and student cohort overlaps.
-                </p>
-              </div>
-            </div>
-
-            {/* Client Validation Error */}
-            {validationError && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>{validationError}</span>
-              </div>
-            )}
-
-            {/* Scheduling Conflict Error Box (HTTP 409 from Backend) */}
-            {conflictError && (
-              <div className="mb-5 p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs space-y-2">
-                <div className="flex items-center gap-2 font-bold text-rose-300 text-sm">
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>Scheduling Conflict Detected</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 font-mono">
-                    {conflictError.code || 'CONFLICT'}
-                  </span>
-                </div>
-                <p className="text-rose-100 font-medium">
-                  {conflictError.message}
-                </p>
-                {conflictError.conflict_with && (
-                  <div className="mt-2 p-2.5 rounded-lg bg-black/40 border border-rose-500/20 text-[11px] font-mono text-rose-200/90 space-y-1">
-                    <p><strong>Colliding Lecture:</strong> {conflictError.conflict_with.subject_code} - {conflictError.conflict_with.subject_name}</p>
-                    <p><strong>Faculty:</strong> {conflictError.conflict_with.faculty_name} ({conflictError.conflict_with.faculty_id})</p>
-                    <p><strong>Room:</strong> {conflictError.conflict_with.room_no}</p>
-                    <p><strong>Cohort:</strong> {conflictError.conflict_with.department} - Sem {conflictError.conflict_with.semester} Sec {conflictError.conflict_with.section}</p>
-                    <p><strong>Time Window:</strong> {conflictError.conflict_with.day_of_week} ({conflictError.conflict_with.start_time} - {conflictError.conflict_with.end_time})</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={handleSaveEntry} className="space-y-4">
-              {/* Row 1: Subject Selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Curriculum Subject <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formSubjectId}
-                    onChange={(e) => handleSubjectSelect(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    <option value="">-- Choose Existing Subject --</option>
-                    {subjectsList.map(sub => (
-                      <option key={sub.id || sub.code} value={sub.id || sub.code}>
-                        {sub.code} - {sub.name} (Sem {sub.semester})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Subject Code & Title <span className="text-rose-400">*</span>
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      placeholder="Code (e.g. CS301)"
-                      value={formSubjectCode}
-                      onChange={(e) => setFormSubjectCode(e.target.value.toUpperCase())}
-                      className="col-span-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white uppercase focus:outline-none focus:border-brand-500"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Title (e.g. Operating Systems)"
-                      value={formSubjectName}
-                      onChange={(e) => setFormSubjectName(e.target.value)}
-                      className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Faculty Selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Faculty Teacher <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formFacultyId}
-                    onChange={(e) => handleFacultySelect(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                    required
-                  >
-                    <option value="">-- Select Faculty --</option>
-                    {facultyList.map(fac => (
-                      <option key={fac.roll_no} value={fac.roll_no}>
-                        {fac.name} ({fac.roll_no}) - {fac.department}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Faculty Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formFacultyName}
-                    onChange={(e) => setFormFacultyName(e.target.value)}
-                    placeholder="Dr. Ramesh Sharma"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  />
-                </div>
-              </div>
-
-              {/* Row 3: Class Cohort (Department, Semester, Section) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Department <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formDepartment}
-                    onChange={(e) => setFormDepartment(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    {allDepartments.map(dept => (
-                      <option key={dept} value={dept}>{dept}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Semester <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formSemester}
-                    onChange={(e) => setFormSemester(parseInt(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
-                      <option key={s} value={s}>Semester {s}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Section <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formSection}
-                    onChange={(e) => setFormSection(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    {SECTIONS.map(sec => (
-                      <option key={sec} value={sec}>Section {sec}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 4: Room, Day of Week, Academic Year */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Room / Lab Identifier <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formRoomNo}
-                    onChange={(e) => setFormRoomNo(e.target.value.toUpperCase())}
-                    placeholder="Room 301, Lab 2..."
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Day of Week <span className="text-rose-400">*</span>
-                  </label>
-                  <select
-                    value={formDayOfWeek}
-                    onChange={(e) => setFormDayOfWeek(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  >
-                    {DAYS_OF_WEEK.map(d => (
-                      <option key={d} value={d}>{DAY_LABELS[d]}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Academic Year
-                  </label>
-                  <input
-                    type="text"
-                    value={formAcademicYear}
-                    onChange={(e) => setFormAcademicYear(e.target.value)}
-                    placeholder="2025-2026"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                  />
-                </div>
-              </div>
-
-              {/* Row 5: Time Range */}
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
-                  <Clock className="w-3.5 h-3.5 text-brand-400" />
-                  <span>Lecture Timing (24-Hour Format) <span className="text-rose-400">*</span></span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Start Time</label>
-                    <input
-                      type="time"
-                      value={formStartTime}
-                      onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">End Time</label>
-                    <input
-                      type="time"
-                      value={formEndTime}
-                      onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
-                      required
-                    />
-                  </div>
-                </div>
-                {formStartTime && formEndTime && formStartTime >= formEndTime && (
-                  <p className="text-[11px] text-rose-400 font-medium">
-                    ⚠️ Invalid duration: Start time must precede end time.
-                  </p>
-                )}
-              </div>
-
-              {/* Row 6: Publication Status (Draft vs Published) */}
-              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                    {formIsPublished ? (
-                      <>
-                        <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Official Published Slot</span>
-                      </>
-                    ) : (
-                      <>
-                        <EyeOff className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Draft Slot (Hidden from students & faculty)</span>
-                      </>
-                    )}
-                  </p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {formIsPublished
-                      ? 'This timetable slot will be immediately visible on faculty and student portals.'
-                      : 'Save as an internal draft while scheduling. Publish later via 1-click or batch publish.'}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formIsPublished}
-                    onChange={(e) => setFormIsPublished(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
-              </div>
-
-              {/* Form Action Buttons */}
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-brand-500/25 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Validating Conflicts & Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>{modalMode === 'create' ? 'Schedule Timetable Slot' : 'Save Changes'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={modalMode === 'create' ? 'Create Official Timetable Slot' : 'Edit Timetable Slot'}
+        subtitle="Real-time validation against conflicting faculty schedules, room occupancy, and student cohort overlaps."
+        maxWidth="max-w-2xl"
+      >
+        {/* Client Validation Error */}
+        {validationError && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{validationError}</span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* DELETE CONFIRMATION MODAL */}
-      {showDeleteModal && entryToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="glass-card rounded-2xl border border-rose-500/30 w-full max-w-md p-6 shadow-2xl relative space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
+        {/* Scheduling Conflict Error Box (HTTP 409 from Backend) */}
+        {conflictError && (
+          <div className="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-bold text-rose-700 text-sm">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Scheduling Conflict Detected</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-mono font-bold">
+                {conflictError.code || 'CONFLICT'}
+              </span>
             </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="text-base font-bold text-white">Delete Timetable Entry</h3>
-              <p className="text-xs text-slate-400">
-                Are you sure you want to permanently remove this scheduled lecture from the official college timetable?
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5 font-medium">
-              <div className="flex justify-between text-slate-300">
-                <span>Subject:</span>
-                <span className="font-bold text-white">{entryToDelete.subject_code} - {entryToDelete.subject_name}</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Day & Time:</span>
-                <span className="font-bold text-brand-400">{entryToDelete.day_of_week} ({entryToDelete.start_time} - {entryToDelete.end_time})</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Room:</span>
-                <span className="text-slate-200">{entryToDelete.room_no}</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Faculty:</span>
-                <span className="text-slate-200">{entryToDelete.faculty_name}</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Cohort:</span>
-                <span className="text-slate-200">Sem {entryToDelete.semester} - Sec {entryToDelete.section}</span>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-slate-500 text-center">
-              An institutional audit log entry will be permanently recorded for this action.
+            <p className="text-rose-900 font-medium">
+              {conflictError.message}
             </p>
+            {conflictError.conflict_with && (
+              <div className="mt-2 p-2.5 rounded-lg bg-white border border-rose-200 text-[11px] font-mono text-rose-900 space-y-1">
+                <p><strong>Colliding Lecture:</strong> {conflictError.conflict_with.subject_code} - {conflictError.conflict_with.subject_name}</p>
+                <p><strong>Faculty:</strong> {conflictError.conflict_with.faculty_name} ({conflictError.conflict_with.faculty_id})</p>
+                <p><strong>Room:</strong> {conflictError.conflict_with.room_no}</p>
+                <p><strong>Cohort:</strong> {conflictError.conflict_with.department} - Sem {conflictError.conflict_with.semester} Sec {conflictError.conflict_with.section}</p>
+                <p><strong>Time Window:</strong> {conflictError.conflict_with.day_of_week} ({conflictError.conflict_with.start_time} - {conflictError.conflict_with.end_time})</p>
+              </div>
+            )}
+          </div>
+        )}
 
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+        <form onSubmit={handleSaveEntry} className="space-y-4">
+          {/* Row 1: Subject Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Curriculum Subject <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formSubjectId}
+                onChange={(e) => handleSubjectSelect(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={deleting}
-                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30 flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50"
+                <option value="">-- Choose Existing Subject --</option>
+                {subjectsList.map(sub => (
+                  <option key={sub.id || sub.code} value={sub.id || sub.code}>
+                    {sub.code} - {sub.name} (Sem {sub.semester})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Subject Code & Title <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Code (e.g. CS301)"
+                  value={formSubjectCode}
+                  onChange={(e) => setFormSubjectCode(e.target.value.toUpperCase())}
+                  className="col-span-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] uppercase focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Title (e.g. Operating Systems)"
+                  value={formSubjectName}
+                  onChange={(e) => setFormSubjectName(e.target.value)}
+                  className="col-span-2 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Faculty Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Faculty Teacher <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formFacultyId}
+                onChange={(e) => handleFacultySelect(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                required
               >
-                {deleting ? (
+                <option value="">-- Select Faculty --</option>
+                {facultyList.map(fac => (
+                  <option key={fac.roll_no} value={fac.roll_no}>
+                    {fac.name} ({fac.roll_no}) - {fac.department}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Faculty Display Name
+              </label>
+              <input
+                type="text"
+                value={formFacultyName}
+                onChange={(e) => setFormFacultyName(e.target.value)}
+                placeholder="Dr. Ramesh Sharma"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              />
+            </div>
+          </div>
+
+          {/* Row 3: Class Cohort (Department, Semester, Section) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Department <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formDepartment}
+                onChange={(e) => setFormDepartment(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              >
+                {allDepartments.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Semester <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formSemester}
+                onChange={(e) => setFormSemester(parseInt(e.target.value))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                  <option key={s} value={s}>Semester {s}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Section <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formSection}
+                onChange={(e) => setFormSection(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              >
+                {SECTIONS.map(sec => (
+                  <option key={sec} value={sec}>Section {sec}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 4: Room, Day of Week, Academic Year */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Room / Lab Identifier <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formRoomNo}
+                onChange={(e) => setFormRoomNo(e.target.value.toUpperCase())}
+                placeholder="Room 301, Lab 2..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Day of Week <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={formDayOfWeek}
+                onChange={(e) => setFormDayOfWeek(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              >
+                {DAYS_OF_WEEK.map(d => (
+                  <option key={d} value={d}>{DAY_LABELS[d]}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Academic Year
+              </label>
+              <input
+                type="text"
+                value={formAcademicYear}
+                onChange={(e) => setFormAcademicYear(e.target.value)}
+                placeholder="2025-2026"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+              />
+            </div>
+          </div>
+
+          {/* Row 5: Time Range */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+              <Clock className="w-3.5 h-3.5 text-[#1A4731]" />
+              <span>Lecture Timing (24-Hour Format) <span className="text-rose-500">*</span></span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">Start Time</label>
+                <input
+                  type="time"
+                  value={formStartTime}
+                  onChange={(e) => setFormStartTime(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-1">End Time</label>
+                <input
+                  type="time"
+                  value={formEndTime}
+                  onChange={(e) => setFormEndTime(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#1A4731]/20 focus:border-[#1A4731]"
+                  required
+                />
+              </div>
+            </div>
+            {formStartTime && formEndTime && formStartTime >= formEndTime && (
+              <p className="text-[11px] text-rose-600 font-medium">
+                ⚠️ Invalid duration: Start time must precede end time.
+              </p>
+            )}
+          </div>
+
+          {/* Row 6: Publication Status (Draft vs Published) */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-[#111827] flex items-center gap-1.5">
+                {formIsPublished ? (
                   <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Deleting...</span>
+                    <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Official Published Slot</span>
                   </>
                 ) : (
                   <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Confirm Delete</span>
+                    <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Draft Slot (Hidden from students & faculty)</span>
                   </>
                 )}
-              </button>
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {formIsPublished
+                  ? 'This timetable slot will be immediately visible on faculty and student portals.'
+                  : 'Save as an internal draft while scheduling. Publish later via 1-click or batch publish.'}
+              </p>
             </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formIsPublished}
+                onChange={(e) => setFormIsPublished(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1A4731]"></div>
+            </label>
+          </div>
+
+          {/* Form Action Buttons */}
+          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2.5 rounded-xl bg-[#1A4731] hover:bg-[#143826] text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {submitting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Validating Conflicts & Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{modalMode === 'create' ? 'Schedule Timetable Slot' : 'Save Changes'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Modal
+        isOpen={showDeleteModal && !!entryToDelete}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Timetable Entry"
+        subtitle="Are you sure you want to permanently remove this scheduled lecture?"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
+            <Trash2 className="w-6 h-6" />
+          </div>
+
+          {entryToDelete && (
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5 font-medium">
+              <div className="flex justify-between text-slate-600">
+                <span>Subject:</span>
+                <span className="font-bold text-[#111827]">{entryToDelete.subject_code} - {entryToDelete.subject_name}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Day & Time:</span>
+                <span className="font-bold text-[#1A4731]">{entryToDelete.day_of_week} ({entryToDelete.start_time} - {entryToDelete.end_time})</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Room:</span>
+                <span className="text-slate-800 font-semibold">{entryToDelete.room_no}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Faculty:</span>
+                <span className="text-slate-800 font-semibold">{entryToDelete.faculty_name}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Cohort:</span>
+                <span className="text-slate-800 font-semibold">Sem {entryToDelete.semester} - Sec {entryToDelete.section}</span>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] text-slate-500 text-center">
+            An institutional audit log entry will be permanently recorded for this action.
+          </p>
+
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(false)}
+              className="flex-1 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {deleting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Confirm Delete</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Batch Publication Bottom Sheet */}
+      <Modal
+        isOpen={Boolean(batchConfirm)}
+        onClose={() => setBatchConfirm(null)}
+        title={batchConfirm?.publish ? 'Publish Selected Cohort Slots' : 'Unpublish Slots to Draft'}
+        subtitle="Batch status update for student and faculty timetables"
+        variant="sheet"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {batchConfirm?.publish
+              ? `Are you sure you want to PUBLISH all drafts for ${deptFilter === 'ALL' ? 'all departments' : deptFilter} (Semester: ${semFilter}, Section: ${secFilter})? Published slots will immediately appear on faculty & student schedules.`
+              : `Are you sure you want to UNPUBLISH all slots for ${deptFilter === 'ALL' ? 'all departments' : deptFilter} (Semester: ${semFilter}, Section: ${secFilter}) to draft mode?`}
+          </p>
+
+          <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setBatchConfirm(null)}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => executeBatchPublish(batchConfirm?.publish)}
+              disabled={batchActionLoading}
+              className={`px-4 py-2.5 rounded-xl text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                batchConfirm?.publish ? 'bg-[#1A4731] hover:bg-[#143826]' : 'bg-amber-600 hover:bg-amber-700'
+              }`}
+            >
+              {batchActionLoading ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
+              <span>{batchConfirm?.publish ? 'Confirm & Publish Live' : 'Revert to Draft'}</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1263,11 +1296,11 @@ function TimetableSlotCard({ entry, onEdit, onDelete, onTogglePublish }) {
   const isPublished = entry.is_published ?? true;
 
   return (
-    <div className={`group rounded-xl p-3 border transition-all duration-200 relative overflow-hidden ${isPublished ? 'bg-slate-900/90 border-slate-800 hover:border-brand-500/50 hover:shadow-md' : 'bg-slate-950 border-amber-500/30 hover:border-amber-500/60'}`}>
+    <div className={`group rounded-xl p-3 border transition-all duration-200 relative overflow-hidden shadow-2xs ${isPublished ? 'bg-white border-slate-200 hover:border-[#1A4731]/40 hover:shadow-md' : 'bg-amber-50/50 border-amber-200 hover:border-amber-400'}`}>
       {/* Top Bar: Time and Publish Badge */}
       <div className="flex items-center justify-between gap-1.5 mb-2">
-        <span className="text-[11px] font-mono font-bold text-brand-300 flex items-center gap-1">
-          <Clock className="w-3 h-3 text-brand-400" />
+        <span className="text-[11px] font-mono font-bold text-[#1A4731] flex items-center gap-1">
+          <Clock className="w-3 h-3 text-[#1A4731]" />
           <span>{entry.start_time} - {entry.end_time}</span>
         </span>
 
@@ -1275,16 +1308,16 @@ function TimetableSlotCard({ entry, onEdit, onDelete, onTogglePublish }) {
         <button
           onClick={() => onTogglePublish(entry)}
           title={`Click to ${isPublished ? 'unpublish' : 'publish'}`}
-          className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1 transition ${isPublished ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'}`}
+          className={`px-2 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${isPublished ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100' : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'}`}
         >
           {isPublished ? (
             <>
-              <Globe className="w-2.5 h-2.5" />
+              <Globe className="w-3 h-3" />
               <span>Live</span>
             </>
           ) : (
             <>
-              <EyeOff className="w-2.5 h-2.5" />
+              <EyeOff className="w-3 h-3" />
               <span>Draft</span>
             </>
           )}
@@ -1294,47 +1327,47 @@ function TimetableSlotCard({ entry, onEdit, onDelete, onTogglePublish }) {
       {/* Subject Info */}
       <div className="space-y-0.5 mb-2">
         <div className="flex items-center justify-between gap-1">
-          <span className="text-xs font-black text-white group-hover:text-brand-300 transition">
+          <span className="text-xs font-black text-[#111827] group-hover:text-[#1A4731] transition">
             {entry.subject_code}
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-semibold">
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
             Sem {entry.semester} · {entry.section}
           </span>
         </div>
-        <p className="text-[11px] text-slate-300 font-medium line-clamp-1" title={entry.subject_name}>
+        <p className="text-[11px] text-slate-600 font-medium line-clamp-1" title={entry.subject_name}>
           {entry.subject_name}
         </p>
       </div>
 
       {/* Faculty and Room Badges */}
-      <div className="space-y-1 text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+      <div className="space-y-1 text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
         <div className="flex items-center gap-1.5 truncate" title={entry.faculty_name}>
-          <GraduationCap className="w-3 h-3 text-emerald-400 shrink-0" />
-          <span className="truncate">{entry.faculty_name || entry.faculty_id}</span>
+          <GraduationCap className="w-3.5 h-3.5 text-[#1A4731] shrink-0" />
+          <span className="truncate font-medium text-slate-700">{entry.faculty_name || entry.faculty_id}</span>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Building2 className="w-3 h-3 text-emerald-400 shrink-0" />
-            <span className="text-slate-300 font-medium">{entry.room_no}</span>
+            <Building2 className="w-3.5 h-3.5 text-[#1A4731] shrink-0" />
+            <span className="text-slate-700 font-medium">{entry.room_no}</span>
           </div>
-          <span className="text-[10px] text-slate-500 font-mono">
+          <span className="text-[11px] text-slate-400 font-mono">
             {entry.day_of_week?.slice(0, 3)}
           </span>
         </div>
       </div>
 
       {/* Quick Action Overlay / Buttons */}
-      <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex items-center justify-end gap-1.5">
+      <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
         <button
           onClick={() => onEdit(entry)}
-          className="p-1 rounded-md text-slate-400 hover:text-brand-300 hover:bg-slate-800 transition"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-[#1A4731] hover:bg-emerald-50 transition cursor-pointer"
           title="Edit Slot"
         >
           <Edit2 className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={() => onDelete(entry)}
-          className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
           title="Delete Slot"
         >
           <Trash2 className="w-3.5 h-3.5" />
