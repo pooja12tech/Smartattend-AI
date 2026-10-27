@@ -51,14 +51,26 @@ export default function StudentAttendanceFlow({
 
   const activeDotIndex = getStepDotIndex();
 
+  const isScanSuccess = scannerStage === 'DETECTED' || scannerStage === 'VALIDATING';
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 md:backdrop-blur-md flex items-center justify-center p-0 md:p-6 overflow-hidden select-none">
-      <div className="w-full h-full md:h-auto md:max-h-[92vh] md:max-w-lg bg-[#111827] text-white flex flex-col justify-between overflow-hidden md:rounded-3xl md:border md:border-slate-800 md:shadow-2xl relative">
+    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center p-0 overflow-hidden select-none animate-in slide-in-from-bottom duration-500 ease-out">
+      <div className="w-full h-full bg-black text-white flex flex-col justify-between overflow-hidden relative">
         {/* SCREEN 5: QR SCAN SCREEN (Phases 5 & 6) */}
         {step === 'SCAN_QR' && (
-        <div className="relative flex-1 flex flex-col justify-between bg-black">
+        <div className="relative flex-1 flex flex-col justify-between bg-black overflow-hidden">
+          {/* Full-Screen Camera Viewport: displays feed across almost entire screen (Requirement 5) */}
+          <div className="absolute inset-0 w-full h-full overflow-hidden z-0 bg-black">
+            <div
+              id="smartattend-qr-reader"
+              className="w-full h-full object-cover [&_video]:w-full [&_video]:h-full [&_video]:object-cover"
+            />
+            {/* Darkened subtle vignette overlay around central viewing area */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-transparent to-black/85 pointer-events-none" />
+          </div>
+
           {/* Top Bar (Screen 5 Reference) */}
-          <div className="relative z-20 flex items-center justify-between px-4 py-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] bg-gradient-to-b from-black/90 via-black/60 to-transparent">
+          <div className="relative z-20 flex items-center justify-between px-4 py-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] bg-gradient-to-b from-black/90 via-black/50 to-transparent">
             <button
               type="button"
               id="btn-scanner-back"
@@ -70,7 +82,7 @@ export default function StudentAttendanceFlow({
               <ArrowLeft className="w-5 h-5" />
             </button>
 
-            <h2 className="text-base font-extrabold tracking-tight text-white">
+            <h2 className="text-base font-extrabold tracking-tight text-white drop-shadow-md">
               Scan QR Code
             </h2>
 
@@ -90,16 +102,18 @@ export default function StudentAttendanceFlow({
             </button>
           </div>
 
-          {/* Center: Dedicated Mobile Viewport & Reticle Frame */}
-          <div className="relative flex-1 flex flex-col items-center justify-center px-4">
-            {/* Viewfinder box with clean aspect ratio */}
-            <div className="relative w-[78vw] max-w-[290px] sm:max-w-[310px] max-h-[45vh] aspect-square rounded-3xl overflow-hidden bg-black shadow-2xl flex items-center justify-center border border-white/10">
-              {/* Html5Qrcode container */}
-              <div id="smartattend-qr-reader" className="w-full h-full object-cover" />
-
+          {/* Center: Square QR Scanning Frame in Centre (Requirement 5 & 6) */}
+          <div className="relative z-20 flex-1 flex flex-col items-center justify-center px-4">
+            <div
+              className={`relative w-[72vw] max-w-[280px] aspect-square rounded-3xl flex items-center justify-center transition-all duration-300 pointer-events-none ${
+                isScanSuccess
+                  ? 'bg-emerald-950/40 shadow-[0_0_50px_rgba(16,185,129,0.35)]'
+                  : 'bg-transparent shadow-2xl'
+              }`}
+            >
               {/* State 1: Initializing Camera */}
               {scannerStage === 'INITIALIZING' && (
-                <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-2.5 z-20">
+                <div className="absolute inset-0 rounded-3xl bg-black/75 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 z-20">
                   <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
                   <span className="text-xs font-semibold text-slate-300">
                     Initializing camera...
@@ -107,37 +121,64 @@ export default function StudentAttendanceFlow({
                 </div>
               )}
 
-              {/* State 3 & 4: QR Detected / Validating Session */}
-              {(scannerStage === 'DETECTED' || scannerStage === 'VALIDATING') && (
-                <div className="absolute inset-0 bg-emerald-950/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 z-20 animate-in fade-in">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/40">
+              {/* State 3 & 4: Successful QR Scan Feedback (Requirement 6) */}
+              {isScanSuccess && (
+                <div className="absolute inset-0 rounded-3xl bg-emerald-950/60 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5 z-20 animate-in zoom-in-95 duration-200">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-[0_0_30px_#10B981]">
                     {scannerStage === 'VALIDATING' ? (
-                      <RefreshCw className="w-6 h-6 animate-spin" />
+                      <RefreshCw className="w-7 h-7 animate-spin" />
                     ) : (
-                      <Check className="w-7 h-7 stroke-[3]" />
+                      <Check className="w-8 h-8 stroke-[3]" />
                     )}
                   </div>
-                  <span className="text-xs font-bold text-emerald-200">
-                    {scannerStage === 'VALIDATING' ? 'Validating lecture session...' : 'QR code detected!'}
+                  <span className="text-xs font-bold text-emerald-200 drop-shadow">
+                    {scannerStage === 'VALIDATING' ? 'Validating session...' : 'QR Verified!'}
                   </span>
                 </div>
               )}
 
-              {/* Elegant Restrained Forest-Green Reticle Corners */}
-              <div className="absolute inset-3 pointer-events-none z-10">
+              {/* 
+                The 4 Emerald Green Corner Brackets:
+                When QR code is successfully scanned, they glow brightly with a smooth glow effect (Requirement 6)
+              */}
+              <div className="absolute inset-0 pointer-events-none z-10">
                 {/* Top-left corner */}
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-[3.5px] border-l-[3.5px] border-emerald-400 rounded-tl-xl" />
+                <div
+                  className={`absolute top-0 left-0 w-9 h-9 border-t-[4px] border-l-[4px] rounded-tl-2xl transition-all duration-300 ${
+                    isScanSuccess
+                      ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
+                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                  }`}
+                />
                 {/* Top-right corner */}
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-[3.5px] border-r-[3.5px] border-emerald-400 rounded-tr-xl" />
+                <div
+                  className={`absolute top-0 right-0 w-9 h-9 border-t-[4px] border-r-[4px] rounded-tr-2xl transition-all duration-300 ${
+                    isScanSuccess
+                      ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
+                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                  }`}
+                />
                 {/* Bottom-left corner */}
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[3.5px] border-l-[3.5px] border-emerald-400 rounded-bl-xl" />
+                <div
+                  className={`absolute bottom-0 left-0 w-9 h-9 border-b-[4px] border-l-[4px] rounded-bl-2xl transition-all duration-300 ${
+                    isScanSuccess
+                      ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
+                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                  }`}
+                />
                 {/* Bottom-right corner */}
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[3.5px] border-r-[3.5px] border-emerald-400 rounded-br-xl" />
+                <div
+                  className={`absolute bottom-0 right-0 w-9 h-9 border-b-[4px] border-r-[4px] rounded-br-2xl transition-all duration-300 ${
+                    isScanSuccess
+                      ? 'border-emerald-300 shadow-[0_0_24px_#10B981,inset_0_0_12px_#34D399] filter drop-shadow-[0_0_10px_#10B981]'
+                      : 'border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                  }`}
+                />
 
                 {/* Animated Green Laser Scanline with dynamic trailing glow */}
                 {scannerStage === 'SCANNING' && (
-                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-beam shadow-[0_0_18px_rgba(52,211,153,0.95)] z-10 pointer-events-none">
-                    <div className="w-full h-8 bg-gradient-to-b from-emerald-400/20 to-transparent pointer-events-none" />
+                  <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-scan-beam shadow-[0_0_20px_#10B981] z-10 pointer-events-none">
+                    <div className="w-full h-8 bg-gradient-to-b from-emerald-400/25 to-transparent pointer-events-none" />
                   </div>
                 )}
               </div>

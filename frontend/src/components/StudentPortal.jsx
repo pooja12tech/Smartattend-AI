@@ -1393,7 +1393,7 @@ export default function StudentPortal({ user, onLogout }) {
           )}
 
           {/* Persistent Mobile Bottom Navigation (Screens 3-20) */}
-          {!isScannerOpen && (
+          <div className={isScannerOpen ? 'pointer-events-none opacity-0' : 'opacity-100 transition-opacity duration-200'}>
             <StudentBottomNav
               activeTab={
                 currentView === 'home' || currentView === 'active-session'
@@ -1414,7 +1414,7 @@ export default function StudentPortal({ user, onLogout }) {
               }}
               onScanClick={handleStartAttendanceFlow}
             />
-          )}
+          </div>
         </div>
       ) : (
         /* ======================================================== */
