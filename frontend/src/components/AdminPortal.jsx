@@ -161,20 +161,58 @@ export default function AdminPortal({ user, onLogout }) {
     showLogoutConfirmRef.current = showLogoutConfirm;
   }, [showLogoutConfirm]);
 
-  // Synchronize mobile screen and tab with browser popstate
+  // Synchronize mobile screen and tab with browser popstate, while safely closing open modals/sheets
   useEffect(() => {
     const handlePopState = () => {
+      // 1. If any modal is open, close it first
+      if (showFaceCaptureModalRef.current) {
+        if (adminStreamRef.current) {
+          adminStreamRef.current.getTracks().forEach((track) => track.stop());
+          adminStreamRef.current = null;
+        }
+        setAdminCameraActive(false);
+        setShowFaceCaptureModal(false);
+        setTargetStudentForFace(null);
+        setCapturedFacePhoto(null);
+        return;
+      }
+
+      if (showAddModalRef.current) {
+        setShowAddModal(false);
+        return;
+      }
+
+      if (showAddSubjectModalRef.current) {
+        setShowAddSubjectModal(false);
+        return;
+      }
+
+      if (showLogoutConfirmRef.current) {
+        setShowLogoutConfirm(false);
+        return;
+      }
+
+      // 2. Nested detail views: close student details or session student list
+      if (selectedStudentForDetailsRef.current) {
+        setSelectedStudentForDetails(null);
+        setMobileSelectedStudentRoll(null);
+        return;
+      }
+
+      if (selectedSessionForDetailsRef.current) {
+        setSelectedSessionForDetails(null);
+        return;
+      }
+
+      // 3. Normal URL navigation: synchronize mobile screen and tab with the current path
       const state = getInitialAdminMobileState();
       setMobileTab(state.tab);
       setMobileScreen(state.screen);
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-
-  const [exitToast, setExitToast] = useState(false);
-  const lastBackPressRef = useRef(0);
-  const exitTimeoutRef = useRef(null);
 
   const fetchPendingReviews = async () => {
     try {
@@ -327,108 +365,7 @@ export default function AdminPortal({ user, onLogout }) {
 
 
 
-  // Unified popstate listener handling Android system Back gestures & hardware back buttons
-  useEffect(() => {
-    const handlePopState = () => {
-      // 1. If any modal is open, close it first and keep user inside current view
-      if (showFaceCaptureModalRef.current) {
-        if (adminStreamRef.current) {
-          adminStreamRef.current.getTracks().forEach((track) => track.stop());
-          adminStreamRef.current = null;
-        }
-        setAdminCameraActive(false);
-        setShowFaceCaptureModal(false);
-        setTargetStudentForFace(null);
-        setCapturedFacePhoto(null);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
-        } catch {}
-        return;
-      }
 
-      if (showAddModalRef.current) {
-        setShowAddModal(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
-        } catch {}
-        return;
-      }
-
-      if (showAddSubjectModalRef.current) {
-        setShowAddSubjectModal(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
-        } catch {}
-        return;
-      }
-
-      if (showLogoutConfirmRef.current) {
-        setShowLogoutConfirm(false);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: mobileScreenRef.current, tab: mobileTabRef.current }, '');
-        } catch {}
-        return;
-      }
-
-      // 2. Nested detail views: close student details or session student list
-      if (selectedStudentForDetailsRef.current) {
-        setSelectedStudentForDetails(null);
-        setMobileSelectedStudentRoll(null);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: 'students', tab: 'users' }, '');
-        } catch {}
-        return;
-      }
-
-      if (selectedSessionForDetailsRef.current) {
-        setSelectedSessionForDetails(null);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: 'live_sessions', tab: 'attendance' }, '');
-        } catch {}
-        return;
-      }
-
-      // 3. Sub-screens: if viewing sub-screen, return to dashboard
-      if (mobileScreenRef.current !== 'dashboard') {
-        setMobileScreen('dashboard');
-        setMobileTab('home');
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
-        } catch {}
-        return;
-      }
-
-      // 4. Secondary tab on dashboard: switch to 'home' tab
-      if (mobileTabRef.current !== 'home') {
-        setMobileTab('home');
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
-        } catch {}
-        return;
-      }
-
-      // 5. At root dashboard 'home': double-press back to exit confirmation
-      const now = Date.now();
-      if (now - lastBackPressRef.current < 2000) {
-        setExitToast(false);
-        window.history.back();
-      } else {
-        lastBackPressRef.current = now;
-        setExitToast(true);
-        if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
-        exitTimeoutRef.current = setTimeout(() => setExitToast(false), 2000);
-        try {
-          window.history.pushState({ smartattend: true, role: 'admin', screen: 'dashboard', tab: 'home' }, '');
-        } catch {}
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
-    };
-  }, []);
 
   // 1-Click Hardware Device Reset with Mandatory Reason
   const handleResetDevice = async (rollNo) => {
@@ -851,6 +788,7 @@ export default function AdminPortal({ user, onLogout }) {
             onOpenPendingReviews={handleOpenPendingReviews}
             onOpenSettings={handleOpenSettings}
             onOpenProfile={() => handleOpenSettings()}
+            onLogout={handleOpenLogoutConfirm}
           />
         )}
 
@@ -869,8 +807,7 @@ export default function AdminPortal({ user, onLogout }) {
               if (selectedSessionForDetails) {
                 setSelectedSessionForDetails(null);
               } else {
-                setMobileScreen('dashboard');
-                setMobileTab('home');
+                handleMobileTabChange('home', 'dashboard');
               }
             }}
             onSelectStudent={(roll) => handleOpenStudents(roll)}
@@ -879,10 +816,7 @@ export default function AdminPortal({ user, onLogout }) {
 
         {mobileScreen === 'pending_reviews' && (
           <AdminPendingReviewView
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onStudentReviewed={() => {
               fetchPendingReviews();
               fetchOverview();
@@ -894,10 +828,7 @@ export default function AdminPortal({ user, onLogout }) {
           <AdminManualMarkView
             overview={overview}
             usersList={usersList}
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onSuccess={() => {
               fetchOverview();
             }}
@@ -924,8 +855,7 @@ export default function AdminPortal({ user, onLogout }) {
                 setSelectedStudentForDetails(null);
                 setMobileSelectedStudentRoll(null);
               } else {
-                setMobileScreen('dashboard');
-                setMobileTab('home');
+                handleMobileTabChange('home', 'dashboard');
               }
             }}
             onRefreshUsers={fetchUsers}
@@ -936,10 +866,7 @@ export default function AdminPortal({ user, onLogout }) {
         {mobileScreen === 'faculty' && (
           <AdminFacultyView
             usersList={usersList}
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onRefreshUsers={fetchUsers}
             onOpenAddFacultyModal={() => openAddModalForRole('faculty')}
           />
@@ -950,10 +877,7 @@ export default function AdminPortal({ user, onLogout }) {
             overview={overview}
             usersList={usersList}
             subjectsList={subjectsList}
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onOpenAddSubjectModal={() => {
               try {
                 window.history.pushState({ smartattend: true, role: 'admin', modal: 'add_subject' }, '');
@@ -965,10 +889,7 @@ export default function AdminPortal({ user, onLogout }) {
 
         {mobileScreen === 'timetable' && (
           <AdminTimetableMobileView
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onOpenFullManagement={() => {
               setActiveTab('timetable');
             }}
@@ -978,29 +899,16 @@ export default function AdminPortal({ user, onLogout }) {
         {mobileScreen === 'reports' && (
           <AdminReportsView
             overview={overview}
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
           />
         )}
 
         {mobileScreen === 'settings' && (
           <AdminSettingsView
-            onBack={() => {
-              setMobileScreen('dashboard');
-              setMobileTab('home');
-            }}
+            onBack={() => handleMobileTabChange('home', 'dashboard')}
             onOpenAuditLogs={() => fetchAuditLogs()}
             onLogout={handleOpenLogoutConfirm}
           />
-        )}
-
-        {/* Android Exit Confirmation Toast */}
-        {exitToast && (
-          <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-[#111827]/95 text-white text-xs font-semibold shadow-xl border border-slate-700/80 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
-            Press back again to exit SmartAttend
-          </div>
         )}
 
         {/* Curved Mobile Bottom Navigation */}

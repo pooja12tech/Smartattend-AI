@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Users, GraduationCap, BookOpen, Building2, Radio, CheckCircle2,
   AlertTriangle, ShieldAlert, TrendingUp, Calendar, Sliders, ChevronRight,
-  Bell, User, ArrowUpRight
+  Bell, User, ArrowUpRight, LogOut
 } from 'lucide-react';
 
 export default function AdminDashboardView({
@@ -14,7 +14,8 @@ export default function AdminDashboardView({
   onOpenLiveSessions,
   onOpenPendingReviews,
   onOpenSettings,
-  onOpenProfile
+  onOpenProfile,
+  onLogout
 }) {
   const counts = overview?.counts || {};
   const totalStudents = counts.students || 0;
@@ -97,6 +98,17 @@ export default function AdminDashboardView({
           >
             {adminName.substring(0, 2).toUpperCase()}
           </button>
+
+          {onLogout && (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-2 rounded-xl bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 shadow-xs transition"
+              title="Log Out of Admin Portal"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

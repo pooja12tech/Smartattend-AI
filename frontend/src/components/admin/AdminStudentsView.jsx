@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   ArrowLeft, Search, Filter, Plus, ChevronRight, UserCheck, ShieldAlert,
   Smartphone, RefreshCw, Award, Lock, Unlock, Mail, Phone, Calendar,
-  Building2, Hash, CheckCircle2, AlertTriangle, X
+  Building2, Hash, CheckCircle2, AlertTriangle, X, Users
 } from 'lucide-react';
 import { api } from '../../api';
 import { toast } from '../ui/Toast';
@@ -102,6 +102,17 @@ export default function AdminStudentsView({
   if (selectedStudent) {
     const student = selectedStudent;
     const year = student.semester ? `${Math.ceil(student.semester / 2)}th Year` : '3rd Year';
+    const attPct = student.attendance_pct != null
+      ? student.attendance_pct
+      : student.current_attendance_pct != null
+        ? Math.round(student.current_attendance_pct)
+        : null;
+    const isFaceEnrolled = Boolean(student.face_enrolled ?? student.has_registered_face ?? student.has_face_enrolled);
+    const boundDeviceId = (student.device_id && student.device_id !== 'UNBOUND')
+      ? student.device_id
+      : (student.bound_device_id && student.bound_device_id !== 'UNBOUND')
+        ? student.bound_device_id
+        : null;
 
     return (
       <div className="space-y-4 pb-24">
@@ -236,7 +247,7 @@ export default function AdminStudentsView({
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 space-y-4">
             <div className="text-center p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100">
               <span className="text-2xl font-black text-emerald-700 block">
-                {student.attendance_pct != null ? `${student.attendance_pct}%` : 'Not available'}
+                {attPct != null ? `${attPct}%` : 'Not available'}
               </span>
               <span className="text-[11px] font-bold text-emerald-800">
                 Recorded Attendance Average
@@ -245,8 +256,8 @@ export default function AdminStudentsView({
 
             <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
               <span className="text-slate-400 block text-[10px]">Defaulter Status</span>
-              {student.attendance_pct != null ? (
-                student.attendance_pct >= 75 ? (
+              {attPct != null ? (
+                attPct >= 75 ? (
                   <span className="font-extrabold text-emerald-700 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" /> Good Standing (Above 75% Criteria)
                   </span>
@@ -271,9 +282,9 @@ export default function AdminStudentsView({
                 <span className="text-[11px] text-slate-400">Institutional biometric enrollment</span>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
-                student.face_enrolled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                isFaceEnrolled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
               }`}>
-                {student.face_enrolled ? 'ENROLLED' : 'NOT ENROLLED'}
+                {isFaceEnrolled ? 'ENROLLED' : 'NOT ENROLLED'}
               </span>
             </div>
 
@@ -285,7 +296,7 @@ export default function AdminStudentsView({
               <div className="flex justify-between">
                 <span>Verification State:</span>
                 <span className="font-bold text-slate-800">
-                  {student.face_enrolled ? 'Active Biometric Template' : 'Enrollment Required'}
+                  {isFaceEnrolled ? 'Active Biometric Template' : 'Enrollment Required'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -305,17 +316,17 @@ export default function AdminStudentsView({
                 <span className="text-[11px] text-slate-400">1 Student - 1 Smartphone Binding</span>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1 ${
-                student.device_id ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                boundDeviceId ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
               }`}>
                 <Lock className="w-3 h-3" />
-                {student.device_id ? 'BOUND' : 'UNBOUND'}
+                {boundDeviceId ? 'BOUND' : 'UNBOUND'}
               </span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-600">
               <div className="flex justify-between">
                 <span>Device Fingerprint:</span>
-                <span className="font-mono font-bold text-slate-800">{student.device_id || 'Not bound'}</span>
+                <span className="font-mono font-bold text-slate-800">{boundDeviceId || 'Not bound'}</span>
               </div>
               <div className="flex justify-between">
                 <span>Hardware Binding Policy:</span>

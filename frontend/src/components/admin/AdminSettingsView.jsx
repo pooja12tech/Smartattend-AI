@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Calendar, BookOpen, ShieldCheck, MapPin, Smartphone,
   Bell, Database, History, QrCode, Sun, ChevronRight, X, RefreshCw,
-  Lock, CheckCircle2, Sliders
+  Lock, CheckCircle2, Sliders, LogOut
 } from 'lucide-react';
 import { api } from '../../api';
 import InstallAppButton from '../InstallAppButton';
 
 export default function AdminSettingsView({
   onBack,
-  onOpenAuditLogs
+  onOpenAuditLogs,
+  onLogout
 }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -193,6 +194,30 @@ export default function AdminSettingsView({
 
       {/* PWA Install Button (Shown on phone if not installed) */}
       <InstallAppButton variant="profile" />
+
+      {/* Log Out Button */}
+      {onLogout && (
+        <button
+          type="button"
+          onClick={onLogout}
+          className="w-full p-4 rounded-2xl bg-rose-50/70 hover:bg-rose-100 border border-rose-200/80 text-rose-700 flex items-center justify-between font-bold text-xs transition active:scale-[0.98] shadow-2xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+              <LogOut className="w-4 h-4 text-rose-700" />
+            </div>
+            <div className="text-left">
+              <h3 className="text-xs font-extrabold text-rose-900">
+                Log Out of Admin Console
+              </h3>
+              <span className="text-[10px] text-rose-600/80 font-medium block">
+                Securely terminate this active administrative session
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-rose-400" />
+        </button>
+      )}
 
       {/* Detail / Config Modal */}
       {selectedSettingModal && (
