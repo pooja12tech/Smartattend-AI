@@ -100,16 +100,11 @@ export default function SmartAttendLoader({
         </div>
       </div>
 
-      {/* Brand Title & Snappy Laser Shimmer Progress Bar (Clean, no badges, no extra text) */}
+      {/* Brand Title (Clean, no lines, no badges, no extra text) */}
       <div className="relative z-10 flex flex-col items-center text-center max-w-xs px-2">
         <h2 className="text-xl sm:text-2xl font-black text-[#111827] tracking-tight">
           SmartAttend
         </h2>
-
-        {/* Fast Futuristic Laser Shimmer Progress Bar */}
-        <div className="w-44 sm:w-52 h-1 rounded-full bg-slate-200/80 overflow-hidden relative mt-3 shadow-inner">
-          <div className="absolute inset-y-0 w-28 bg-gradient-to-r from-transparent via-emerald-500 to-emerald-400 rounded-full animate-smart-shimmer shadow-[0_0_8px_#10B981]" />
-        </div>
       </div>
     </div>
   );

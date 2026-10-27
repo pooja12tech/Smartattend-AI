@@ -6,6 +6,7 @@ import {
 import { api, getDeviceId, setCustomDeviceId } from '../api';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import LoginDesktop from './login/LoginDesktop';
+import SmartAttendLoader from './ui/SmartAttendLoader';
 
 export default function LoginView({ onLoginSuccess }) {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
@@ -64,12 +65,12 @@ export default function LoginView({ onLoginSuccess }) {
     };
   }, []);
 
-  // Splash auto-dismiss timer
+  // Splash auto-dismiss timer (tuned so it stays comfortably without flashing away too fast)
   useEffect(() => {
     if (showSplash) {
       const timer = setTimeout(() => {
         handleDismissSplash();
-      }, 1400);
+      }, 2400);
       return () => clearTimeout(timer);
     }
   }, [showSplash]);
@@ -157,33 +158,14 @@ export default function LoginView({ onLoginSuccess }) {
     );
   }
 
-  // SCREEN 1: SPLASH SCREEN (Screen 1 Reference - Phone Only)
+  // SCREEN 1: SPLASH SCREEN (Phone Only - Clean Unified Loader, No Fake Status, No Lines)
   if (showSplash) {
     return (
       <div
         onClick={handleDismissSplash}
-        className="fixed inset-0 z-50 bg-[#F8FAF9] flex flex-col justify-between items-center px-6 py-12 cursor-pointer select-none animate-in fade-in duration-300"
+        className="fixed inset-0 z-50 bg-[#F8FAF9] flex items-center justify-center cursor-pointer select-none animate-in fade-in duration-300"
       >
-        <div className="w-full flex justify-between items-center text-xs text-slate-400 font-mono">
-          <span>9:41</span>
-          <div className="w-16 h-4" />
-        </div>
-
-        {/* Center: SmartAttend Logo & Icon */}
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <img
-            src="/smartattend_logo.png"
-            alt="SmartAttend Logo"
-            className="w-32 h-32 sm:w-36 sm:h-36 object-contain animate-ambient-float"
-          />
-          <h1 className="text-3xl font-extrabold text-[#111827] tracking-tight">
-            SmartAttend
-          </h1>
-          <div className="w-12 h-1 rounded-full bg-[#1A4731]/30 animate-pulse mt-2" />
-        </div>
-
-        {/* Bottom indicator */}
-        <div className="w-32 h-1 rounded-full bg-slate-300" />
+        <SmartAttendLoader variant="fullscreen" />
       </div>
     );
   }

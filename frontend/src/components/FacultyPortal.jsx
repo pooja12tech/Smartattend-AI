@@ -155,10 +155,15 @@ export default function FacultyPortal({ user, onLogout }) {
   // Fetch today's schedule for faculty
   const loadTodaySchedule = async () => {
     setLoadingSchedule(true);
+    const startTime = Date.now();
     try {
       const res = await api.getFacultyTimetableToday();
       if (res && res.today_classes) {
         setFacultyTodaySchedule(res.today_classes);
+      }
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
       }
     } catch (e) {
       console.warn('Could not load today schedule:', e);

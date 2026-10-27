@@ -340,8 +340,14 @@ export default function StudentPortal({ user, onLogout }) {
   const fetchDashboardData = async () => {
     try {
       setRefreshing(true);
+      const startTime = Date.now();
       const data = await api.getStudentDashboard(user.roll_no);
       setDashboard(data);
+      // Ensure smooth loading animation on mobile/PWA (avoids jarring 20ms flash)
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
+      }
     } catch (err) {
       console.error('Failed to load dashboard:', err);
     } finally {

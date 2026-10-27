@@ -269,9 +269,14 @@ export default function AdminPortal({ user, onLogout }) {
   };
 
   const fetchOverview = async () => {
+    const startTime = Date.now();
     try {
       const data = await api.getAdminOverview();
       setOverview(data);
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
+      }
     } catch (err) {
       console.error('Failed to load admin overview:', err);
     } finally {
