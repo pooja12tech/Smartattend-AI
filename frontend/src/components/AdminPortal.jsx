@@ -444,6 +444,48 @@ export default function AdminPortal({ user, onLogout }) {
     }
   };
 
+  // Handle Biometric / Attendance Review Approvals & Rejections
+  const handleApproveReview = async (review) => {
+    try {
+      if (review.session_id && review.roll_no) {
+        await api.facultyApprove({
+          session_id: review.session_id,
+          roll_no: review.roll_no,
+          action: 'APPROVE',
+          remarks: 'Approved by System Administrator from Overview'
+        });
+      } else if (review.roll_no) {
+        await api.adminResetDevice(review.roll_no, 'Hardware device unbind approved by Administrator');
+      }
+      setActionSuccess(`Review approved for ${review.student_name || review.roll_no}`);
+      setTimeout(() => setActionSuccess(null), 3000);
+      fetchPendingReviews();
+      fetchOverview();
+      fetchUsers();
+    } catch (err) {
+      alert(`Approval failed: ${err.message || 'Server error'}`);
+    }
+  };
+
+  const handleRejectReview = async (review) => {
+    try {
+      if (review.session_id && review.roll_no) {
+        await api.facultyApprove({
+          session_id: review.session_id,
+          roll_no: review.roll_no,
+          action: 'REJECT',
+          remarks: 'Rejected by System Administrator from Overview'
+        });
+      }
+      setActionSuccess(`Review rejected for ${review.student_name || review.roll_no}`);
+      setTimeout(() => setActionSuccess(null), 3000);
+      fetchPendingReviews();
+      fetchOverview();
+    } catch (err) {
+      alert(`Rejection failed: ${err.message || 'Server error'}`);
+    }
+  };
+
   // --- Admin Camera & Biometric Enrollment Controls ---
   const attachStreamToVideo = useCallback((videoEl) => {
     adminVideoRef.current = videoEl;
