@@ -166,6 +166,39 @@ export default function DesktopFacultyHome({
         </div>
       </div>
 
+      {/* AI Attendance Insights Spotlight Banner */}
+      <div className="bg-gradient-to-r from-[#1A4731] via-[#143826] to-[#0D2418] rounded-3xl p-5 text-white shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-emerald-300 bg-white/10 backdrop-blur-xs px-2.5 py-0.5 rounded-full border border-white/10">
+              <Sparkles className="w-3 h-3 text-emerald-300" />
+              <span>Attendance Intelligence Active</span>
+            </span>
+            <span className="text-white/40 text-xs">&bull;</span>
+            <span className="text-xs text-emerald-200/90 font-medium">UGC Shortage Quorum &amp; Weekly Trajectory</span>
+          </div>
+          <h2 className="text-lg font-black tracking-tight text-white">
+            AI-Based Faculty Insights &amp; Shortage Radar
+          </h2>
+          <p className="text-xs text-white/75 max-w-xl font-medium">
+            Identify at-risk students needing intervention, analyze subject attendance trajectories, and monitor weekday attendance patterns.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', '/faculty/insights');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }
+          }}
+          className="px-4 py-2.5 rounded-2xl bg-white hover:bg-emerald-50 active:scale-95 text-[#1A4731] text-xs font-black transition flex items-center gap-2 shrink-0 shadow-lg cursor-pointer"
+        >
+          <span>Open AI Insights</span>
+          <ChevronRight className="w-4 h-4 text-[#1A4731]" />
+        </button>
+      </div>
+
       {/* 2. MAIN 12-COLUMN WORKSPACE: LEFT 8 COLS + RIGHT 4 COLS */}
       <div className="grid grid-cols-12 gap-6 items-start w-full">
         {/* Left 8 Columns: Hero Class + Today's Schedule + Student Roster Feed */}

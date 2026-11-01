@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Home, CalendarDays, Users, BarChart3, User,
+  Home, CalendarDays, Users, BarChart3, User, Sparkles,
   ChevronLeft, ChevronRight, ShieldCheck, LogOut
 } from 'lucide-react';
 
@@ -14,6 +14,7 @@ export default function DesktopSidebar({
 }) {
   const navItems = [
     { id: 'home', label: 'Home', icon: Home, path: '/faculty/home' },
+    { id: 'insights', label: 'AI Insights', icon: Sparkles, path: '/faculty/insights' },
     { id: 'classes', label: 'Classes', icon: CalendarDays, path: '/faculty/classes' },
     { id: 'students', label: 'Students', icon: Users, path: '/faculty/students' },
     { id: 'reports', label: 'Reports', icon: BarChart3, path: '/faculty/reports' },

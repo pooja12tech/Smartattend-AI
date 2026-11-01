@@ -20,7 +20,8 @@ export default function FacultyDashboardView({
   onOpenLiveQR,
   onOpenTimetable,
   onOpenProfile,
-  onOpenNotifications
+  onOpenNotifications,
+  onOpenInsights
 }) {
   const facultyName = user?.name || 'Prof. Faculty';
   const facultyLastName = facultyName.split(' ').slice(-1)[0] || 'Faculty';
@@ -244,6 +245,28 @@ export default function FacultyDashboardView({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* AI Attendance Insights Quick Launch Banner (Mobile) */}
+      <div
+        onClick={onOpenInsights}
+        className="cursor-pointer bg-gradient-to-r from-[#1A4731] via-[#163d2a] to-[#0f2d1e] text-white rounded-2xl p-4 shadow-md flex items-center justify-between gap-3 active:scale-[0.99] transition"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/15">
+            <Sparkles className="w-5 h-5 text-emerald-300" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-black text-white">AI Attendance Insights</span>
+              <span className="text-[10px] font-extrabold bg-emerald-400 text-emerald-950 px-1.5 py-0.2 rounded-full">New</span>
+            </div>
+            <p className="text-[11px] text-white/70 font-medium">
+              Shortage alerts, declining subjects &amp; recommendations
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-emerald-300 shrink-0" />
       </div>
 
       {/* Today's Classes Schedule (Screen 3 Reference) */}

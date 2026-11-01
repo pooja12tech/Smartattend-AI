@@ -19,8 +19,12 @@ from db_postgres import init_db_schema, get_session_factory
 from seed_postgres import run_postgres_seed
 from models import User, LectureSession, AttendanceRecord, StudentStats, StudentSubjectEnrollment, AuditLog
 
-def create_sample_face_b64(color=(200, 150, 150)) -> str:
-    img = Image.new("RGB", (100, 100), color=color)
+def create_sample_face_b64(color=(200, 150, 150), noise=False) -> str:
+    import numpy as np
+    arr = np.full((100, 100, 3), color, dtype=np.uint8)
+    if noise:
+        arr[40:60, 30:70] = (100, 80, 80)
+    img = Image.fromarray(arr)
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -114,13 +118,20 @@ def test_absentees_auto_creation_on_session_end(client, faculty_auth, student_au
     qr_res = client.get(f"/api/sessions/{session_id}/qr", headers=faculty_auth)
     qr_token = qr_res.json()["qr_token"]
 
+    chal = client.post("/api/liveness/challenge", json={"session_id": session_id}, headers=student_auth).json()
+    open_face = create_sample_face_b64()
+    closed_face = create_sample_face_b64(noise=True)
+
     mark_res = client.post("/api/attendance/mark", json={
         "session_id": session_id,
         "qr_token": qr_token,
         "device_id": "DEV-AARAV-PHONE-01",
         "user_lat": 19.07601,
         "user_lng": 72.87771,
-        "live_selfie_base64": create_sample_face_b64(),
+        "live_selfie_base64": open_face,
+        "closed_eye_frame_base64": closed_face,
+        "challenge_id": chal["challenge_id"],
+        "challenge_token": chal["challenge_token"],
         "is_exception_mode": False
     }, headers=student_auth)
     assert mark_res.status_code == 200

@@ -15,12 +15,14 @@ services:
       - key: DATABASE_URL_UNPOOLED
         sync: false
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
       - key: JWT_ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
       - key: FACE_EMBED_KEY
-        generateValue: true
+        sync: false
+      - key: FACE_EMBED_FALLBACK_KEYS
+        sync: false
       - key: ALLOWED_ORIGINS
         sync: false

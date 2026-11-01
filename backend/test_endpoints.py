@@ -70,6 +70,19 @@ def run_tests():
     print("[PASS] 2a. Student Login & JWT Token Issued:", student_token[:20] + "...")
 
     # 2a-2. Test Consent-Based Face Enrollment (requires student JWT)
+    from models import FaceEnrollment
+    _s_init = get_session_factory()()
+    _s_stu1 = _s_init.query(User).filter(User.roll_no == "STU01").first()
+    if _s_stu1:
+        _s_init.query(FaceEnrollment).filter(FaceEnrollment.user_id == _s_stu1.id).delete()
+    _s_stu2 = _s_init.query(User).filter(User.roll_no == "STU02").first()
+    if _s_stu2:
+        fe2 = _s_init.query(FaceEnrollment).filter(FaceEnrollment.user_id == _s_stu2.id).first()
+        if fe2:
+            fe2.embedding = face_service.encrypt_embedding(_dummy_vector)
+    _s_init.commit()
+    _s_init.close()
+
     test_face_img = create_sample_face_b64((200, 150, 150))
     enroll_res = client.post("/api/student/enroll-face", json={
         "live_selfie_base64": test_face_img,
@@ -152,12 +165,14 @@ def run_tests():
     qr_token = qr_data["qr_token"]
     print(f"[PASS] 3b. Dynamic QR Token Generated: {qr_token} (Expires in {qr_data['expires_in_seconds']}s)")
 
-    # 3c. Student fetches session public info (live faculty coordinates & geofence radius)
+    # 3c. Student fetches session public info (coordinates withheld from students for anti-proxy security)
     res_info = client.get(f"/api/sessions/{session_id}/info", headers=student_headers)
     assert res_info.status_code == 200
     assert res_info.json()["geofence_radius_meters"] == 150
-    assert res_info.json()["class_lat"] == 28.5450
-    print(f"[PASS] 3c. Student Retrieved Live Session Info (Faculty GPS: {res_info.json()['class_lat']}, Radius: {res_info.json()['geofence_radius_meters']}m)")
+    assert res_info.json()["class_lat"] is None
+    res_fac_info = client.get(f"/api/sessions/{session_id}/info", headers=faculty_headers)
+    assert res_fac_info.json()["class_lat"] == 28.5450
+    print(f"[PASS] 3c. Student Retrieved Live Session Info (Coordinates Hidden For Anti-Spoofing, Geofence: {res_info.json()['geofence_radius_meters']}m)")
 
     # 3d. Faculty dynamically syncs live location
     res_loc = client.post(f"/api/sessions/{session_id}/location", json={

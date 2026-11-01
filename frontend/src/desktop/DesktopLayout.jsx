@@ -5,6 +5,7 @@ import DesktopFacultyClasses from './faculty/DesktopFacultyClasses';
 import DesktopFacultyStudents from './faculty/DesktopFacultyStudents';
 import DesktopFacultyReports from './faculty/DesktopFacultyReports';
 import DesktopFacultyProfile from './faculty/DesktopFacultyProfile';
+import FacultyInsightsView from '../components/faculty/FacultyInsightsView';
 
 import { navigateToPath, replacePath, parsePath } from '../router';
 
@@ -19,12 +20,12 @@ export default function DesktopLayout({
   onStartSession,
   children
 }) {
-  // Clean Path Synchronization for bookmarkable desktop URLs (e.g. /faculty/home, /faculty/classes)
+  // Clean Path Synchronization for bookmarkable desktop URLs (e.g. /faculty/home, /faculty/insights, /faculty/classes)
   const getInitialTab = () => {
     const { role, tab } = parsePath();
     if (role === 'faculty' && tab) {
       const cleanTab = tab.toLowerCase();
-      if (['home', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
+      if (['home', 'insights', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
         return cleanTab;
       }
       if (cleanTab === 'timetable') return 'classes';
@@ -89,6 +90,13 @@ export default function DesktopLayout({
         <main className="flex-1 w-full">
           <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6">
             {activeTab === 'home' && children}
+
+            {activeTab === 'insights' && (
+              <FacultyInsightsView
+                user={user}
+                onGoHome={() => handleTabChange('home')}
+              />
+            )}
 
             {activeTab === 'classes' && (
               <DesktopFacultyClasses

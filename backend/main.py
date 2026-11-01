@@ -10,6 +10,20 @@ import base64
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Union
+from pathlib import Path
+
+# Ensure environment variables are loaded consistently across all entrypoints
+if not os.getenv("TESTING") and not os.getenv("PYTEST_CURRENT_TEST"):
+    try:
+        from dotenv import load_dotenv
+        _backend_env = Path(__file__).resolve().parent / ".env"
+        _root_env = Path(__file__).resolve().parent.parent / ".env"
+        if _root_env.exists():
+            load_dotenv(dotenv_path=_root_env, override=False)
+        if _backend_env.exists():
+            load_dotenv(dotenv_path=_backend_env, override=True)
+    except ImportError:
+        pass
 
 QR_WINDOW_SECONDS = int(os.getenv("QR_WINDOW_SECONDS", "20"))
 SESSION_MAX_MINUTES = int(os.getenv("SESSION_MAX_MINUTES", "120"))
@@ -2400,8 +2414,15 @@ def enroll_face(
     now = datetime.now(timezone.utc)
     retention_expires = now + timedelta(days=365)
 
-    # Update existing biometric template or create new enrollment
+    # Prevent duplicate biometric enrollment without prior admin reset
     existing_enrollment = db.query(FaceEnrollment).filter(FaceEnrollment.user_id == current_user.id).first()
+    if existing_enrollment and check_face_enrolled_and_valid(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Biometric face template is already enrolled for this student. Contact an administrator to reset."
+        )
+
+    # Update existing biometric template or create new enrollment
     if existing_enrollment:
         existing_enrollment.embedding = encrypted_emb
         existing_enrollment.model_name = "buffalo_sc"
@@ -3869,6 +3890,117 @@ def admin_enroll_face(
     }
 
 # ------------------------------------------------------------------------------
+# 7b. ADMIN BIOMETRIC ENCRYPTION KEY HEALTH & MIGRATION ENDPOINTS
+# ------------------------------------------------------------------------------
+@app.get("/api/admin/biometrics/health")
+def get_biometrics_health(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Audits the decryptability of all enrolled biometric reference templates in the system.
+    Identifies any template encrypted under an unconfigured/legacy key.
+    Never exposes raw keys, embeddings, or biometric templates.
+    """
+    enrollments = db.query(FaceEnrollment).all()
+    total_enrolled = len(enrollments)
+    decryptable_count = 0
+    mismatched_students = []
+
+    for fe in enrollments:
+        student = db.query(User).filter(User.id == fe.user_id).first()
+        student_roll = student.roll_no if student else f"USER_ID_{fe.user_id}"
+        student_name = student.name if student else "Unknown"
+
+        can_decrypt = False
+        try:
+            face_service.decrypt_embedding(fe.embedding)
+            can_decrypt = True
+            decryptable_count += 1
+        except Exception:
+            pass
+
+        if not can_decrypt:
+            mismatched_students.append({
+                "roll_no": student_roll,
+                "name": student_name,
+                "enrolled_at": fe.created_at.isoformat() if fe.created_at else None,
+                "model_name": fe.model_name or "buffalo_sc",
+                "status": "REQUIRES_AUTHORIZED_REENROLLMENT"
+            })
+
+    mismatched_count = total_enrolled - decryptable_count
+    status_label = "HEALTHY" if mismatched_count == 0 else "KEY_MISMATCH_DETECTED"
+
+    return {
+        "success": True,
+        "status": status_label,
+        "total_enrolled": total_enrolled,
+        "decryptable_count": decryptable_count,
+        "mismatched_count": mismatched_count,
+        "key_status": face_service.get_key_status(),
+        "mismatched_students": mismatched_students,
+        "message": "All enrolled templates are decryptable." if mismatched_count == 0 else f"{mismatched_count} template(s) cannot be decrypted with the current configured keys and require authorized re-enrollment or fallback key configuration."
+    }
+
+@app.post("/api/admin/biometrics/migrate")
+def migrate_biometric_templates(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Administrator-authorized migration:
+    Re-encrypts all decryptable legacy biometric templates using the current primary FACE_EMBED_KEY.
+    Templates that cannot be decrypted are NOT modified and must be re-enrolled with authorization.
+    All migrations are recorded in the immutable audit log.
+    """
+    enrollments = db.query(FaceEnrollment).all()
+    migrated_count = 0
+    already_primary_or_unmigrated = []
+    failed_students = []
+
+    now = datetime.now(timezone.utc)
+    for fe in enrollments:
+        student = db.query(User).filter(User.id == fe.user_id).first()
+        student_roll = student.roll_no if student else f"USER_ID_{fe.user_id}"
+
+        try:
+            old_bytes = fe.embedding
+            new_bytes = face_service.rotate_embedding(old_bytes)
+            # If re-encryption produced a new ciphertext
+            if new_bytes != old_bytes:
+                fe.embedding = new_bytes
+                fe.updated_at = now
+                record_audit_log(
+                    db=db,
+                    actor_id=current_user.roll_no,
+                    actor_name=current_user.name,
+                    actor_role="admin",
+                    action="BIOMETRIC_KEY_MIGRATION",
+                    target_type="USER",
+                    target_id=student_roll,
+                    old_value="LEGACY_KEY_CIPHERTEXT",
+                    new_value="PRIMARY_KEY_CIPHERTEXT",
+                    reason="Migrated biometric reference template to current primary system key"
+                )
+                migrated_count += 1
+            else:
+                already_primary_or_unmigrated.append(student_roll)
+        except Exception:
+            failed_students.append(student_roll)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "migrated_count": migrated_count,
+        "already_primary_count": len(already_primary_or_unmigrated),
+        "unmigrated_count": len(failed_students),
+        "unmigrated_students": failed_students,
+        "message": f"Successfully rotated {migrated_count} biometric template(s) to current primary key." + (f" {len(failed_students)} template(s) could not be decrypted and require authorized re-enrollment." if failed_students else "")
+    }
+
+# ------------------------------------------------------------------------------
 # 8. AUDIT TRAILS & SUBJECT MANAGEMENT ENDPOINTS
 # ------------------------------------------------------------------------------
 @app.get("/api/admin/audit-logs")
@@ -4678,7 +4810,229 @@ def batch_publish_timetable(
         "updated_count": len(entries)
     }
 
+# ------------------------------------------------------------------------------
+# 12. AI-BASED FACULTY INSIGHTS & ATTENDANCE INTELLIGENCE ENDPOINTS
+# ------------------------------------------------------------------------------
+import faculty_insights_service
+
+class FacultyStudentNotifyRequest(BaseModel):
+    roll_no: Optional[str] = Field(None, description="Target student roll number")
+    student_roll_no: Optional[str] = Field(None, description="Alias for roll_no")
+    title: Optional[str] = Field("Attendance Warning", description="Notification title")
+    message: str = Field(..., description="Notification body")
+    severity: Optional[str] = Field("WARNING", description="'CRITICAL', 'WARNING', or 'INFO'")
+    action_type: Optional[str] = Field(None, description="Alias for severity/title")
+    subject_code: Optional[str] = Field(None, description="Related subject code")
+    target_attendance: Optional[float] = Field(None, description="Target attendance threshold percentage")
+
+@app.get("/api/faculty/insights/overview")
+def get_faculty_insights_overview(
+    section: Optional[str] = "ALL",
+    subject: Optional[str] = "ALL",
+    semester: Optional[int] = 0,
+    threshold: Optional[float] = None,
+    date_range: Optional[str] = "30d",
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns comprehensive attendance intelligence for faculty:
+    - 6 Top-Level Summary Insight Cards
+    - Shortage Risk Distribution
+    - Subject-Wise Weekly Trend Lines & Deltas
+    - Day-Wise (Weekday) Attendance Patterns & Lowest Day Flag
+    - Personalized Student Intervention Actions
+    - Traceable metadata and record counts
+    """
+    faculty_id = current_user.roll_no if current_user.role != "admin" else "admin"
+    data = faculty_insights_service.get_comprehensive_faculty_insights(
+        db=db,
+        faculty_id=faculty_id,
+        section=section,
+        semester=semester,
+        subject=subject,
+        threshold=threshold,
+        date_range=date_range
+    )
+    return data
+
+@app.get("/api/faculty/insights/students")
+def get_faculty_insights_students(
+    section: Optional[str] = "ALL",
+    subject: Optional[str] = "ALL",
+    semester: Optional[int] = 0,
+    threshold: Optional[float] = None,
+    risk_tier: Optional[str] = "ALL",
+    search: Optional[str] = "",
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns filtered and searched student attendance shortage roster
+    with mathematical classes needed, safe cuts, and explainable recommendations.
+    """
+    faculty_id = current_user.roll_no if current_user.role != "admin" else "admin"
+    risks = faculty_insights_service.analyze_student_attendance_risks(
+        db=db,
+        faculty_id=faculty_id,
+        section=section,
+        semester=semester,
+        subject_filter=subject,
+        threshold_override=threshold
+    )
+
+    students = risks.get("students", [])
+    if risk_tier and risk_tier != "ALL":
+        tier_upper = risk_tier.strip().upper()
+        students = [s for s in students if s["risk_tier"] == tier_upper]
+
+    if search and search.strip():
+        q = search.strip().lower()
+        students = [
+            s for s in students
+            if q in s["roll_no"].lower() or q in s["name"].lower() or q in s["department"].lower()
+        ]
+
+    return {
+        "success": True,
+        "total_count": len(students),
+        "threshold_pct": risks.get("threshold_pct", 75.0),
+        "students": students
+    }
+
+@app.get("/api/faculty/insights/filters")
+def get_faculty_insights_filter_options(
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Returns dynamically populated filter options based on real database records:
+    - Academic sections
+    - Academic semesters
+    - Available subjects
+    - Institutional threshold
+    """
+    sections = db.query(User.section).filter(
+        User.role == "student", User.is_active == True, User.section.isnot(None)
+    ).distinct().all()
+    section_list = sorted([s[0] for s in sections if s[0]])
+    if not section_list:
+        section_list = ["A", "B"]
+
+    semesters = db.query(User.semester).filter(
+        User.role == "student", User.is_active == True, User.semester.isnot(None)
+    ).distinct().all()
+    semester_list = sorted([s[0] for s in semesters if s[0]])
+    if not semester_list:
+        semester_list = [4, 6]
+
+    # Subjects
+    subjs = db.query(Subject).order_by(Subject.code.asc()).all()
+    subject_list = [
+        {
+            "code": s.code,
+            "name": s.name,
+            "min_attendance_pct": s.min_attendance_pct,
+            "department": s.department
+        }
+        for s in subjs
+    ]
+
+    return {
+        "success": True,
+        "sections": ["ALL"] + section_list,
+        "semesters": [0] + semester_list,
+        "subjects": [{"code": "ALL", "name": "All Subjects", "min_attendance_pct": 75.0}] + subject_list,
+        "default_threshold": 75.0,
+        "date_ranges": [
+            {"id": "7d", "label": "Last 7 Days"},
+            {"id": "14d", "label": "Last 14 Days"},
+            {"id": "30d", "label": "Last 30 Days"},
+            {"id": "90d", "label": "Last 90 Days"},
+            {"id": "all", "label": "Full Semester"}
+        ]
+    }
+
+@app.post("/api/faculty/insights/notify-student")
+def notify_student_intervention(
+    req: FacultyStudentNotifyRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    """
+    Dispatches a formal attendance warning or intervention notification to a student.
+    Persisted to student_notifications and logged in the immutable AuditLog.
+    """
+    target_roll = (req.roll_no or req.student_roll_no or "").strip()
+    if not target_roll:
+        raise HTTPException(status_code=400, detail="Student roll number is required.")
+
+    student = db.query(User).filter(User.roll_no == target_roll).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student {target_roll} not found.")
+
+    # Calculate current student stats
+    stats = db.query(StudentStats).filter(StudentStats.user_id == student.id).first()
+    current_pct = stats.current_attendance_pct if stats else 75.0
+    attended = stats.attended_lectures if stats else 0
+    total = stats.total_lectures if stats else 0
+    target_thresh = req.target_attendance if req.target_attendance is not None else 75.0
+    classes_needed = faculty_insights_service.calculate_classes_needed(attended, total, target_thresh) or 1
+
+    notif_severity = (req.severity or "WARNING").upper()
+    if req.action_type:
+        act = req.action_type.upper()
+        if "CRITICAL" in act:
+            notif_severity = "CRITICAL"
+        elif "WARN" in act:
+            notif_severity = "WARNING"
+        elif "INFO" in act or "COMMEND" in act:
+            notif_severity = "INFO"
+
+    notif_title = (req.title or (req.action_type.replace('_', ' ').title() if req.action_type else "Attendance Warning")).strip()
+
+    now = datetime.now(timezone.utc)
+    notif = StudentNotification(
+        user_id=student.id,
+        roll_no=student.roll_no,
+        type="FACULTY_ATTENDANCE_INTERVENTION",
+        severity=notif_severity,
+        title=notif_title,
+        message=req.message.strip(),
+        subject_code=req.subject_code or "OVERALL",
+        subject_name=f"Issued by {current_user.name}",
+        current_pct=current_pct,
+        threshold_pct=target_thresh,
+        alert_cutoff_pct=target_thresh - 1.0,
+        classes_needed=classes_needed,
+        is_read=False,
+        is_dismissed=False,
+        created_at=now
+    )
+    db.add(notif)
+    db.flush()
+
+    record_audit_log(
+        db=db,
+        actor_id=current_user.roll_no,
+        actor_name=current_user.name,
+        actor_role=current_user.role,
+        action="FACULTY_ATTENDANCE_INTERVENTION_SENT",
+        target_type="STUDENT_NOTIFICATION",
+        target_id=student.roll_no,
+        new_value=json.dumps({"title": req.title, "severity": req.severity, "notification_id": str(notif.id)}),
+        reason=f"Faculty {current_user.name} issued attendance intervention notice to {student.roll_no}"
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Intervention notice dispatched successfully to {student.name} ({student.roll_no}).",
+        "notification_id": str(notif.id)
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
 

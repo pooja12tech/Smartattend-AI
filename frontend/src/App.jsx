@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import LoginView from './components/LoginView';
-import StudentPortal from './components/StudentPortal';
-import FacultyPortal from './components/FacultyPortal';
-import AdminPortal from './components/AdminPortal';
 import OfflineBanner from './components/OfflineBanner';
 import PwaUpdateToast from './components/PwaUpdateToast';
 import IosInstallBanner from './components/IosInstallBanner';
 import { ToastContainer } from './components/ui/Toast';
+import SmartAttendLoader from './components/ui/SmartAttendLoader';
 import { api, getDeviceId } from './api';
+
+const StudentPortal = lazy(() => import('./components/StudentPortal'));
+const FacultyPortal = lazy(() => import('./components/FacultyPortal'));
+const AdminPortal = lazy(() => import('./components/AdminPortal'));
 
 import { getCleanPath, replacePath, parsePath } from './router';
 import { useMediaQuery } from './hooks/useMediaQuery';
@@ -101,20 +103,22 @@ export default function App() {
 
       {/* Main Portal View */}
       <main className="flex-1">
-        {!currentUser ? (
-          <LoginView onLoginSuccess={handleLoginSuccess} />
-        ) : currentUser.role === 'student' ? (
-          <StudentPortal
-            user={currentUser}
-            onLogout={handleLogout}
-          />
-        ) : currentUser.role === 'faculty' ? (
-          <FacultyPortal user={currentUser} onLogout={handleLogout} />
-        ) : currentUser.role === 'admin' ? (
-          <AdminPortal user={currentUser} onLogout={handleLogout} />
-        ) : (
-          <LoginView onLoginSuccess={handleLoginSuccess} />
-        )}
+        <Suspense fallback={<SmartAttendLoader variant="fullscreen" />}>
+          {!currentUser ? (
+            <LoginView onLoginSuccess={handleLoginSuccess} />
+          ) : currentUser.role === 'student' ? (
+            <StudentPortal
+              user={currentUser}
+              onLogout={handleLogout}
+            />
+          ) : currentUser.role === 'faculty' ? (
+            <FacultyPortal user={currentUser} onLogout={handleLogout} />
+          ) : currentUser.role === 'admin' ? (
+            <AdminPortal user={currentUser} onLogout={handleLogout} />
+          ) : (
+            <LoginView onLoginSuccess={handleLoginSuccess} />
+          )}
+        </Suspense>
       </main>
     </div>
   );

@@ -5,7 +5,7 @@ import numpy as np
 import hashlib
 import base64
 from typing import Optional, Tuple, Dict, Any
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 
 # ------------------------------------------------------------------------------
 # Custom Face Quality & Biometric Encryption Exceptions
@@ -28,71 +28,177 @@ class MalformedEmbeddingError(Exception):
 _face_app = None
 _fernet_cipher = None
 
+def load_environment():
+    """
+    Consistently loads environment variables from backend/.env and root .env.
+    Never overrides existing environment variables during active pytest test runs.
+    """
+    if not os.getenv("TESTING") and not os.getenv("PYTEST_CURRENT_TEST"):
+        from pathlib import Path
+        try:
+            from dotenv import load_dotenv
+            backend_env = Path(__file__).resolve().parent / ".env"
+            root_env = Path(__file__).resolve().parent.parent / ".env"
+            if root_env.exists():
+                load_dotenv(dotenv_path=root_env, override=False)
+            if backend_env.exists():
+                load_dotenv(dotenv_path=backend_env, override=True)
+        except ImportError:
+            pass
+
+load_environment()
+
+def _parse_single_fernet_key(raw_key: str, key_name: str = "FACE_EMBED_KEY") -> Fernet:
+    """
+    Parses a single key string into a Fernet cipher instance.
+    Accepts:
+    1. Standard 32-byte urlsafe-base64 encoded Fernet key (44 characters, ending with =).
+    2. Passphrase / secret (>= 32 characters) which will be deterministically derived using SHA-256 into a Fernet key.
+    Rejects keys shorter than 32 characters.
+    """
+    if not raw_key:
+        raise ValueError(f"{key_name} is empty.")
+    k = str(raw_key).strip().strip("'\"")
+    if len(k) < 32:
+        raise ValueError(
+            f"{key_name} is too short ({len(k)} < 32 characters). Provide a 32-byte Fernet key or passphrase."
+        )
+
+    # If exactly 44 chars and ends with =, verify if it is valid urlsafe-base64 32 bytes
+    if len(k) == 44 and k.endswith("="):
+        try:
+            decoded = base64.urlsafe_b64decode(k.encode("ascii"))
+            if len(decoded) == 32:
+                return Fernet(k.encode("ascii"))
+        except Exception:
+            pass
+
+    # Deterministic fallback derivation from passphrase / hex string using SHA-256
+    derived = base64.urlsafe_b64encode(hashlib.sha256(k.encode("utf-8")).digest())
+    return Fernet(derived)
+
+def reset_cipher():
+    """Resets cached Fernet/MultiFernet cipher instance to reload configuration."""
+    global _fernet_cipher
+    _fernet_cipher = None
+
+def get_key_status() -> Dict[str, Any]:
+    """
+    Returns safe, non-sensitive metadata about configured biometric encryption keys.
+    NEVER returns or logs raw keys or key material.
+    """
+    load_environment()
+    primary_raw = os.getenv("FACE_EMBED_KEY", "").strip()
+    fallback_raw = os.getenv("FACE_EMBED_FALLBACK_KEYS", "") or os.getenv("FACE_EMBED_KEY_FALLBACK", "")
+
+    primary_parts = [p.strip().strip("'\"") for p in primary_raw.split(",") if p.strip().strip("'\"")] if primary_raw else []
+    fallback_parts = [p.strip().strip("'\"") for p in fallback_raw.split(",") if p.strip().strip("'\"")] if fallback_raw else []
+
+    total_keys = len(primary_parts) + len(fallback_parts)
+    return {
+        "primary_configured": len(primary_parts) > 0,
+        "fallback_keys_count": len(fallback_parts) + max(0, len(primary_parts) - 1),
+        "total_active_keys": max(1, total_keys),
+    }
+
 def validate_key_configuration():
     """
-    Validates FACE_EMBED_KEY configuration.
+    Validates FACE_EMBED_KEY and any configured fallback keys.
     Fails startup in production if missing, too short, or invalid.
     """
+    load_environment()
     env = os.getenv("ENVIRONMENT", "").strip().lower()
-    key = os.getenv("FACE_EMBED_KEY", "").strip()
+    primary_raw = os.getenv("FACE_EMBED_KEY", "").strip()
 
     if env == "production":
-        if not key:
+        if not primary_raw:
             raise RuntimeError(
                 "CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY is not set. "
                 "Set a stable 32-byte urlsafe-base64 Fernet key in production environment."
             )
-        if len(key) < 32:
-            raise RuntimeError(
-                f"CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY is too short ({len(key)} < 32 characters)."
-            )
-        try:
-            if len(key) == 44 and key.endswith("="):
-                Fernet(key.encode())
-            else:
-                derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
-                Fernet(derived)
-        except Exception as e:
-            raise RuntimeError(f"CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY cannot initialize Fernet cipher: {e}")
+        parts = [p.strip().strip("'\"") for p in primary_raw.split(",") if p.strip().strip("'\"")]
+        if not parts:
+            raise RuntimeError("CRITICAL PRODUCTION CONFIG ERROR: FACE_EMBED_KEY is empty.")
+        for idx, p in enumerate(parts):
+            name = "FACE_EMBED_KEY" if idx == 0 else f"FACE_EMBED_KEY[{idx}]"
+            try:
+                _parse_single_fernet_key(p, name)
+            except Exception as e:
+                raise RuntimeError(f"CRITICAL PRODUCTION CONFIG ERROR: {name} cannot initialize Fernet cipher: {e}")
 
-def get_fernet() -> Fernet:
+        fallback_raw = os.getenv("FACE_EMBED_FALLBACK_KEYS", "") or os.getenv("FACE_EMBED_KEY_FALLBACK", "")
+        if fallback_raw:
+            f_parts = [p.strip().strip("'\"") for p in fallback_raw.split(",") if p.strip().strip("'\"")]
+            for idx, fp in enumerate(f_parts):
+                name = f"FACE_EMBED_FALLBACK_KEYS[{idx}]"
+                try:
+                    _parse_single_fernet_key(fp, name)
+                except Exception as e:
+                    raise RuntimeError(f"CRITICAL PRODUCTION CONFIG ERROR: {name} cannot initialize Fernet cipher: {e}")
+
+def get_fernet() -> MultiFernet:
     """
-    Returns Fernet cipher for encrypting face embeddings at rest.
-    In production, strictly requires an explicitly configured, valid FACE_EMBED_KEY.
-    In development/testing, falls back deterministically to JWT_SECRET if FACE_EMBED_KEY is missing.
-    Never rotates, regenerates, or replaces the key automatically.
+    Returns Fernet/MultiFernet cipher for encrypting and decrypting face embeddings at rest.
+    
+    Multi-Key / Key-Rotation Support:
+    - Primary encryption key is taken from FACE_EMBED_KEY (the first key if comma-delimited).
+      All new biometric template encryptions ALWAYS use this primary key.
+    - Fallback / rotation keys for decryption are taken from FACE_EMBED_FALLBACK_KEYS,
+      FACE_EMBED_KEY_FALLBACK, or additional comma-delimited keys in FACE_EMBED_KEY.
+    - MultiFernet([primary_cipher, *fallback_ciphers]) ensures existing templates encrypted
+      under prior authorized keys decrypt cleanly during migration without service disruption.
+    - In production, strictly requires a valid, explicitly configured FACE_EMBED_KEY.
+    - In development/testing, falls back deterministically to JWT_SECRET if FACE_EMBED_KEY is missing.
     """
     global _fernet_cipher
     if _fernet_cipher is None:
-        key = os.getenv("FACE_EMBED_KEY", "").strip()
+        load_environment()
         env = os.getenv("ENVIRONMENT", "").strip().lower()
 
         if env == "production":
             validate_key_configuration()
 
-        if key and len(key) >= 32:
-            try:
-                if len(key) == 44 and key.endswith("="):
-                    _fernet_cipher = Fernet(key.encode() if isinstance(key, str) else key)
-                else:
-                    derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
-                    _fernet_cipher = Fernet(derived_key)
-            except Exception as e:
-                if env == "production":
-                    raise RuntimeError(f"Failed to initialize Fernet with configured FACE_EMBED_KEY: {e}")
-                derived_key = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
-                _fernet_cipher = Fernet(derived_key)
-        else:
-            # Deterministic development/test fallback only
+        primary_raw = os.getenv("FACE_EMBED_KEY", "").strip()
+        fallback_raw = os.getenv("FACE_EMBED_FALLBACK_KEYS", "") or os.getenv("FACE_EMBED_KEY_FALLBACK", "")
+
+        ciphers = []
+
+        # 1. Parse primary key(s) from FACE_EMBED_KEY
+        if primary_raw:
+            parts = [p.strip().strip("'\"") for p in primary_raw.split(",") if p.strip().strip("'\"")]
+            for idx, p in enumerate(parts):
+                name = "FACE_EMBED_KEY" if idx == 0 else f"FACE_EMBED_KEY[{idx}]"
+                try:
+                    ciphers.append(_parse_single_fernet_key(p, name))
+                except Exception as e:
+                    if env == "production" or idx == 0:
+                        raise RuntimeError(f"Failed to initialize cipher with {name}: {e}")
+
+        # 2. Parse secondary/fallback keys for decryption from FACE_EMBED_FALLBACK_KEYS
+        if fallback_raw:
+            f_parts = [p.strip().strip("'\"") for p in fallback_raw.split(",") if p.strip().strip("'\"")]
+            for idx, fp in enumerate(f_parts):
+                name = f"FACE_EMBED_FALLBACK_KEYS[{idx}]"
+                try:
+                    ciphers.append(_parse_single_fernet_key(fp, name))
+                except Exception as e:
+                    if env == "production":
+                        raise RuntimeError(f"Failed to initialize fallback cipher with {name}: {e}")
+
+        # 3. Development / Testing deterministic fallback if no keys configured
+        if not ciphers:
             secret = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY") or "smartattend-ai-secure-encryption-seed-2026"
             derived_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
-            _fernet_cipher = Fernet(derived_key)
+            ciphers.append(Fernet(derived_key))
+
+        _fernet_cipher = MultiFernet(ciphers)
 
     return _fernet_cipher
 
 def encrypt_embedding(embedding: np.ndarray) -> bytes:
     """
     Validates and encrypts a 512-D float32 normalized embedding vector at rest using Fernet.
+    Always encrypts with the primary configured key.
     Rejects malformed, non-finite, or invalid dimension vectors.
     """
     arr = np.asarray(embedding, dtype=np.float32)
@@ -113,6 +219,7 @@ def decrypt_embedding(encrypted_bytes: bytes) -> np.ndarray:
     """
     Decrypts Fernet ciphertext back to a normalized 512-D float32 embedding vector.
     Validates payload integrity, vector length, and finite numeric values.
+    Supports primary key and authorized fallback keys via MultiFernet.
     Raises BiometricDecryptionError on key/token failure; MalformedEmbeddingError on invalid vector structure.
     """
     if not encrypted_bytes:
@@ -141,6 +248,29 @@ def decrypt_embedding(encrypted_bytes: bytes) -> np.ndarray:
         raise MalformedEmbeddingError("Decrypted embedding has near-zero norm.")
 
     return arr / norm
+
+def rotate_embedding(encrypted_bytes: bytes) -> bytes:
+    """
+    Re-encrypts a Fernet ciphertext using the current primary configured key.
+    Uses MultiFernet.rotate(token), which decrypts using the matching key and
+    re-encrypts with the primary key.
+    Validates that the re-encrypted payload remains valid and intact.
+    Raises BiometricDecryptionError on key/token failure.
+    """
+    if not encrypted_bytes:
+        raise MalformedEmbeddingError("Encrypted biometric payload is empty.")
+
+    cipher = get_fernet()
+    try:
+        new_encrypted = cipher.rotate(encrypted_bytes)
+    except Exception as rot_err:
+        raise BiometricDecryptionError(
+            "Biometric template rotation failed with configured keys."
+        ) from rot_err
+
+    # Safety assertion: verify the rotated token decrypts to a valid 512 float32 vector
+    decrypt_embedding(new_encrypted)
+    return new_encrypted
 
 def get_face_app():
     """

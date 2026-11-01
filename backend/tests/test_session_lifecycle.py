@@ -11,8 +11,12 @@ from db_postgres import init_db_schema, get_session_factory
 from seed_postgres import run_postgres_seed
 from models import LectureSession
 
-def create_sample_face_b64(color=(200, 150, 150)) -> str:
-    img = Image.new("RGB", (100, 100), color=color)
+def create_sample_face_b64(color=(200, 150, 150), noise=False) -> str:
+    import numpy as np
+    arr = np.full((100, 100, 3), color, dtype=np.uint8)
+    if noise:
+        arr[40:60, 30:70] = (100, 80, 80)
+    img = Image.fromarray(arr)
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -94,8 +98,11 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
     assert qr_res.status_code == 200
     current_token = qr_res.json()["qr_token"]
 
-    # Current window token accepted
+    # Current window token accepted with challenge & liveness
     face_img = create_sample_face_b64()
+    closed_face = create_sample_face_b64(noise=True)
+    chal1 = client.post("/api/liveness/challenge", json={"session_id": session_id}, headers=student_auth).json()
+
     mark_res1 = client.post("/api/attendance/mark", json={
         "session_id": session_id,
         "qr_token": current_token,
@@ -103,6 +110,9 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
         "user_lat": 19.07601,
         "user_lng": 72.87771,
         "live_selfie_base64": face_img,
+        "closed_eye_frame_base64": closed_face,
+        "challenge_id": chal1["challenge_id"],
+        "challenge_token": chal1["challenge_token"],
         "is_exception_mode": False
     }, headers=student_auth)
     assert mark_res1.status_code == 200
@@ -131,11 +141,7 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
     prev_sig = generate_qr_signature(session_id, prev_window, secret_seed)
     prev_token = f"{session_id}.{prev_window}.{prev_sig}"
 
-    # STU02 completes face enrollment first
-    client.post("/api/student/enroll-face", json={
-        "live_selfie_base64": face_img,
-        "consent_given": True
-    }, headers=stu2_headers)
+    chal2 = client.post("/api/liveness/challenge", json={"session_id": session_id}, headers=stu2_headers).json()
 
     mark_res2 = client.post("/api/attendance/mark", json={
         "session_id": session_id,
@@ -144,6 +150,9 @@ def test_current_and_previous_window_tokens_accepted(client, faculty_auth, stude
         "user_lat": 19.07601,
         "user_lng": 72.87771,
         "live_selfie_base64": face_img,
+        "closed_eye_frame_base64": closed_face,
+        "challenge_id": chal2["challenge_id"],
+        "challenge_token": chal2["challenge_token"],
         "is_exception_mode": False
     }, headers=stu2_headers)
     assert mark_res2.status_code == 200

@@ -17,6 +17,7 @@ import FacultyTimetableMobileView from './faculty/FacultyTimetableMobileView';
 import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
 import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
 import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
+import FacultyInsightsView from './faculty/FacultyInsightsView';
 
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import DesktopLayout from '../desktop/DesktopLayout';
@@ -70,12 +71,12 @@ export default function FacultyPortal({ user, onLogout }) {
   // Faculty Notifications & Alerts Modal State
   const [showFacultyNotifications, setShowFacultyNotifications] = useState(false);
 
-  // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'profile')
+  // Mobile PWA Navigation View State (Phase A: 'home' | 'classes' | 'live' | 'students' | 'insights' | 'profile')
   const getInitialFacultyTab = () => {
     const { role, tab } = parsePath();
     if (role === 'faculty' && tab) {
       const cleanTab = tab.toLowerCase();
-      if (['home', 'classes', 'live', 'students', 'reports', 'profile'].includes(cleanTab)) {
+      if (['home', 'classes', 'live', 'students', 'reports', 'insights', 'profile'].includes(cleanTab)) {
         return cleanTab;
       }
       if (cleanTab === 'timetable') return 'classes';
@@ -1114,6 +1115,7 @@ export default function FacultyPortal({ user, onLogout }) {
                 onOpenTimetable={() => navigateToMobileTab('classes')}
                 onOpenProfile={() => navigateToMobileTab('profile')}
                 onOpenNotifications={() => setShowFacultyNotifications(true)}
+                onOpenInsights={() => navigateToMobileTab('insights')}
               />
             )
           )}
@@ -1225,6 +1227,14 @@ export default function FacultyPortal({ user, onLogout }) {
               onManualMark={handleManualOverride}
               onBack={handleInAppBack}
               actionLoading={actionLoading}
+            />
+          )}
+
+          {/* TAB: INSIGHTS (AI Attendance Intelligence & Actionable Analytics) */}
+          {mobileTab === 'insights' && (
+            <FacultyInsightsView
+              user={user}
+              onGoHome={() => navigateToMobileTab('home')}
             />
           )}
 

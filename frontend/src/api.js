@@ -502,5 +502,52 @@ export const api = {
       headers: getHeaders()
     });
     return safeParse(res, 'Failed to fetch admin settings');
+  },
+
+  // ---------------------------------------------------------------------------
+  // AI-Based Faculty Insights & Attendance Intelligence APIs
+  // ---------------------------------------------------------------------------
+  async getFacultyInsightsOverview({ section = 'ALL', subject = 'ALL', semester = 0, threshold = null, date_range = '30d' } = {}) {
+    const params = new URLSearchParams();
+    if (section && section !== 'ALL') params.append('section', section);
+    if (subject && subject !== 'ALL') params.append('subject', subject);
+    if (semester && semester !== 0) params.append('semester', semester);
+    if (threshold !== null && threshold !== undefined) params.append('threshold', threshold);
+    if (date_range) params.append('date_range', date_range);
+
+    const qs = params.toString();
+    const url = `${API_BASE}/api/faculty/insights/overview${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch faculty insights overview');
+  },
+
+  async getFacultyInsightsStudents({ section = 'ALL', subject = 'ALL', semester = 0, threshold = null, risk_tier = 'ALL', search = '' } = {}) {
+    const params = new URLSearchParams();
+    if (section && section !== 'ALL') params.append('section', section);
+    if (subject && subject !== 'ALL') params.append('subject', subject);
+    if (semester && semester !== 0) params.append('semester', semester);
+    if (threshold !== null && threshold !== undefined) params.append('threshold', threshold);
+    if (risk_tier && risk_tier !== 'ALL') params.append('risk_tier', risk_tier);
+    if (search && search.trim()) params.append('search', search.trim());
+
+    const qs = params.toString();
+    const url = `${API_BASE}/api/faculty/insights/students${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch faculty insights students');
+  },
+
+  async getFacultyInsightsFilters() {
+    const res = await fetch(`${API_BASE}/api/faculty/insights/filters`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch faculty insights filter options');
+  },
+
+  async notifyStudentIntervention({ roll_no, title, message, severity = 'WARNING', subject_code = null }) {
+    const res = await fetch(`${API_BASE}/api/faculty/insights/notify-student`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ roll_no, title, message, severity, subject_code })
+    });
+    return safeParse(res, 'Failed to send student notification');
   }
 };
+

@@ -41,6 +41,29 @@ function pwaVersionPlugin() {
 
 export default defineConfig({
   plugins: [react(), basicSsl(), pwaVersionPlugin()],
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('@mediapipe') || id.includes('tasks-vision')) {
+              return 'vendor-mediapipe';
+            }
+            if (id.includes('html5-qrcode') || id.includes('qrcode.react')) {
+              return 'vendor-qrcode';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-lucide';
+            }
+            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+              return 'vendor-react';
+            }
+          }
+        }
+      }
+    }
+  },
   server: {
     port: 5173,
     host: true,

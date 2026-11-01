@@ -20,6 +20,9 @@ os.environ["FACE_EMBED_KEY"] = "MCON8woyDxEDShtQ5a4UhdIC1KW5CAYID3llooYCQeA="
 os.environ["FACE_MATCH_THRESHOLD"] = "0.50"
 os.environ["FACE_REVIEW_THRESHOLD"] = "0.38"
 
+import face_service
+face_service.reset_cipher()
+
 # Create a clean temp SQLite DB file for isolated test runs
 _temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _temp_db_path = _temp_db.name
