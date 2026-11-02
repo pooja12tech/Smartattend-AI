@@ -686,7 +686,11 @@ export default function FacultyPortal({ user, onLogout }) {
       setActiveSession(res.session);
       toast.success(`Lecture session started for ${targetSubject}.`);
     } catch (err) {
-      toast.error('Error starting session: ' + err.message);
+      if (err.status === 401 || (err.message && err.message.includes('expired'))) {
+        toast.error('Session expired. Please log in again to launch attendance.');
+      } else {
+        toast.error('Error starting session: ' + err.message);
+      }
     } finally {
       setStarting(false);
     }

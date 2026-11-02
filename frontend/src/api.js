@@ -60,6 +60,11 @@ const safeParse = async (res, fallbackMsg = 'Request failed') => {
     const err = new Error(msg);
     err.status = res.status;
     err.detail = data.detail;
+    if (res.status === 401 && (String(msg).toLowerCase().includes('expired') || String(msg).toLowerCase().includes('token'))) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('smartattend:auth-expired', { detail: { message: msg } }));
+      }
+    }
     throw err;
   }
   return data;

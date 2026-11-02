@@ -112,7 +112,7 @@ async def extract_rate_limit_roll_no_middleware(request: Request, call_next):
     return await call_next(request)
 
 # Secure CORS configuration
-allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,https://localhost:5173,http://127.0.0.1:5173,https://127.0.0.1:5173,http://localhost:3000")
 allowed_origins = [o.strip().strip("'\"").rstrip("/") for o in allowed_origins_raw.split(",") if o.strip()]
 
 app.add_middleware(

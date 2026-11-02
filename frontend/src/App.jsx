@@ -3,7 +3,7 @@ import LoginView from './components/LoginView';
 import OfflineBanner from './components/OfflineBanner';
 import PwaUpdateToast from './components/PwaUpdateToast';
 import IosInstallBanner from './components/IosInstallBanner';
-import { ToastContainer } from './components/ui/Toast';
+import { ToastContainer, toast } from './components/ui/Toast';
 import SmartAttendLoader from './components/ui/SmartAttendLoader';
 import { api, getDeviceId } from './api';
 
@@ -54,6 +54,17 @@ export default function App() {
       else if (userRole === 'student') replacePath('/student/home');
     }
   };
+
+  // Listen for expired authentication tokens and prompt clean re-login
+  useEffect(() => {
+    const handleAuthExpired = (e) => {
+      const msg = e?.detail?.message || 'Authentication session has expired. Please log in again.';
+      toast.error(msg);
+      handleLogout();
+    };
+    window.addEventListener('smartattend:auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('smartattend:auth-expired', handleAuthExpired);
+  }, []);
 
   const handleLogout = () => {
     api.logout();

@@ -4,6 +4,11 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import fs from 'fs';
 import path from 'path';
 
+const isHttps = process.env.HTTPS === 'true';
+const certPath = path.resolve(__dirname, 'certs/localhost.pem');
+const keyPath = path.resolve(__dirname, 'certs/localhost-key.pem');
+const hasCustomCert = isHttps && fs.existsSync(certPath) && fs.existsSync(keyPath);
+
 function pwaVersionPlugin() {
   const buildVersion = `b${Date.now().toString(36)}`;
   const devVersion = `dev-${Date.now().toString(36)}`;
@@ -40,7 +45,11 @@ function pwaVersionPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), basicSsl(), pwaVersionPlugin()],
+  plugins: [
+    react(),
+    ...(isHttps ? (hasCustomCert ? [] : [basicSsl()]) : []),
+    pwaVersionPlugin()
+  ],
   build: {
     chunkSizeWarningLimit: 600,
     rollupOptions: {
@@ -67,6 +76,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    ...(hasCustomCert ? {
+      https: {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      }
+    } : {}),
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
