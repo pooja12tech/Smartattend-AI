@@ -13,7 +13,8 @@ export default function StudentHomeView({
   onOpenSubjectAttendance,
   onOpenClassesTab,
   onOpenProfile,
-  onOpenScanner
+  onOpenScanner,
+  onOpenGamification
 }) {
   const attendance = dashboard?.attendance || {};
   const currentPct = attendance.current_pct ?? 85.0;
@@ -175,6 +176,27 @@ export default function StudentHomeView({
           )}
         </div>
       </div>
+
+      {/* Gamification Hub Banner */}
+      {onOpenGamification && (
+        <div
+          onClick={onOpenGamification}
+          className="bg-gradient-to-r from-[#113022] via-[#1A4731] to-emerald-900 text-white rounded-2xl p-3.5 border border-emerald-500/30 shadow-md flex items-center justify-between cursor-pointer active:scale-98 transition"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-bold text-base">
+              🏆
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-black text-emerald-300 tracking-wider block">Gamification Hub</span>
+              <p className="text-xs font-extrabold text-white">Earn XP, Badges & AttendCoins</p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-emerald-200 bg-white/10 px-3 py-1 rounded-xl flex items-center gap-1 border border-white/10">
+            Open <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </div>
+      )}
 
       {/* Quick Metrics Pills: Active Streak & Defaulter Radar */}
       <div className="grid grid-cols-2 gap-3">

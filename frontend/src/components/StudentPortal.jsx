@@ -24,6 +24,7 @@ import StudentPersonalInfoView from './student/StudentPersonalInfoView';
 import StudentAcademicDetailsView from './student/StudentAcademicDetailsView';
 import StudentSettingsView from './student/StudentSettingsView';
 import StudentNotificationsView from './student/StudentNotificationsView';
+import GamificationHubView from './student/GamificationHubView';
 
 // Redesigned Desktop Student UI Components
 import DesktopStudentSidebar from '../desktop/student/DesktopStudentSidebar';
@@ -51,7 +52,7 @@ export default function StudentPortal({ user, onLogout }) {
     const { role, tab } = parsePath();
     if (role === 'student' && tab) {
       const v = tab.toLowerCase();
-      if (['home', 'classes', 'active-session', 'attendance', 'subject-attendance', 'history', 'profile', 'personal-info', 'academic-details', 'settings', 'notifications'].includes(v)) {
+      if (['home', 'gamification', 'classes', 'active-session', 'attendance', 'subject-attendance', 'history', 'profile', 'personal-info', 'academic-details', 'settings', 'notifications'].includes(v)) {
         return v;
       }
     }
@@ -1289,6 +1290,14 @@ export default function StudentPortal({ user, onLogout }) {
           {/* Mobile Screen Container with smooth native view transition */}
           <div key={currentView} className="max-w-md mx-auto px-4 py-4 sm:py-6 animate-in fade-in slide-in-from-bottom-2 duration-200">
 
+            {/* GAMIFICATION HUB (MOBILE) */}
+            {currentView === 'gamification' && (
+              <GamificationHubView
+                user={user}
+                onBack={handleInAppBack}
+              />
+            )}
+
             {/* SCREEN 3: HOME DASHBOARD */}
             {currentView === 'home' && (
               <StudentHomeView
@@ -1304,6 +1313,7 @@ export default function StudentPortal({ user, onLogout }) {
                 onOpenClassesTab={() => navigateTo('classes')}
                 onOpenProfile={() => navigateTo('profile')}
                 onOpenScanner={handleStartAttendanceFlow}
+                onOpenGamification={() => navigateTo('gamification')}
               />
             )}
 
@@ -1465,6 +1475,13 @@ export default function StudentPortal({ user, onLogout }) {
 
             <main className="flex-1 w-full">
               <div className="max-w-[1600px] mx-auto p-6 lg:p-8 space-y-6">
+                {currentView === 'gamification' && (
+                  <GamificationHubView
+                    user={user}
+                    onBack={() => navigateTo('home')}
+                  />
+                )}
+
                 {(currentView === 'home' || currentView === 'active-session') && (
                   <DesktopStudentHome
                     dashboard={dashboard}
@@ -1479,6 +1496,7 @@ export default function StudentPortal({ user, onLogout }) {
                     onOpenClassesTab={() => navigateTo('classes')}
                     onOpenSubjectAttendance={() => navigateTo('subject-attendance')}
                     onOpenHistory={() => navigateTo('history')}
+                    onOpenGamification={() => navigateTo('gamification')}
                   />
                 )}
 
@@ -1494,6 +1512,7 @@ export default function StudentPortal({ user, onLogout }) {
                   <DesktopStudentAttendance
                     dashboard={dashboard}
                     onOpenHistory={() => navigateTo('history')}
+                    onOpenGamification={() => navigateTo('gamification')}
                   />
                 )}
 

@@ -13,7 +13,8 @@ export default function DesktopStudentHome({
   onStartScan, // on desktop this triggers DesktopMobileOnlyModal
   onOpenClassesTab,
   onOpenSubjectAttendance,
-  onOpenHistory
+  onOpenHistory,
+  onOpenGamification
 }) {
   const student = dashboard?.student || user || {};
   const firstName = student.name ? student.name.split(' ')[0] : 'Student';
@@ -21,7 +22,7 @@ export default function DesktopStudentHome({
   const currentPct = attendance.current_pct != null ? Number(attendance.current_pct) : 6.1;
   const attendedCount = attendance.attended_lectures ?? 10;
   const totalCount = attendance.total_lectures ?? 164;
-  const streak = dashboard?.streak ?? attendance.streak ?? 8;
+  const streak = dashboard?.streak ?? attendance.streak ?? attendance.active_streak ?? 0;
   const isEligible = currentPct >= 75.0;
   const subjects = dashboard?.subject_breakdown || [];
   const recentLogs = dashboard?.recent_logs || [];
@@ -172,6 +173,15 @@ export default function DesktopStudentHome({
             >
               View Timetable
             </button>
+            {onOpenGamification && (
+              <button
+                type="button"
+                onClick={onOpenGamification}
+                className="px-4 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-95 text-white font-black text-xs shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <span>🏆 Gamification Hub</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -248,10 +258,19 @@ export default function DesktopStudentHome({
             </p>
           </div>
 
-          <div className="pt-1">
+          <div className="pt-1 flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">
               🔥 On Fire! Keep attending
             </span>
+            {onOpenGamification && (
+              <button
+                type="button"
+                onClick={onOpenGamification}
+                className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-0.5 cursor-pointer"
+              >
+                Gamification Rewards &rarr;
+              </button>
+            )}
           </div>
         </div>
 

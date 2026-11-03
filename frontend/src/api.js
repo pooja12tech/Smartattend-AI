@@ -553,6 +553,94 @@ export const api = {
       body: JSON.stringify({ roll_no, title, message, severity, subject_code })
     });
     return safeParse(res, 'Failed to send student notification');
+  },
+
+  // ---------------------------------------------------------------------------
+  // Gamification & Student Engagement Module APIs
+  // ---------------------------------------------------------------------------
+  async getGamificationProfile() {
+    const res = await fetch(`${API_BASE}/api/gamification/profile`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch gamification profile');
+  },
+
+  async getGamificationXpHistory(limit = 50) {
+    const res = await fetch(`${API_BASE}/api/gamification/xp-history?limit=${limit}`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch XP history');
+  },
+
+  async getGamificationBadges() {
+    const res = await fetch(`${API_BASE}/api/gamification/badges`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch badges');
+  },
+
+  async getGamificationMissions() {
+    const res = await fetch(`${API_BASE}/api/gamification/missions`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch missions');
+  },
+
+  async claimGamificationMission(missionId) {
+    const res = await fetch(`${API_BASE}/api/gamification/missions/${missionId}/claim`, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    return safeParse(res, 'Failed to claim mission reward');
+  },
+
+  async getGamificationRewards() {
+    const res = await fetch(`${API_BASE}/api/gamification/rewards`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch reward store items');
+  },
+
+  async redeemGamificationReward(rewardId) {
+    const res = await fetch(`${API_BASE}/api/gamification/rewards/redeem`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ reward_id: rewardId })
+    });
+    return safeParse(res, 'Failed to redeem reward');
+  },
+
+  async equipGamificationCosmetic(itemType, itemId) {
+    const res = await fetch(`${API_BASE}/api/gamification/profile/equip`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ item_type: itemType, item_id: itemId })
+    });
+    return safeParse(res, 'Failed to equip cosmetic item');
+  },
+
+  async getGamificationLeaderboards({ category = 'xp', section = null, limit = 15 } = {}) {
+    const params = new URLSearchParams();
+    if (category) params.append('category', category);
+    if (section && section !== 'ALL') params.append('section', section);
+    if (limit) params.append('limit', limit);
+    const qs = params.toString();
+    const res = await fetch(`${API_BASE}/api/gamification/leaderboards${qs ? `?${qs}` : ''}`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch leaderboards');
+  },
+
+  async getGamificationCompetitions(semester = 6) {
+    const res = await fetch(`${API_BASE}/api/gamification/competitions?semester=${semester}`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch section championship');
+  },
+
+  async getGamificationRecommendations() {
+    const res = await fetch(`${API_BASE}/api/gamification/recommendations`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch personalized recommendations');
+  },
+
+  async getFacultyGamificationAnalytics() {
+    const res = await fetch(`${API_BASE}/api/faculty/gamification/analytics`, { headers: getHeaders() });
+    return safeParse(res, 'Failed to fetch faculty gamification analytics');
+  },
+
+  async createFacultyGamificationChallenge(challengeData) {
+    const res = await fetch(`${API_BASE}/api/faculty/gamification/challenges`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(challengeData)
+    });
+    return safeParse(res, 'Failed to create faculty challenge');
   }
 };
 

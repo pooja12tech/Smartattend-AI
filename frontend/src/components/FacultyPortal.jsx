@@ -18,6 +18,7 @@ import FacultyLiveSessionView from './faculty/FacultyLiveSessionView';
 import FacultyStudentRosterView from './faculty/FacultyStudentRosterView';
 import FacultySessionSummaryView from './faculty/FacultySessionSummaryView';
 import FacultyInsightsView from './faculty/FacultyInsightsView';
+import FacultyGamificationView from './faculty/FacultyGamificationView';
 
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import DesktopLayout from '../desktop/DesktopLayout';
@@ -76,7 +77,7 @@ export default function FacultyPortal({ user, onLogout }) {
     const { role, tab } = parsePath();
     if (role === 'faculty' && tab) {
       const cleanTab = tab.toLowerCase();
-      if (['home', 'classes', 'live', 'students', 'reports', 'insights', 'profile'].includes(cleanTab)) {
+      if (['home', 'classes', 'live', 'students', 'reports', 'insights', 'profile', 'gamification'].includes(cleanTab)) {
         return cleanTab;
       }
       if (cleanTab === 'timetable') return 'classes';
@@ -1239,6 +1240,13 @@ export default function FacultyPortal({ user, onLogout }) {
             <FacultyInsightsView
               user={user}
               onGoHome={() => navigateToMobileTab('home')}
+            />
+          )}
+
+          {/* TAB: GAMIFICATION & MOTIVATION HUB */}
+          {mobileTab === 'gamification' && (
+            <FacultyGamificationView
+              user={user}
             />
           )}
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  GraduationCap, Home, CalendarDays, CheckSquare, User,
+  GraduationCap, Home, CalendarDays, CheckSquare, User, Trophy,
   Smartphone, LogOut, ArrowRightLeft, Sparkles, QrCode
 } from 'lucide-react';
 
@@ -24,6 +24,7 @@ export default function DesktopStudentSidebar({
 
   const navItems = [
     { id: 'home', label: 'Dashboard', icon: Home },
+    { id: 'gamification', label: 'Gamification Hub', icon: Trophy },
     { id: 'classes', label: 'Classes & Timetable', icon: CalendarDays },
     { id: 'attendance', label: 'Attendance Breakdown', icon: CheckSquare },
     { id: 'profile', label: 'Student Profile', icon: User }
@@ -31,6 +32,7 @@ export default function DesktopStudentSidebar({
 
   const getActiveTab = () => {
     if (currentView === 'home' || currentView === 'active-session') return 'home';
+    if (currentView === 'gamification') return 'gamification';
     if (currentView === 'classes') return 'classes';
     if (currentView === 'attendance' || currentView === 'subject-attendance' || currentView === 'history') return 'attendance';
     if (['profile', 'personal-info', 'academic-details', 'settings'].includes(currentView)) return 'profile';
@@ -92,6 +94,7 @@ export default function DesktopStudentSidebar({
                 type="button"
                 onClick={() => {
                   if (item.id === 'home') onNavigate('home');
+                  else if (item.id === 'gamification') onNavigate('gamification');
                   else if (item.id === 'classes') onNavigate('classes');
                   else if (item.id === 'attendance') onNavigate('subject-attendance');
                   else if (item.id === 'profile') onNavigate('profile');

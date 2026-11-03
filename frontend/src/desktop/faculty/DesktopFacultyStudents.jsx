@@ -38,16 +38,17 @@ export default function DesktopFacultyStudents({ user, onGoHome }) {
     fetchStudents();
   }, []);
 
+  const getStudentPct = (s) => Number(s.current_attendance_pct ?? s.overall_attendance_pct ?? s.attendance_pct ?? 0);
   const totalCount = students.length;
-  const safeCount = students.filter(s => (s.overall_attendance_pct || s.attendance_pct || 80) >= 75).length;
+  const safeCount = students.filter(s => getStudentPct(s) >= 75).length;
   const defaulterCount = totalCount - safeCount;
 
   const filteredStudents = useMemo(() => {
     let list = students;
     if (filterMode === 'SAFE') {
-      list = list.filter(s => (s.overall_attendance_pct || s.attendance_pct || 80) >= 75);
+      list = list.filter(s => getStudentPct(s) >= 75);
     } else if (filterMode === 'DEFAULTER') {
-      list = list.filter(s => (s.overall_attendance_pct || s.attendance_pct || 80) < 75);
+      list = list.filter(s => getStudentPct(s) < 75);
     }
 
     if (searchQuery.trim()) {
@@ -210,7 +211,7 @@ export default function DesktopFacultyStudents({ user, onGoHome }) {
                 ))
               ) : filteredStudents.length > 0 ? (
                 filteredStudents.map((st, idx) => {
-                  const pct = Math.round(st.overall_attendance_pct || st.attendance_pct || 80);
+                  const pct = Math.round(getStudentPct(st));
                   const isSafe = pct >= 75;
 
                   return (

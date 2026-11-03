@@ -34,7 +34,7 @@ import json
 from fastapi import FastAPI, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import update, or_
+from sqlalchemy import update, or_, desc, asc
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import numpy as np
@@ -55,9 +55,13 @@ from db_postgres import (
 from models import (
     User, StudentStats, LectureSession, AttendanceRecord, SecurityAlert,
     Subject, StudentSubjectEnrollment, AuditLog, FaceEnrollment, StudentNotification,
-    TimetableEntry, LivenessChallenge
+    TimetableEntry, LivenessChallenge,
+    StudentGamificationProfile, XPTransaction, AttendCoinTransaction,
+    AchievementBadge, StudentBadge, Mission, StudentMission,
+    StoreReward, RewardRedemption, SectionCompetition, PersonalizedChallenge
 )
 import face_service
+import gamification_service
 from seed_postgres import run_postgres_seed
 from auth import (
     hash_password,
@@ -178,6 +182,14 @@ async def startup_db_init():
                     print(f"[Main Startup Warning] Seeding failed: {e}")
             else:
                 print(f"[Main Startup] Database is empty but ENVIRONMENT is '{env}'. Auto-seed skipped.")
+
+        try:
+            gamification_service.seed_badges_catalog(db)
+            gamification_service.seed_store_rewards(db)
+            gamification_service.seed_system_missions(db)
+            db.commit()
+        except Exception as ge:
+            print(f"[Main Startup Warning] Gamification catalog init: {ge}")
 
     asyncio.create_task(auto_end_sessions_background_task())
 
@@ -1004,6 +1016,26 @@ class TimetableBatchPublishRequest(BaseModel):
     semester: Optional[int] = None
     section: Optional[str] = None
     is_published: bool
+
+class GamificationRedeemRequest(BaseModel):
+    reward_id: str
+
+class GamificationEquipRequest(BaseModel):
+    item_type: str  # "avatar", "frame", "title", "theme"
+    item_id: str
+
+class FacultyCreateChallengeRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    type: Optional[str] = "CUSTOM"
+    difficulty: Optional[str] = "MEDIUM"
+    target_section: Optional[str] = None
+    target_subject_code: Optional[str] = None
+    goal_type: Optional[str] = "ATTEND_CLASSES"
+    goal_target: Optional[float] = 3.0
+    xp_reward: Optional[int] = 50
+    coin_reward: Optional[int] = 5
+    duration_days: Optional[int] = 7
 
 def normalize_time_str(t: str) -> str:
     t = str(t).strip()
@@ -2271,6 +2303,19 @@ def mark_attendance(
         subject_code_prefix = session.subject_name.split(" ")[0].strip() if " " in session.subject_name else session.subject_name
         recompute_student_subject_enrollment(db, student.roll_no, subject_code_prefix)
 
+        # Gamification: Award XP, update streaks, evaluate missions & badges for verified attendance
+        gamification_summary = None
+        if attendance_status == "PRESENT":
+            try:
+                gamification_summary = gamification_service.process_verified_attendance_gamification(
+                    db=db,
+                    roll_no=student.roll_no,
+                    session=session,
+                    attendance_record=attendance_record
+                )
+            except Exception as ge:
+                print(f"[Gamification Hook Warning] {ge}")
+
         student.updated_at = timestamp_now
         db.commit()
     except IntegrityError:
@@ -2285,20 +2330,24 @@ def mark_attendance(
         )
 
     msg = "Attendance successfully recorded as PRESENT!" if attendance_status == "PRESENT" else "Attendance recorded as PENDING_APPROVAL (review required)."
-    return {
+    resp_details = {
+        "roll_no": roll_no,
+        "session_id": session.session_id,
+        "distance_meters": round(distance_meters, 1),
+        "face_match_score": face_match_score,
+        "face_status": face_status,
+        "liveness_status": recorded_liveness,
+        "marked_at": timestamp_now.isoformat()
+    }
+    final_response = {
         "success": True,
         "status": attendance_status,
         "message": msg,
-        "details": {
-            "roll_no": roll_no,
-            "session_id": session.session_id,
-            "distance_meters": round(distance_meters, 1),
-            "face_match_score": face_match_score,
-            "face_status": face_status,
-            "liveness_status": recorded_liveness,
-            "marked_at": timestamp_now.isoformat()
-        }
+        "details": resp_details
     }
+    if gamification_summary:
+        final_response["gamification"] = gamification_summary
+    return final_response
 
 # ------------------------------------------------------------------------------
 # 3a. POST /api/attendance/request-exception (Student Request When Device is Absent)
@@ -2622,6 +2671,17 @@ def faculty_approve_attendance(
         new_value=new_status,
         reason=req.remarks or f"Faculty {action_upper} exception request"
     )
+
+    if action_upper == "APPROVE" and student:
+        try:
+            gamification_service.process_verified_attendance_gamification(
+                db=db,
+                roll_no=student.roll_no,
+                session=session,
+                attendance_record=record
+            )
+        except Exception as ge:
+            print(f"[Gamification Hook Warning] {ge}")
 
     db.commit()
 
@@ -5030,6 +5090,207 @@ def notify_student_intervention(
         "message": f"Intervention notice dispatched successfully to {student.name} ({student.roll_no}).",
         "notification_id": str(notif.id)
     }
+
+# ==============================================================================
+# 28. GAMIFICATION & STUDENT ENGAGEMENT MODULE
+# ==============================================================================
+
+@app.get("/api/gamification/profile")
+def get_gamification_profile(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    profile = gamification_service.get_or_create_profile(db, current_user.roll_no)
+    gamification_service.sync_student_missions(db, current_user.roll_no)
+    gamification_service.evaluate_student_badges(db, current_user.roll_no)
+    db.commit()
+
+    level_info = gamification_service.get_level_info(profile.total_xp)
+    unlocked_badges = db.query(StudentBadge).filter(StudentBadge.roll_no == current_user.roll_no).count()
+    completed_missions = db.query(StudentMission).filter(
+        StudentMission.roll_no == current_user.roll_no,
+        StudentMission.is_completed == True
+    ).count()
+
+    stats = db.query(StudentStats).filter(StudentStats.user_id == current_user.id).first()
+    att_pct = stats.current_attendance_pct if stats else 100.0
+
+    return {
+        "success": True,
+        "roll_no": current_user.roll_no,
+        "name": current_user.name,
+        "email": current_user.email,
+        "department": current_user.department,
+        "semester": current_user.semester,
+        "section": current_user.section,
+        "attendance_pct": att_pct,
+        "profile": profile.to_dict(),
+        "level_info": level_info,
+        "unlocked_badges_count": unlocked_badges,
+        "completed_missions_count": completed_missions
+    }
+
+@app.get("/api/gamification/xp-history")
+def get_gamification_xp_history(
+    limit: int = 50,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    txs = db.query(XPTransaction).filter(
+        XPTransaction.roll_no == current_user.roll_no
+    ).order_by(desc(XPTransaction.created_at)).limit(min(limit, 100)).all()
+    return {
+        "success": True,
+        "transactions": [tx.to_dict() for tx in txs]
+    }
+
+@app.get("/api/gamification/badges")
+def get_gamification_badges(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    gamification_service.evaluate_student_badges(db, current_user.roll_no)
+    db.commit()
+
+    all_badges = db.query(AchievementBadge).order_by(asc(AchievementBadge.rarity), asc(AchievementBadge.category)).all()
+    student_badges = {
+        b.badge_id: b for b in db.query(StudentBadge).filter(StudentBadge.roll_no == current_user.roll_no).all()
+    }
+
+    result = []
+    for b in all_badges:
+        sb = student_badges.get(b.id)
+        b_dict = b.to_dict()
+        b_dict["is_unlocked"] = sb is not None
+        b_dict["unlocked_at"] = sb.unlocked_at.isoformat() if sb else None
+        result.append(b_dict)
+
+    return {
+        "success": True,
+        "total_badges": len(all_badges),
+        "unlocked_count": len(student_badges),
+        "badges": result
+    }
+
+@app.get("/api/gamification/missions")
+def get_gamification_missions(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    missions_data = gamification_service.sync_student_missions(db, current_user.roll_no)
+    db.commit()
+    return {
+        "success": True,
+        "missions": missions_data
+    }
+
+@app.post("/api/gamification/missions/{mission_id}/claim")
+def claim_gamification_mission(
+    mission_id: str,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    result = gamification_service.claim_mission(db, current_user.roll_no, mission_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Unable to claim mission reward"))
+    db.commit()
+    return result
+
+@app.get("/api/gamification/rewards")
+def get_gamification_rewards(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    rewards = gamification_service.get_available_rewards(db, current_user.roll_no)
+    profile = gamification_service.get_or_create_profile(db, current_user.roll_no)
+    return {
+        "success": True,
+        "attend_coins": profile.attend_coins,
+        "rewards": rewards
+    }
+
+@app.post("/api/gamification/rewards/redeem")
+def redeem_gamification_reward(
+    req: GamificationRedeemRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    result = gamification_service.redeem_reward(db, current_user.roll_no, req.reward_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Redemption failed"))
+    db.commit()
+    return result
+
+@app.post("/api/gamification/profile/equip")
+def equip_gamification_cosmetic(
+    req: GamificationEquipRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    result = gamification_service.equip_cosmetic(db, current_user.roll_no, req.item_type, req.item_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Unable to equip cosmetic item"))
+    db.commit()
+    return result
+
+@app.get("/api/gamification/leaderboards")
+@app.get("/api/gamification/leaderboard")
+def get_gamification_leaderboards(
+    category: str = "xp",
+    section: Optional[str] = None,
+    limit: int = 15,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    return gamification_service.get_leaderboards(
+        db=db,
+        current_roll_no=current_user.roll_no,
+        category=category,
+        section=section,
+        limit=limit
+    )
+
+@app.get("/api/gamification/competitions")
+def get_gamification_competitions(
+    semester: int = 6,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_pg_db)
+):
+    return gamification_service.get_section_championship_standings(db, semester=semester)
+
+@app.get("/api/gamification/recommendations")
+def get_gamification_recommendations(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_pg_db)
+):
+    recommendations = gamification_service.generate_ai_gamification_recommendations(db, current_user.roll_no)
+    return {
+        "success": True,
+        "recommendations": recommendations
+    }
+
+@app.get("/api/faculty/gamification/analytics")
+def get_faculty_gamification_analytics_endpoint(
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    analytics = gamification_service.get_faculty_gamification_analytics(db, current_user.roll_no)
+    return {
+        "success": True,
+        "analytics": analytics
+    }
+
+@app.post("/api/faculty/gamification/challenges")
+def create_faculty_gamification_challenge_endpoint(
+    req: FacultyCreateChallengeRequest,
+    current_user: User = Depends(require_faculty_or_admin),
+    db: Session = Depends(get_pg_db)
+):
+    result = gamification_service.create_faculty_challenge(db, current_user.roll_no, req.dict())
+    db.commit()
+    return result
+
+
 
 if __name__ == "__main__":
     import uvicorn

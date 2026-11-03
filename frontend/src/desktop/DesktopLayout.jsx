@@ -6,6 +6,7 @@ import DesktopFacultyStudents from './faculty/DesktopFacultyStudents';
 import DesktopFacultyReports from './faculty/DesktopFacultyReports';
 import DesktopFacultyProfile from './faculty/DesktopFacultyProfile';
 import FacultyInsightsView from '../components/faculty/FacultyInsightsView';
+import FacultyGamificationView from '../components/faculty/FacultyGamificationView';
 
 import { navigateToPath, replacePath, parsePath } from '../router';
 
@@ -25,7 +26,7 @@ export default function DesktopLayout({
     const { role, tab } = parsePath();
     if (role === 'faculty' && tab) {
       const cleanTab = tab.toLowerCase();
-      if (['home', 'insights', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
+      if (['home', 'insights', 'gamification', 'classes', 'students', 'reports', 'profile'].includes(cleanTab)) {
         return cleanTab;
       }
       if (cleanTab === 'timetable') return 'classes';
@@ -95,6 +96,12 @@ export default function DesktopLayout({
               <FacultyInsightsView
                 user={user}
                 onGoHome={() => handleTabChange('home')}
+              />
+            )}
+
+            {activeTab === 'gamification' && (
+              <FacultyGamificationView
+                user={user}
               />
             )}
 

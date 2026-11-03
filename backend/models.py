@@ -41,6 +41,7 @@ class User(Base):
     )
 
     def to_dict(self) -> dict:
+        sess = getattr(self, "session", None)
         return {
             "id": str(self.id),
             "roll_no": self.roll_no,
@@ -80,6 +81,7 @@ class StudentStats(Base):
     user: Mapped["User"] = relationship("User", back_populates="stats")
 
     def to_dict(self) -> dict:
+        sess = getattr(self, "session", None)
         return {
             "current_attendance_pct": self.current_attendance_pct,
             "last_14_days_pct": self.last_14_days_pct,
@@ -200,6 +202,11 @@ class AttendanceRecord(Base):
             "reason": self.reason,
             "status": self.status,
             "marked_at": self.marked_at.isoformat() if self.marked_at else None,
+            "timestamp": self.marked_at.isoformat() if self.marked_at else None,
+            "date": self.marked_at.isoformat() if self.marked_at else None,
+            "subject_name": getattr(getattr(self, "session", None), "subject_name", None),
+            "room": getattr(getattr(self, "session", None), "room_no", None),
+            "faculty_name": getattr(getattr(self, "session", None), "faculty_id", None),
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "remarks": self.remarks
         }
@@ -538,5 +545,376 @@ class LivenessChallenge(Base):
             "is_consumed": self.is_consumed,
             "consumed_at": self.consumed_at.isoformat() if self.consumed_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# ==============================================================================
+# 13. Student Gamification Profiles (Level, XP, Coins, Cosmetics)
+# ==============================================================================
+class StudentGamificationProfile(Base):
+    __tablename__ = "student_gamification_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), unique=True, index=True, nullable=False
+    )
+    current_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    level_name: Mapped[str] = mapped_column(String(64), default="Beginner", nullable=False)
+    total_xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    attend_coins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_streak_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    active_avatar_id: Mapped[str] = mapped_column(String(64), default="default_student", nullable=False)
+    active_frame_id: Mapped[str] = mapped_column(String(64), default="none", nullable=False)
+    active_title: Mapped[str] = mapped_column(String(64), default="Freshman Explorer", nullable=False)
+    active_theme: Mapped[str] = mapped_column(String(64), default="emerald", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        Index("idx_gamify_xp", "total_xp"),
+        Index("idx_gamify_streak", "current_streak"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "current_level": self.current_level,
+            "level_name": self.level_name,
+            "total_xp": self.total_xp,
+            "attend_coins": self.attend_coins,
+            "current_streak": self.current_streak,
+            "longest_streak": self.longest_streak,
+            "last_streak_date": self.last_streak_date.isoformat() if self.last_streak_date else None,
+            "active_avatar_id": self.active_avatar_id,
+            "active_frame_id": self.active_frame_id,
+            "active_title": self.active_title,
+            "active_theme": self.active_theme,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+# ==============================================================================
+# 14. XP Transaction Ledger (Persistent, Auditable, Idempotent)
+# ==============================================================================
+class XPTransaction(Base):
+    __tablename__ = "xp_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)  # 'LECTURE_ATTENDANCE', 'WEEKLY_GOAL', 'MISSION_COMPLETE', etc.
+    reference_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)  # session_id, mission_id, etc.
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("roll_no", "source", "reference_id", name="uq_xp_roll_source_ref"),
+        Index("idx_xp_roll_time", "roll_no", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "amount": self.amount,
+            "source": self.source,
+            "reference_id": self.reference_id,
+            "description": self.description,
+            "balance_after": self.balance_after,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+# ==============================================================================
+# 15. AttendCoin Transaction Ledger (Virtual Currency)
+# ==============================================================================
+class AttendCoinTransaction(Base):
+    __tablename__ = "attendcoin_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)  # Positive for earn, negative for spend
+    source: Mapped[str] = mapped_column(String(64), nullable=False)  # 'XP_CONVERSION', 'MISSION_REWARD', 'STORE_PURCHASE'
+    reference_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+    __table_args__ = (
+        Index("idx_coin_roll_time", "roll_no", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "amount": self.amount,
+            "source": self.source,
+            "reference_id": self.reference_id,
+            "description": self.description,
+            "balance_after": self.balance_after,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+# ==============================================================================
+# 16. Achievement Badges Catalog & Student Unlocks
+# ==============================================================================
+class AchievementBadge(Base):
+    __tablename__ = "achievement_badges"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # e.g. 'early_bird', 'consistency_king'
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="ATTENDANCE", nullable=False)
+    rarity: Mapped[str] = mapped_column(String(32), default="COMMON", nullable=False)  # 'COMMON', 'RARE', 'EPIC', 'LEGENDARY'
+    icon: Mapped[str] = mapped_column(String(64), default="Award", nullable=False)
+    xp_reward: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    coin_reward: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    criteria_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    criteria_threshold: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "rarity": self.rarity,
+            "icon": self.icon,
+            "xp_reward": self.xp_reward,
+            "coin_reward": self.coin_reward,
+            "criteria_type": self.criteria_type,
+            "criteria_threshold": self.criteria_threshold
+        }
+
+class StudentBadge(Base):
+    __tablename__ = "student_badges"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    badge_id: Mapped[str] = mapped_column(
+        ForeignKey("achievement_badges.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("roll_no", "badge_id", name="uq_student_badge"),
+        Index("idx_student_badge_lookup", "roll_no", "badge_id"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "badge_id": self.badge_id,
+            "unlocked_at": self.unlocked_at.isoformat() if self.unlocked_at else None
+        }
+
+# ==============================================================================
+# 17. Missions & Challenges (Daily, Weekly, Monthly, Faculty Custom)
+# ==============================================================================
+class Mission(Base):
+    __tablename__ = "missions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(32), default="DAILY", nullable=False)  # 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'
+    category: Mapped[str] = mapped_column(String(64), default="ATTENDANCE", nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(32), default="EASY", nullable=False)  # 'EASY', 'MEDIUM', 'HARD'
+    target_section: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    target_subject_code: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    goal_type: Mapped[str] = mapped_column(String(64), default="ATTEND_CLASSES", nullable=False)
+    goal_target: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    xp_reward: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    coin_reward: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # Faculty ID or 'SYSTEM'
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "description": self.description,
+            "type": self.type,
+            "category": self.category,
+            "difficulty": self.difficulty,
+            "target_section": self.target_section,
+            "target_subject_code": self.target_subject_code,
+            "goal_type": self.goal_type,
+            "goal_target": self.goal_target,
+            "xp_reward": self.xp_reward,
+            "coin_reward": self.coin_reward,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "created_by": self.created_by,
+            "is_active": self.is_active
+        }
+
+class StudentMission(Base):
+    __tablename__ = "student_missions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    mission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("missions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    current_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    target_value: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    is_completed: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_claimed: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("roll_no", "mission_id", name="uq_student_mission"),
+        Index("idx_student_mission_status", "roll_no", "is_completed", "is_claimed"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "mission_id": str(self.mission_id),
+            "current_progress": self.current_progress,
+            "target_value": self.target_value,
+            "is_completed": self.is_completed,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "is_claimed": self.is_claimed,
+            "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None
+        }
+
+# ==============================================================================
+# 18. Store Rewards & Redemptions (Cosmetics, Themes, Frames, Titles)
+# ==============================================================================
+class StoreReward(Base):
+    __tablename__ = "store_rewards"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # e.g. 'avatar_cyber_ninja'
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(32), default="AVATAR", nullable=False)  # 'AVATAR', 'FRAME', 'TITLE', 'THEME', 'EFFECT'
+    coin_price: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    preview_asset: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "type": self.type,
+            "coin_price": self.coin_price,
+            "preview_asset": self.preview_asset,
+            "is_available": self.is_available
+        }
+
+class RewardRedemption(Base):
+    __tablename__ = "reward_redemptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    reward_id: Mapped[str] = mapped_column(
+        ForeignKey("store_rewards.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    coin_cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("roll_no", "reward_id", name="uq_student_reward"),
+        Index("idx_redemption_lookup", "roll_no", "reward_id"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "reward_id": self.reward_id,
+            "coin_cost": self.coin_cost,
+            "redeemed_at": self.redeemed_at.isoformat() if self.redeemed_at else None
+        }
+
+# ==============================================================================
+# 19. Team-Based Section Competitions
+# ==============================================================================
+class SectionCompetition(Base):
+    __tablename__ = "section_competitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    academic_year: Mapped[str] = mapped_column(String(32), default="2025-2026", nullable=False)
+    semester: Mapped[int] = mapped_column(Integer, default=6, nullable=False)
+    department: Mapped[str] = mapped_column(String(255), default="Computer Science & Engineering", nullable=False)
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", index=True, nullable=False)  # 'ACTIVE', 'COMPLETED'
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "description": self.description,
+            "academic_year": self.academic_year,
+            "semester": self.semester,
+            "department": self.department,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+# ==============================================================================
+# 20. AI-Powered Personalized Challenges
+# ==============================================================================
+class PersonalizedChallenge(Base):
+    __tablename__ = "personalized_challenges"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    roll_no: Mapped[str] = mapped_column(
+        ForeignKey("users.roll_no", ondelete="CASCADE"), index=True, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)  # Explainable AI rationale
+    risk_level: Mapped[str] = mapped_column(String(32), default="CONSISTENT", nullable=False)  # 'SHORTAGE_HIGH', 'SHORTAGE_MODERATE', 'CONSISTENT', 'IMPROVING'
+    suggested_action: Mapped[str] = mapped_column(Text, nullable=False)
+    target_classes: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    xp_reward: Mapped[int] = mapped_column(Integer, default=40, nullable=False)
+    coin_reward: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": str(self.id),
+            "roll_no": self.roll_no,
+            "title": self.title,
+            "description": self.description,
+            "reason": self.reason,
+            "risk_level": self.risk_level,
+            "suggested_action": self.suggested_action,
+            "target_classes": self.target_classes,
+            "xp_reward": self.xp_reward,
+            "coin_reward": self.coin_reward,
+            "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }

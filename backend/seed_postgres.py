@@ -547,6 +547,25 @@ def run_postgres_seed(session: Session = None) -> bool:
                 )
                 session.add(tt)
 
+        # ------------------------------------------------------------------
+        # 7. GAMIFICATION & STUDENT ENGAGEMENT CATALOG SEEDING
+        # ------------------------------------------------------------------
+        try:
+            import gamification_service
+            gamification_service.seed_badges_catalog(session)
+            gamification_service.seed_store_rewards(session)
+            gamification_service.seed_system_missions(session)
+
+            # Initialize gamification profiles for all seeded students
+            students = session.query(User).filter(User.role == "student").all()
+            for stu in students:
+                prof = gamification_service.get_or_create_profile(session, stu.roll_no)
+                gamification_service.sync_student_missions(session, stu.roll_no)
+                gamification_service.evaluate_student_badges(session, stu.roll_no)
+            print("[Seed] Gamification Catalog & Student Profiles initialized.")
+        except Exception as ge:
+            print(f"[Seed Gamification Warning]: {ge}")
+
         session.commit()
         print("=" * 65)
         print(" [Seed] Database Cleaned & Configured Successfully! ")
